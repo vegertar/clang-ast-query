@@ -1,0 +1,8 @@
+/*
+
+!/.gitignore
+!/Makefile
+!/lex.l
+!/token.y
+!/parse.c
+!/parse.h
