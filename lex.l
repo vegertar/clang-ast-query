@@ -19,11 +19,21 @@ static inline char * qname() {
 
 %}
 
-ATTR (sugar|imported|implicit|used|referenced|definition|IsLiteralLabel|Inherited|Implicit)
+NAME ([a-zA-Z_][a-zA-Z_0-9]*)
 
-SPEC ({ATTR}|extern|static|inline|lvalue|cinit|volatile)
+NUMBER (-?([0-9]*\.[0-9]+|[0-9]+)([Ee][+-]?[0-9]+)?)
 
-CLASS (struct|class|union)
+POINTER (0x[0-9a-f]+)
+
+ATTR (sugar|imported|implicit|used|referenced|prefix|postfix|Inherited|Implicit|warn_unused_result)
+
+SPEC ({ATTR}|extern|static|inline|lvalue|bitfield|cinit|const|volatile|cdecl)
+
+CLASS (struct|union)
+
+TRAIT (__alignof|alignof|sizeof)
+
+OPTION ("cannot overflow"|part_of_explicit_cast|definition|IsLiteralLabel|non_odr_use_unevaluated)
 
 %%
 
@@ -35,14 +45,47 @@ CLASS (struct|class|union)
   return yytext[0];
 }
 
+"','" |
+"'%'" |
+"'/'" |
+"'*'" |
 "'-'" |
 "'+'" |
 "'&'" |
 "'|'" |
+"'^'" |
+"'!'" |
+"'>'" |
+"'<'" |
+"'~'" |
+"'='" |
 "'>>'" |
-"'<<'" {
+"'<<'" |
+"'>='" |
+"'<='" |
+"'=='" |
+"'!='" |
+"'+='" |
+"'-='" |
+"'*='" |
+"'/='" |
+"'%='" |
+"'^='" |
+"'|='" |
+"'&='" |
+"'>>='" |
+"'<<='" |
+"'--'" |
+"'++'" |
+"'&&'" |
+"'||'" |
+"'__extension__'" {
   yylval.s = qname();
   return OPERATOR;
+}
+
+"<<<NULL>>>" {
+  return NULLIFY;
 }
 
 "<invalid sloc>" {
@@ -57,22 +100,23 @@ CLASS (struct|class|union)
   return ENUM;
 }
 
-\/[^:]+ |
-"<scratch space>" {
+\/[^:]+/:[0-9]+ |
+"<scratch space>" |
+"<built-in>" {
   yylval.s = strdup(yytext);
   return FILENAME;
 }
 
-prev {
-  return PREV;
-}
-
-line {
+line/:[0-9]+ {
   return LINE;
 }
 
-col {
+col/:[0-9]+ {
   return COL;
+}
+
+field/" "Field {
+  return FIELD;
 }
 
 {ATTR} {
@@ -85,8 +129,18 @@ col {
   return CLASS;
 }
 
-Text {
-  return TEXT;
+{TRAIT} {
+  yylval.s = strdup(yytext);
+  return TRAIT;
+}
+
+{OPTION} {
+  return OPTION;
+}
+
+{NAME}/= {
+  yylval.s = strdup(yytext);
+  return TAG;
 }
 
 ^[|` ] {
@@ -94,19 +148,34 @@ Text {
   return INDENT;
 }
 
-[A-Z][a-zA-Z]+ {
+[A-Z][a-zA-Z]+" "{POINTER} {
   yylval.s = strdup(yytext);
-  return KIND;
+  return HEAD;
 }
 
-[a-zA-Z_][a-zA-Z_0-9]* {
+parent" "{POINTER} {
+  yylval.s = strdup(yytext);
+  return PARENT;
+}
+
+prev" "{POINTER} {
+  yylval.s = strdup(yytext);
+  return PREV;
+}
+
+("->"|"."){NAME}?" "{POINTER} {
+  yylval.s = strdup(yytext);
+  return MEMBER;
+}
+
+{POINTER} {
+  yylval.s = strdup(yytext);
+  return POINTER;
+}
+
+{NAME} {
   yylval.s = strdup(yytext);
   return NAME;
-}
-
-0x[0-9a-f]+ {
-  yylval.s = strdup(yytext);
-  return ID;
 }
 
 [+-]?[0-9]+ {
@@ -135,12 +204,12 @@ Text {
   return SPEC;
 }
 
-<TYPE>[+-]?[0-9e.+]+ {
+<TYPE>{NUMBER}/[ \n] {
   yylval.d = atof(yytext);
   return NUMBER;
 }
 
-<TYPE>\"[^\"]*\" {
+<TYPE>\".*\"/[ \n] {
   yylval.s = qname();
   return STRING;
 }

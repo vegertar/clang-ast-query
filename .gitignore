@@ -6,3 +6,6 @@
 !/token.y
 !/parse.c
 !/parse.h
+!/test.c
+!/.clang-format
+!/samples

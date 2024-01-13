@@ -1,6 +1,9 @@
 %{
-#include "parse.h"
+#include "lex.yy.h"
 #include <stdio.h>
+
+#define yyerror(...) (fprintf(stderr, __VA_ARGS__))
+
 %}
 
 %union {
@@ -10,27 +13,33 @@
 }
 
 %token <i> INDENT
-%token <s> KIND
+%token <i> INTEGER
+%token <d> NUMBER
+%token <s> POINTER
+%token <s> HEAD
 %token <s> NAME
+%token <s> MEMBER
 %token <s> SQNAME
 %token <s> DQNAME
 %token <s> BQNAME
-%token <s> ID
 %token <s> FILENAME
-%token <i> INTEGER
-%token <d> NUMBER
 %token <s> STRING
 %token <s> OPERATOR
+%token <s> OPTION
 %token <s> ATTR
 %token <s> SPEC
 %token <s> CLASS
+%token <s> TRAIT
+%token <s> PARENT
+%token <s> PREV
+%token <s> TAG
+%token NULLIFY
 %token INVALID_SLOC
 %token UNDESERIALIZED_DECLARATIONS
-%token PREV
 %token LINE
 %token COL
-%token TEXT
 %token ENUM
+%token FIELD
 
 %%
 
@@ -41,64 +50,45 @@ root: node
 nodes:
  | INDENT node nodes
 
-node: KIND ID prev srange sloc label attr decl tag
+node: HEAD parent prev srange sloc attrs labels decl class opts
  | ENUM INTEGER
+ | NULLIFY
+
+parent:
+ | PARENT
 
 prev:
- | PREV ID
-
-comment: TEXT '=' DQNAME
-
-def: type spec value op ref cast
-
-type: SQNAME
- | type ':' SQNAME
-
-label:
- | label DQNAME
-
-cast:
- | BQNAME
-
-ref:
- | KIND ID SQNAME type
-
-attr:
- | attr ATTR
-
-decl:
- | UNDESERIALIZED_DECLARATIONS name
- | NAME
- | NAME def
- | SQNAME def 
- | def
- | comment
- | seq
-
-name:
- | NAME
-
-tag:
- | CLASS name attr
-
-spec:
- | spec SPEC
-
-value:
- | NUMBER
- | STRING
-
-seq: INTEGER
- | seq INTEGER
-
-op:
- | OPERATOR
+ | PREV
 
 srange:
  | '<' loc_list '>'
 
 sloc:
  | loc
+
+labels:
+ | labels DQNAME
+
+attrs:
+ | attrs ATTR
+
+decl:
+ | NAME 
+ | UNDESERIALIZED_DECLARATIONS
+ | UNDESERIALIZED_DECLARATIONS NAME
+ | SQNAME POINTER
+ | SQNAME TRAIT
+ | SQNAME TRAIT def
+ | SQNAME def
+ | def
+ | NAME def
+ | seq
+ | NAME seq
+ | comment 
+
+class:
+ | CLASS
+ | CLASS NAME
 
 loc_list: loc
  | loc_list ',' loc
@@ -113,5 +103,43 @@ file_sloc: FILENAME ':' INTEGER ':' INTEGER
 line_sloc: LINE ':' INTEGER ':' INTEGER
 
 col_sloc: COL ':' INTEGER
+
+def: type specs value op mem field ref cast
+
+comment: TAG '=' DQNAME
+
+seq: INTEGER
+ | seq INTEGER
+
+type: SQNAME
+ | type ':' SQNAME
+
+specs:
+ | specs SPEC
+
+value:
+ | NUMBER
+ | STRING
+
+op:
+ | OPERATOR tags
+
+tags:
+ | tags TAG '=' type
+
+opts:
+ | opts OPTION
+
+field:
+ | FIELD
+
+mem:
+ | MEMBER
+
+ref:
+ | HEAD SQNAME type
+
+cast:
+ | BQNAME
 
 %%

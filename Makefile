@@ -1,13 +1,23 @@
-YACC= bison
 LEX= flex
-LDFLAGS= 
+YACC= bison
+CFLAGS=
+LDFLAGS= -lfl
+LEXFLAGS= 
+YACCFLAGS= -Werror
 
-parse: token.y lex.l
-	${YACC} -d token.y
-	${LEX} lex.l
-	${CC} -o $@ ${LDFLAGS} ${CFLAGS} token.tab.c lex.yy.c parse.c
+run: test
+	@for i in samples/*; do echo ==== $$i ====; zcat $$i | ./$< || exit 1; done
+
+test: token.tab.c lex.yy.c test.c
+	${CC} -o $@ ${LDFLAGS} ${CFLAGS} $^
+
+token.tab.c: token.y
+	${YACC} -d $< ${YACCFLAGS} -o $@
+
+lex.yy.c: lex.l
+	${LEX} -o $@ --header-file=$(basename $@).h ${LEXFLAGS} $<
 
 clean:
-	rm -f token *.o
+	rm -f token *.o *.yy.* *.tab.*
 
 .PHONY: clean
