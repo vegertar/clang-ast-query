@@ -29,7 +29,7 @@ ATTR (sugar|imported|implicit|used|referenced|prefix|postfix|Inherited|Implicit|
 
 SPEC ({ATTR}|extern|static|inline|lvalue|bitfield|cinit|const|volatile|cdecl)
 
-CLASS (struct|union)
+CLASS (struct|union|enum)
 
 TRAIT (__alignof|alignof|sizeof)
 
@@ -178,7 +178,7 @@ prev" "{POINTER} {
   return NAME;
 }
 
-[+-]?[0-9]+ {
+-?[0-9]+ {
   yylval.i = atol(yytext);
   return INTEGER;
 }

@@ -50,7 +50,7 @@ root: node
 nodes:
  | INDENT node nodes
 
-node: HEAD parent prev srange sloc attrs labels decl class opts
+node: HEAD parent prev srange sloc attrs labels undeserialized decl opts
  | ENUM INTEGER
  | NULLIFY
 
@@ -66,16 +66,19 @@ srange:
 sloc:
  | loc
 
-labels:
- | labels DQNAME
-
 attrs:
  | attrs ATTR
 
-decl:
- | NAME 
+labels:
+ | labels DQNAME
+
+undeserialized:
  | UNDESERIALIZED_DECLARATIONS
- | UNDESERIALIZED_DECLARATIONS NAME
+
+decl:
+ | CLASS
+ | NAME
+ | CLASS NAME
  | SQNAME POINTER
  | SQNAME TRAIT
  | SQNAME TRAIT def
@@ -85,10 +88,6 @@ decl:
  | seq
  | NAME seq
  | comment 
-
-class:
- | CLASS
- | CLASS NAME
 
 loc_list: loc
  | loc_list ',' loc
