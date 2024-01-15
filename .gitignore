@@ -3,9 +3,9 @@
 !/.gitignore
 !/Makefile
 !/lex.l
-!/token.y
-!/parse.c
-!/parse.h
+!/parse.y
 !/test.c
 !/.clang-format
 !/samples
+!/spec
+!/.shellspec

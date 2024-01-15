@@ -1,7 +1,7 @@
 %x TYPE
 
 %{
-#include "token.tab.h"
+#include "parse.tab.h"
 
 static int input();
 
@@ -25,7 +25,7 @@ NUMBER (-?([0-9]*\.[0-9]+|[0-9]+)([Ee][+-]?[0-9]+)?)
 
 POINTER (0x[0-9a-f]+)
 
-ATTR (sugar|imported|implicit|used|referenced|prefix|postfix|Inherited|Implicit|warn_unused_result)
+ATTR (sugar|imported|implicit|used|referenced|prefix|postfix|Inherited|Implicit|warn_unused_result|"<undeserialized declarations>")
 
 SPEC ({ATTR}|extern|static|inline|lvalue|bitfield|cinit|const|volatile|cdecl)
 
@@ -92,31 +92,8 @@ OPTION ("cannot overflow"|part_of_explicit_cast|definition|IsLiteralLabel|non_od
   return INVALID_SLOC;
 }
 
-"<undeserialized declarations>" {
-  return UNDESERIALIZED_DECLARATIONS;
-}
-
 "value: Int" {
   return ENUM;
-}
-
-\/[^:]+/:[0-9]+ |
-"<scratch space>" |
-"<built-in>" {
-  yylval.s = strdup(yytext);
-  return FILENAME;
-}
-
-line/:[0-9]+ {
-  return LINE;
-}
-
-col/:[0-9]+ {
-  return COL;
-}
-
-field/" "Field {
-  return FIELD;
 }
 
 {ATTR} {
@@ -178,8 +155,27 @@ prev" "{POINTER} {
   return NAME;
 }
 
+[^ <:]+/:[0-9]+:[0-9]+ |
+"<scratch space>" |
+"<built-in>" {
+  yylval.s = strdup(yytext);
+  return FILENAME;
+}
+
+line/:[0-9]+:[0-9]+ {
+  return LINE;
+}
+
+col/:[0-9]+ {
+  return COL;
+}
+
+field/" "Field {
+  return FIELD;
+}
+
 -?[0-9]+ {
-  yylval.i = atol(yytext);
+  yylval.i = atoi(yytext);
   return INTEGER;
 }
 
@@ -199,7 +195,10 @@ prev" "{POINTER} {
   return SQNAME;
 }
 
-<TYPE>{SPEC} {
+[ \t\n] { }
+. { fprintf(stderr, "mystery character '%c'\n", *yytext); }
+
+<TYPE>{SPEC}/[ \n] {
   yylval.s = strdup(yytext);
   return SPEC;
 }
@@ -214,13 +213,10 @@ prev" "{POINTER} {
   return STRING;
 }
 
-<TYPE>[ \t]
+<TYPE>[ \t] { }
 <TYPE>.|\n {
   unput(yytext[0]);
   BEGIN INITIAL;
 }
-
-[ \t\n] /* white space */
-. { fprintf(stderr, "mystery character '%c'\n", *yytext); }
 
 %%

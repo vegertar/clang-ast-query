@@ -1,20 +1,31 @@
 LEX= flex
 YACC= bison
-CFLAGS=
+CFLAGS= -MMD -Werror -std=gnu11 -g
 LDFLAGS= -lfl
 LEXFLAGS= 
 YACCFLAGS= -Werror
 
+SRCS= ast.c
+GENSRCS= parse.tab.c lex.yy.c
+
 build: test.out
 
-test: build
-	@for i in samples/*; do printf "\r==== $$i ===="; zcat $$i | ./test.out || exit 1; done
+OBJS= ${SRCS:.c=.o}
+-include ${OBJS:.o=.d}
+
+test: test-parse test-query
+
+test-parse: build
+	@for i in samples/*.gz; do printf "\r%-30s" $$i; zcat $$i | ./test.out || exit 1; done
 	@printf "\r"
 
-test.out: token.tab.c lex.yy.c test.c
-	${CC} -o $@ ${LDFLAGS} ${CFLAGS} $^
+test-query: build
+	@shellspec
 
-token.tab.c: token.y
+test.out: ${GENSRCS} ${OBJS} test.c
+	${CC} -o $@ ${CFLAGS} $^ ${LDFLAGS}
+
+parse.tab.c: parse.y
 	${YACC} -d $< ${YACCFLAGS} -o $@
 
 lex.yy.c: lex.l
@@ -23,4 +34,4 @@ lex.yy.c: lex.l
 clean:
 	rm -f *.out *.o *.yy.* *.tab.*
 
-.PHONY: build test clean
+.PHONY: build test test-parse test-query clean
