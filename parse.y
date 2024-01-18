@@ -262,7 +262,7 @@
 // Generate the parser description file (parse.output).
 %verbose
 
-// User information exchanged between main, yyparse and yylex.
+// User context, exchanged between main, yyparse and yylex.
 %param {const user_context *uctx}
 
 // Formatting semantic values in debug traces.
