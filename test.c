@@ -1,9 +1,27 @@
-#include "parse.tab.h"
-#include "lex.yy.h"
+#include "parse.h"
+#include "scan.h"
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
+#include <assert.h>
 
-char buffer[8192];
+int parse_file(FILE *fp) {
+  YYLTYPE lloc = {1, 1, 1, 1};
+  char line[8192];
+  int status = 0;
+  while (status == 0 && fgets(line, sizeof(line), fp)) {
+    user_context uctx = {0, line};
+    size_t n = strlen(line);
+    assert(n + 1 < sizeof(line));
+    line[n] = line[n+1] = 0;
+    YY_BUFFER_STATE buffer = yy_scan_buffer(line, n + 2);
+    status = parse(&lloc, &uctx);
+    yy_delete_buffer(buffer);
+  }
+  destroy();
+  yylex_destroy();
+  return status;
+}
 
 int main(int argc, const char *argv[]) {
   FILE *fp = stdin;
@@ -15,24 +33,14 @@ int main(int argc, const char *argv[]) {
     }
   }
 
-  const char *s = fgets(buffer, sizeof(buffer), fp);
-  if (!s) {
-    fprintf(stderr, "missing root\n");
-    return 1;
+  const char *yydebug_env = getenv("YYDEBUG");
+  if (yydebug_env && atoi(yydebug_env)) {
+    yydebug = 1;
   }
 
-  const size_t n = strlen(s);
-  int status = 0;
-  size_t lineno = 1;
-  while (status == 0 && (s = fgets(buffer + n, sizeof(buffer) - n, fp))) {
-    ++lineno;
-    YY_BUFFER_STATE buffer_state = yy_scan_string(buffer);
-    status = yyparse();
-    yy_delete_buffer(buffer_state);
-  }
-
-  if (status) {
-    fprintf(stderr, "\n%8zu  %s\n", lineno, s);
+  int status = parse_file(fp);
+  if (fp != stdin) {
+    fclose(fp);
   }
   return status;
 }

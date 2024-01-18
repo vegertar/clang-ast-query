@@ -2,7 +2,7 @@
 
 !/.gitignore
 !/Makefile
-!/lex.l
+!/scan.l
 !/parse.y
 !/test.c
 !/.clang-format

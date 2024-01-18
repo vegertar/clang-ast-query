@@ -1,12 +1,12 @@
 LEX= flex
 YACC= bison
-CFLAGS= -MMD -Werror -std=gnu11 -g
+CFLAGS= -MMD -Werror -std=gnu11 -g -O0
 LDFLAGS= -lfl
 LEXFLAGS= 
 YACCFLAGS= -Werror
 
-SRCS= ast.c
-GENSRCS= parse.tab.c lex.yy.c
+SRCS=
+GENSRCS= parse.c scan.c
 
 build: test.out
 
@@ -25,13 +25,13 @@ test-query: build
 test.out: ${GENSRCS} ${OBJS} test.c
 	${CC} -o $@ ${CFLAGS} $^ ${LDFLAGS}
 
-parse.tab.c: parse.y
+parse.c: parse.y
 	${YACC} -d $< ${YACCFLAGS} -o $@
 
-lex.yy.c: lex.l
-	${LEX} -o $@ --header-file=$(basename $@).h ${LEXFLAGS} $<
+scan.c: scan.l
+	${LEX} --header-file=$(basename $<).h -o $@ ${LEXFLAGS} $<
 
 clean:
-	rm -f *.out *.o *.yy.* *.tab.*
+	rm -f *.out *.o
 
 .PHONY: build test test-parse test-query clean
