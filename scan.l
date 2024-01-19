@@ -104,7 +104,7 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
 }
 
 {INDENT}/[^ \n] {
-  yylval->TOK_INDENT = yytext;
+  yylval->TOK_INDENT = yyleng;
   return TOK_INDENT;
 }
 

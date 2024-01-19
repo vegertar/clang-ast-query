@@ -11,6 +11,7 @@
 // Emitted in the header file, before the definition of YYSTYPE.
 %code requires {
   typedef char * string;
+  typedef int integer;
 
 #define DEF_ARRAY(name, type) \
   struct name {  \
@@ -193,41 +194,33 @@
                char const *format, ...)
     __attribute__ ((__format__ (__printf__, 3, 4)));
 
+  extern struct ast ast;
   int parse(YYLTYPE *lloc, const user_context *uctx);
   void destroy();
+  void dump();
 }
 
 // Emitted in the implementation file.
 %code {
   #include <assert.h>
 
-  static char *get_pointer(char *s) {
-    if (!s) {
-      return s;
-    }
-    char *delim = strchr(s, ' ');
-    assert(delim);
-    *delim = 0;
-    return delim + 1;
-  }
-
+  struct ast ast;
   static struct array loc_filenames;
   static const char *last_loc_filename;
   static unsigned last_loc_line;
-
-  static struct ast ast;
+  static char *get_pointer(char *s);
 
   #define DEF_ARRAY_METHOD(name, method, ...) \
     struct name * name##_##method(struct name *p, ##__VA_ARGS__)
 
-  DEF_ARRAY_METHOD(array, push, void *);
-  DEF_ARRAY_METHOD(array, clear, _Bool);
+  static DEF_ARRAY_METHOD(array, push, void *);
+  static DEF_ARRAY_METHOD(array, clear, _Bool);
 
-  DEF_ARRAY_METHOD(tags, push, struct tag);
-  DEF_ARRAY_METHOD(tags, clear, _Bool);
+  static DEF_ARRAY_METHOD(tags, push, struct tag);
+  static DEF_ARRAY_METHOD(tags, clear, _Bool);
 
-  DEF_ARRAY_METHOD(ast, push, struct node);
-  DEF_ARRAY_METHOD(ast, clear, _Bool);
+  static DEF_ARRAY_METHOD(ast, push, struct node);
+  static DEF_ARRAY_METHOD(ast, clear, _Bool);
 }
 
 // Include the header in the implementation rather than duplicating it.
@@ -276,8 +269,9 @@
     COL
     ENUM
     FIELD
-  <string>
+  <integer>
     INDENT
+  <string>
     HEAD
     PARENT
     PREV
@@ -353,7 +347,7 @@ start: node EOL
   }
  | INDENT node EOL
   {
-    $2.indent = strlen($1);
+    $2.indent = $1;
     ast_push(&ast, $2);
   }
 
@@ -491,7 +485,7 @@ decl: { $$ = (struct decl){}; }
     };
   }
 
-srange: sloc { $$ = (struct srange){$1}; }
+srange: sloc { $$ = (struct srange){$1, $1}; }
  | sloc ',' sloc { $$ = (struct srange){$1, $3}; }
 
 sloc: INVALID_SLOC { $$ = (struct sloc){}; }
@@ -712,55 +706,65 @@ void destroy() {
   array_clear(&loc_filenames, 1);
 }
 
-void sloc_destroy(struct sloc *sloc) {
+static char *get_pointer(char *s) {
+  if (!s) {
+    return s;
+  }
+  char *delim = strchr(s, ' ');
+  assert(delim);
+  *delim = 0;
+  return delim + 1;
+}
+
+static void sloc_destroy(struct sloc *sloc) {
   // the sloc->file is owned by loc_filenames
 }
 
-void srange_destroy(struct srange *srange) {
+static void srange_destroy(struct srange *srange) {
   sloc_destroy(&srange->start);
   sloc_destroy(&srange->end);
 }
 
-void type_destroy(struct type *type) {
+static void type_destroy(struct type *type) {
   free((void *)type->qualified);
   free((void *)type->desugared);
 }
 
-void tag_destroy(struct tag *tag) {
+static void tag_destroy(struct tag *tag) {
   free((void *)tag->name);
   type_destroy(&tag->type);
 }
 
-void op_destroy(struct op *op) {
+static void op_destroy(struct op *op) {
   free((void *)op->operator);
   tags_clear(&op->tags, 1);
 }
 
-void mem_destroy(struct mem *mem) {
+static void mem_destroy(struct mem *mem) {
   // the pointer was extracted from name hence freeing name is enough
   switch (mem->kind) {
-    case MEM_KIND_NIL:
-      break;
-    case MEM_KIND_ARROW:
-      free((void *)(mem->name - 2));
-      break;
-    case MEM_KIND_DOT:
-      free((void *)(mem->name - 1));
-      break;
-    default:
-      fprintf(stderr, "Invalid mem kind: %d\n", mem->kind);
-      abort();
+  case MEM_KIND_NIL:
+    break;
+  case MEM_KIND_ARROW:
+    free((void *)(mem->name - 2));
+    break;
+  case MEM_KIND_DOT:
+    free((void *)(mem->name - 1));
+    break;
+  default:
+    fprintf(stderr, "Invalid mem kind: %d\n", mem->kind);
+    abort();
   }
 }
 
-void ref_destroy(struct ref *ref) {
+static void ref_destroy(struct ref *ref) {
   // the pointer was extracted from name hence freeing name is enough
   free((void *)ref->name);
   free((void *)ref->sqname);
   type_destroy(&ref->type);
 }
 
-void def_destroy(struct def *def) {
+static void def_destroy(struct def *def) {
   type_destroy(&def->type);
   array_clear(&def->specs, 1);
   free((void *)def->value);
@@ -770,87 +774,87 @@ void def_destroy(struct def *def) {
   free((void *)def->cast);
 }
 
-void comment_destroy(struct comment *comment) {
+static void comment_destroy(struct comment *comment) {
   free((void *)comment->tag);
   free((void *)comment->text);
 }
 
-void decl_destroy(struct decl *decl) {
+static void decl_destroy(struct decl *decl) {
   switch (decl->kind) {
-    case DECL_KIND_NIL:
-      break;
-    case DECL_KIND_V1:
-      free((void *)decl->variants.v1.class);
-      break;
-    case DECL_KIND_V2:
-      free((void *)decl->variants.v2.name);
-      break;
-    case DECL_KIND_V3:
-      free((void *)decl->variants.v3.class);
-      free((void *)decl->variants.v3.name);
-      break;
-    case DECL_KIND_V4:
-      free((void *)decl->variants.v4.sqname);
-      free((void *)decl->variants.v4.pointer);
-      break;
-    case DECL_KIND_V5:
-      free((void *)decl->variants.v5.sqname);
-      free((void *)decl->variants.v5.trait);
-      break;
-    case DECL_KIND_V6:
-      free((void *)decl->variants.v6.sqname);
-      free((void *)decl->variants.v6.trait);
-      def_destroy(&decl->variants.v6.def);
-      break;
-    case DECL_KIND_V7:
-      free((void *)decl->variants.v7.sqname);
-      def_destroy(&decl->variants.v7.def);
-      break;
-    case DECL_KIND_V8:
-      def_destroy(&decl->variants.v8.def);
-      break;
-    case DECL_KIND_V9:
-      free((void *)decl->variants.v9.name);
-      def_destroy(&decl->variants.v9.def);
-      break;
-    case DECL_KIND_V10:
-      array_clear(&decl->variants.v10.seq, 1);
-      break;
-    case DECL_KIND_V11:
-      free((void *)decl->variants.v11.name);
-      array_clear(&decl->variants.v11.seq, 1);
-      break;
-    case DECL_KIND_V12:
-      comment_destroy(&decl->variants.v12.comment);
-      break;
-    default:
-      fprintf(stderr, "Invalid decl kind: %d\n", decl->kind);
-      abort();
+  case DECL_KIND_NIL:
+    break;
+  case DECL_KIND_V1:
+    free((void *)decl->variants.v1.class);
+    break;
+  case DECL_KIND_V2:
+    free((void *)decl->variants.v2.name);
+    break;
+  case DECL_KIND_V3:
+    free((void *)decl->variants.v3.class);
+    free((void *)decl->variants.v3.name);
+    break;
+  case DECL_KIND_V4:
+    free((void *)decl->variants.v4.sqname);
+    free((void *)decl->variants.v4.pointer);
+    break;
+  case DECL_KIND_V5:
+    free((void *)decl->variants.v5.sqname);
+    free((void *)decl->variants.v5.trait);
+    break;
+  case DECL_KIND_V6:
+    free((void *)decl->variants.v6.sqname);
+    free((void *)decl->variants.v6.trait);
+    def_destroy(&decl->variants.v6.def);
+    break;
+  case DECL_KIND_V7:
+    free((void *)decl->variants.v7.sqname);
+    def_destroy(&decl->variants.v7.def);
+    break;
+  case DECL_KIND_V8:
+    def_destroy(&decl->variants.v8.def);
+    break;
+  case DECL_KIND_V9:
+    free((void *)decl->variants.v9.name);
+    def_destroy(&decl->variants.v9.def);
+    break;
+  case DECL_KIND_V10:
+    array_clear(&decl->variants.v10.seq, 1);
+    break;
+  case DECL_KIND_V11:
+    free((void *)decl->variants.v11.name);
+    array_clear(&decl->variants.v11.seq, 1);
+    break;
+  case DECL_KIND_V12:
+    comment_destroy(&decl->variants.v12.comment);
+    break;
+  default:
+    fprintf(stderr, "Invalid decl kind: %d\n", decl->kind);
+    abort();
   }
 }
 
-void node_destroy(struct node *node) {
+static void node_destroy(struct node *node) {
   switch (node->kind) {
-    case NODE_KIND_HEAD:
-      // the pointer was extracted from name hence freeing name is enough
-      free((void *)node->name);
-      free((void *)node->parent);
-      free((void *)node->prev);
-      srange_destroy(&node->range);
-      sloc_destroy(&node->loc);
-      array_clear(&node->attrs, 1);
-      array_clear(&node->labels, 1);
-      decl_destroy(&node->decl);
-      array_clear(&node->opts, 1);
-      break;
-    case NODE_KIND_ENUM:
-      free((void *)node->name);
-      break;
-    case NODE_KIND_NULL:
-      break;
-    default:
-      fprintf(stderr, "Invalid node kind: %d\n", node->kind);
-      abort();
+  case NODE_KIND_HEAD:
+    // the pointer was extracted from name hence freeing name is enough
+    free((void *)node->name);
+    free((void *)node->parent);
+    free((void *)node->prev);
+    srange_destroy(&node->range);
+    sloc_destroy(&node->loc);
+    array_clear(&node->attrs, 1);
+    array_clear(&node->labels, 1);
+    decl_destroy(&node->decl);
+    array_clear(&node->opts, 1);
+    break;
+  case NODE_KIND_ENUM:
+    free((void *)node->name);
+    break;
+  case NODE_KIND_NULL:
+    break;
+  default:
+    fprintf(stderr, "Invalid node kind: %d\n", node->kind);
+    abort();
   }
 }
 
@@ -881,15 +885,15 @@ void node_destroy(struct node *node) {
     return p; \
   }
 
-void void_destroy(void **p) {
+static void void_destroy(void **p) {
   free(*p);
 }
 
-IMPL_ARRAY_PUSH(array, void *)
-IMPL_ARRAY_CLEAR(array, void_destroy)
+static IMPL_ARRAY_PUSH(array, void *)
+static IMPL_ARRAY_CLEAR(array, void_destroy)
 
-IMPL_ARRAY_PUSH(tags, struct tag)
-IMPL_ARRAY_CLEAR(tags, tag_destroy)
+static IMPL_ARRAY_PUSH(tags, struct tag)
+static IMPL_ARRAY_CLEAR(tags, tag_destroy)
 
-IMPL_ARRAY_PUSH(ast, struct node)
-IMPL_ARRAY_CLEAR(ast, node_destroy)
+static IMPL_ARRAY_PUSH(ast, struct node)
+static IMPL_ARRAY_CLEAR(ast, node_destroy)

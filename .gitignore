@@ -5,6 +5,7 @@
 !/scan.l
 !/parse.y
 !/test.c
+!/sql.c
 !/.clang-format
 !/samples
 !/spec
