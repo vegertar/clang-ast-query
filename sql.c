@@ -1,7 +1,9 @@
 #include "parse.h"
 #include <sqlite3.h>
-#include <stdio.h>
 #include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <limits.h>
 
 #ifndef MAX_AST_LEVEL
 #define MAX_AST_LEVEL 255
@@ -10,6 +12,14 @@
 #ifndef MAX_STMT_SIZE
 #define MAX_STMT_SIZE 16
 #endif
+
+enum spec {
+  SPEC_EXTERN = 1U,
+  SPEC_STATIC = 1U << 1,
+  SPEC_INLINE = 1U << 2,
+  SPEC_CONST = 1U << 3,
+  SPEC_VOLATILE = 1U << 4,
+};
 
 static sqlite3 *db;
 static sqlite3_stmt *stmts[MAX_STMT_SIZE];
@@ -22,7 +32,7 @@ static void exec_sql(const char *s) {
   }
 
   code = sqlite3_exec(db, s, NULL, NULL, &err);
-  if (code && err) {
+  if (err) {
     fprintf(stderr, "sqlite3_exec(%s): %s\n", s, err);
     sqlite3_free(err);
   }
@@ -43,8 +53,10 @@ static void exec_sql(const char *s) {
     if (stmt)
 
 #define end_if_prepared_stmt()                                                 \
-  sqlite3_step(stmt);                                                          \
-  sqlite3_reset(stmt);                                                         \
+  if (stmt) {                                                                  \
+    sqlite3_step(stmt);                                                        \
+    code = sqlite3_reset(stmt);                                                \
+  }                                                                            \
   }                                                                            \
   while (0)
 
@@ -70,16 +82,38 @@ static void dump_node(const struct node *node) {
   }
 }
 
+static unsigned collect_specs(const struct def *def) {
+  unsigned specs = 0;
+  for (unsigned i = 0; i < def->specs.i; ++i) {
+    const char *spec = (const char *)(def->specs.data[i]);
+    if (strcmp(spec, "extern") == 0) {
+      specs |= SPEC_EXTERN;
+    } else if (strcmp(spec, "static") == 0) {
+      specs |= SPEC_STATIC;
+    } else if (strcmp(spec, "inline") == 0) {
+      specs |= SPEC_INLINE;
+    } else if (strcmp(spec, "const") == 0) {
+      specs |= SPEC_CONST;
+    } else if (strcmp(spec, "volatile") == 0) {
+      specs |= SPEC_VOLATILE;
+    }
+  }
+  assert(specs <= INT_MAX);
+  return specs;
+}
+
 static void dump_decl(const struct decl *decl, const char *pointer) {
   switch (decl->kind) {
   case DECL_KIND_V9:
     if_prepared_stmt("UPDATE ast"
-                     " SET name = ?, type = ?"
+                     " SET name = ?, type = ?, specs = ?"
                      " WHERE id = ?") {
+      const struct def *def = &decl->variants.v9.def;
+
       sqlite3_bind_text(stmt, 1, decl->variants.v9.name, -1, SQLITE_STATIC);
-      sqlite3_bind_text(stmt, 2, decl->variants.v9.def.type.qualified, -1,
-                        SQLITE_STATIC);
-      sqlite3_bind_text(stmt, 3, pointer, -1, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 2, def->type.qualified, -1, SQLITE_STATIC);
+      sqlite3_bind_int(stmt, 3, collect_specs(def));
+      sqlite3_bind_text(stmt, 4, pointer, -1, SQLITE_STATIC);
     }
     end_if_prepared_stmt();
 
@@ -97,7 +131,8 @@ static void dump_ast(const struct ast *ast, int max_level) {
            " line INTEGER,"
            " col INTEGER,"
            " name TEXT,"
-           " type TEXT)");
+           " type TEXT,"
+           " specs INTEGER)");
 
   for (unsigned i = 0; i < ast->i; ++i) {
     const struct node *node = &ast->data[i];
@@ -143,7 +178,7 @@ static void dump_hierarchy(const struct ast *ast, int max_level) {
   }
 }
 
-void dump(int max_level, const char *db_file) {
+int dump(int max_level, const char *db_file) {
   sqlite3_open(db_file, &db);
 
   exec_sql("PRAGMA synchronous = OFF");
@@ -160,4 +195,5 @@ void dump(int max_level, const char *db_file) {
   }
 
   sqlite3_close(db);
+  return code;
 }

@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     fclose(fp);
   }
   if (!status && db_file) {
-    dump(max_level, db_file);
+    status = dump(max_level, db_file);
   }
 
   destroy();
