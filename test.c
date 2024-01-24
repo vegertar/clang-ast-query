@@ -25,18 +25,18 @@ int parse_file(FILE *fp) {
 
 int main(int argc, char **argv) {
   int debug_flag = 0;
-  int dump_flag = 0;
+  const char *db_file = NULL;
   int max_level = 0;
   int c;
 
   opterr = 0;
-  while ((c = getopt(argc, argv, "dxhl:")) != -1)
+  while ((c = getopt(argc, argv, "dhx:l:")) != -1)
     switch (c) {
     case 'd':
       debug_flag = 1;
       break;
     case 'x':
-      dump_flag = 1;
+      db_file = optarg;
       break;
     case 'l':
       max_level = atoi(optarg);
@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "Usage: %s [OPTION]... [FILE]\n", argv[0]);
       fprintf(stderr, "The utility to test clang-ast-query from FILE (the stdin by default)\n\n");
       fprintf(stderr, "\t-d\t\tenable yydebug\n");
-      fprintf(stderr, "\t-x\t\texport SQL\n");
+      fprintf(stderr, "\t-x DB\t\texport SQLite3 database\n");
       fprintf(stderr, "\t-l LEVEL\tthe maximum level to export\n");
       fprintf(stderr, "\t-h\t\tdisplay this help and exit\n");
       return 0;
@@ -78,8 +78,8 @@ int main(int argc, char **argv) {
   if (fp != stdin) {
     fclose(fp);
   }
-  if (!status && dump_flag) {
-    dump(max_level);
+  if (!status && db_file) {
+    dump(max_level, db_file);
   }
 
   destroy();

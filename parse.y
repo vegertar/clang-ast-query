@@ -197,7 +197,7 @@
   extern struct ast ast;
   int parse(YYLTYPE *lloc, const user_context *uctx);
   void destroy();
-  void dump(int max_level);
+  void dump(int max_level, const char *db_file);
 }
 
 // Emitted in the implementation file.

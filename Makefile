@@ -1,7 +1,7 @@
 LEX= flex
 YACC= bison
 CFLAGS= -MMD -Werror -std=gnu11
-LDFLAGS= -lfl
+LDFLAGS= -lfl -lsqlite3
 LEXFLAGS= 
 YACCFLAGS= -Werror
 
