@@ -1,25 +1,52 @@
 create() {
   db=$(mktemp /tmp/clang-ast-query-db.XXXXXX)
-  ./test.out -x $1 | sqlite3 $db
-}
-
-query() {
-  echo SELECT 'decl$name' FROM ast \
-    WHERE 'loc$line =' $1 AND 'loc$col <=' $2 \
-    AND 'loc$col + length(decl$name) >' $2
+  ./test.out -x $1 -l 2 | sqlite3 $db
 }
 
 Describe 'Query Global Declerations'
   setup() { :; }
   cleanup() { rm $db; }
-  BeforeRun 'setup'
-  AfterRun 'cleanup'
+  BeforeEach 'setup'
+  AfterEach 'cleanup'
 
-  Describe 'main'
-    It 'query the main decleration'
+  Describe 'main()'
+    It 'query the function name'
+      query_name() {
+        echo SELECT 'name' FROM ast \
+          WHERE 'line =' $1 AND 'col <=' $2 \
+          AND 'col + length(name) >' $2
+      }
+
+      query() {
+        sqlite3 $db "`query_name 1 7`"
+      }
+
       create samples/main.ast
-      When call sqlite3 $db "`query 1 7`"
+      When call query
       The output should equal main
+    End
+
+    It 'query the parameter names'
+      query_id() {
+        echo SELECT 'id' FROM ast \
+          WHERE 'line =' $1 AND 'col <=' $2 \
+          AND 'col + length(name) >' $2
+      }
+
+      query_params() {
+        echo SELECT 'name' FROM ast WHERE id in '(' \
+          SELECT 'id' FROM hierarchy WHERE 'parent' = \'$1\' ')'
+      }
+
+      query() {
+        id=$(sqlite3 $db "`query_id 1 7`")
+        sqlite3 $db "`query_params ${id}`"
+      }
+
+      create samples/main.ast
+      When call query
+      The line 1 of output should eq 'argc'
+      The line 2 of output should eq 'argv'
     End
   End
 End

@@ -26,10 +26,11 @@ int parse_file(FILE *fp) {
 int main(int argc, char **argv) {
   int debug_flag = 0;
   int dump_flag = 0;
+  int max_level = 0;
   int c;
 
   opterr = 0;
-  while ((c = getopt(argc, argv, "dxh")) != -1)
+  while ((c = getopt(argc, argv, "dxhl:")) != -1)
     switch (c) {
     case 'd':
       debug_flag = 1;
@@ -37,15 +38,21 @@ int main(int argc, char **argv) {
     case 'x':
       dump_flag = 1;
       break;
+    case 'l':
+      max_level = atoi(optarg);
+      break;
     case 'h':
       fprintf(stderr, "Usage: %s [OPTION]... [FILE]\n", argv[0]);
       fprintf(stderr, "The utility to test clang-ast-query from FILE (the stdin by default)\n\n");
-      fprintf(stderr, "\t-d\tenable yydebug\n");
-      fprintf(stderr, "\t-x\texport SQL\n");
-      fprintf(stderr, "\t-h\tdisplay this help and exit\n");
+      fprintf(stderr, "\t-d\t\tenable yydebug\n");
+      fprintf(stderr, "\t-x\t\texport SQL\n");
+      fprintf(stderr, "\t-l LEVEL\tthe maximum level to export\n");
+      fprintf(stderr, "\t-h\t\tdisplay this help and exit\n");
       return 0;
     case '?':
-      if (isprint(optopt))
+      if (optopt == 'l') {
+        fprintf(stderr, "Option -%c requires an argument.\n", optopt);
+      } else if (isprint(optopt))
         fprintf(stderr, "Unknown option `-%c'.\n", optopt);
       else
         fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
@@ -72,7 +79,7 @@ int main(int argc, char **argv) {
     fclose(fp);
   }
   if (!status && dump_flag) {
-    dump();
+    dump(max_level);
   }
 
   destroy();

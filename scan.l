@@ -67,7 +67,7 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
 }
 
 "<<<NULL>>>" {
-  return TOK_NULLIFY;
+  return TOK_NULL;
 }
 
 "<invalid sloc>" {
@@ -104,8 +104,8 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
 }
 
 {INDENT}/[^ \n] {
-  yylval->TOK_INDENT = yyleng;
-  return TOK_INDENT;
+  yylval->TOK_LEVEL = yyleng / 2;
+  return TOK_LEVEL;
 }
 
 [A-Z][a-zA-Z]+" "{POINTER}/[ \n] {

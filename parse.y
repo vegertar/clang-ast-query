@@ -158,7 +158,7 @@
   };
 
   struct node {
-    int indent;
+    int level;
     enum node_kind kind;
     const char *name;
     const char *pointer;
@@ -197,7 +197,7 @@
   extern struct ast ast;
   int parse(YYLTYPE *lloc, const user_context *uctx);
   void destroy();
-  void dump();
+  void dump(int max_level);
 }
 
 // Emitted in the implementation file.
@@ -263,14 +263,14 @@
 
 %token
     EOL
-    NULLIFY
+    NULL
     INVALID_SLOC
     LINE
     COL
     ENUM
     FIELD
   <integer>
-    INDENT
+    LEVEL
   <string>
     HEAD
     PARENT
@@ -345,9 +345,9 @@ start: node EOL
     }
     ast_push(&ast, $1);
   }
- | INDENT node EOL
+ | LEVEL node EOL
   {
-    $2.indent = $1;
+    $2.level = $1;
     ast_push(&ast, $2);
   }
 
@@ -374,7 +374,7 @@ node: HEAD parent prev range loc attrs labels decl opts
       .name = strdup($2),
     };
   }
- | NULLIFY
+ | NULL
   {
     $$ = (struct node){
       .kind = NODE_KIND_NULL,
