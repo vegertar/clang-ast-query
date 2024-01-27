@@ -29,7 +29,7 @@
   };
 
   struct srange {
-    struct sloc start;
+    struct sloc begin;
     struct sloc end;
   };
 
@@ -195,9 +195,17 @@
     __attribute__ ((__format__ (__printf__, 3, 4)));
 
   extern struct ast ast;
+  extern struct array filenames;
+
   int parse(YYLTYPE *lloc, const user_context *uctx);
   void destroy();
   int dump(int max_level, const char *db_file);
+  char *search_filename(const char *filename, unsigned *i);
+
+  #define DEF_ARRAY_METHOD(name, method, ...) \
+    struct name * name##_##method(struct name *p, ##__VA_ARGS__)
+
+  DEF_ARRAY_METHOD(array, push, void *);
 }
 
 // Emitted in the implementation file.
@@ -205,15 +213,12 @@
   #include <assert.h>
 
   struct ast ast;
-  static struct array loc_filenames;
-  static const char *last_loc_filename;
+  struct array filenames;
+  static char *last_loc_file;
   static unsigned last_loc_line;
+
   static char *get_pointer(char *s);
 
-  #define DEF_ARRAY_METHOD(name, method, ...) \
-    struct name * name##_##method(struct name *p, ##__VA_ARGS__)
-
-  static DEF_ARRAY_METHOD(array, push, void *);
   static DEF_ARRAY_METHOD(array, clear, _Bool);
 
   static DEF_ARRAY_METHOD(tags, push, struct tag);
@@ -259,7 +264,18 @@
 %param {const user_context *uctx}
 
 // Formatting semantic values in debug traces.
+%printer { fprintf (yyo, "%s", "\\n"); } EOL;
+%printer { fprintf (yyo, "%s", "<<<NULL>>>"); } NULL;
+%printer { fprintf (yyo, "%s", "<invalid sloc>"); } INVALID_SLOC;
+%printer { fprintf (yyo, "%s", "line"); } LINE;
+%printer { fprintf (yyo, "%s", "col"); } COL;
+%printer { fprintf (yyo, "%s", "value: Int"); } ENUM;
+%printer { fprintf (yyo, "%s", "field"); } FIELD;
+%printer { fprintf (yyo, "node<%d>", $$.kind); } node;
+%printer { fprintf (yyo, "decl<%d>", $$.kind); } decl;
+%printer { fprintf (yyo, "%s %s", $$.name, $$.pointer); } ref;
 %printer { fprintf (yyo, "%s", $$); } <string>;
+%printer { fprintf (yyo, "%d", $$); } <integer>;
 
 %token
     EOL
@@ -341,7 +357,7 @@ start: node EOL
   {
     if (ast.i) {
       ast_clear(&ast, 0);
-      array_clear(&loc_filenames, 0);
+      array_clear(&filenames, 0);
     }
     ast_push(&ast, $1);
   }
@@ -495,21 +511,20 @@ sloc: INVALID_SLOC { $$ = (struct sloc){}; }
 
 file_sloc: FILENAME ':' INTEGER ':' INTEGER
   {
-    last_loc_filename = $1;
+    last_loc_file = $1;
     last_loc_line = strtoul($3, NULL, 10);
-    array_push(&loc_filenames, $1);
-    $$ = (struct sloc){last_loc_filename, last_loc_line, strtoul($5, NULL, 10)};
+    $$ = (struct sloc){last_loc_file, last_loc_line, strtoul($5, NULL, 10)};
   }
 
 line_sloc: LINE ':' INTEGER ':' INTEGER
   {
     last_loc_line = strtoul($3, NULL, 10);
-    $$ = (struct sloc){last_loc_filename, last_loc_line, strtoul($5, NULL, 10)};
+    $$ = (struct sloc){last_loc_file, last_loc_line, strtoul($5, NULL, 10)};
   }
 
 col_sloc: COL ':' INTEGER
   {
-    $$ = (struct sloc){last_loc_filename, last_loc_line, strtoul($3, NULL, 10)};
+    $$ = (struct sloc){last_loc_file, last_loc_line, strtoul($3, NULL, 10)};
   }
 
 def: type specs value op mem field ref cast
@@ -701,9 +716,39 @@ int parse(YYLTYPE *lloc, const user_context *uctx) {
   return status;
 }
 
+char * search_filename(const char *filename, unsigned *i) {
+  if (!filename) {
+    return NULL;
+  }
+
+  unsigned begin = 0;
+  unsigned end = filenames.i;
+
+  while (begin < end) {
+    const unsigned mid = begin + (end - begin) / 2;
+    const int d = strcmp(filename, (char *)filenames.data[mid]);
+    if (d == 0) {
+      if (i) {
+        *i = mid;
+      }
+      return (char *)filenames.data[mid];
+    }
+    if (d < 0) {
+      end = mid;
+    } else {
+      begin = mid + 1;
+    }
+  }
+
+  if (i) {
+    *i = begin;
+  }
+  return NULL;
+}
+
 void destroy() {
   ast_clear(&ast, 1);
-  array_clear(&loc_filenames, 1);
+  array_clear(&filenames, 1);
 }
 
 static char *get_pointer(char *s) {
@@ -721,7 +766,7 @@ static void sloc_destroy(struct sloc *sloc) {
 }
 
 static void srange_destroy(struct srange *srange) {
-  sloc_destroy(&srange->start);
+  sloc_destroy(&srange->begin);
   sloc_destroy(&srange->end);
 }
 
@@ -889,7 +934,7 @@ static void void_destroy(void **p) {
   free(*p);
 }
 
-static IMPL_ARRAY_PUSH(array, void *)
+IMPL_ARRAY_PUSH(array, void *)
 static IMPL_ARRAY_CLEAR(array, void_destroy)
 
 static IMPL_ARRAY_PUSH(tags, struct tag)

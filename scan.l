@@ -22,6 +22,21 @@ static inline char * qname() {
   return strndup(yytext + 1, yyleng - 2);
 }
 
+static char * push_filename(char *filename) {
+  unsigned i;
+  char *found = search_filename(filename, &i);
+  if (found) {
+    return found;
+  }
+
+  array_push(&filenames, NULL);
+  memmove(&filenames.data[i + 1],
+          &filenames.data[i],
+          (filenames.i - i - 1) * sizeof(void *));
+  filenames.data[i] = strdup(filename);
+  return filenames.data[i];
+}
+
 %}
 
 INDENT ^[ \|`]+-
@@ -149,7 +164,7 @@ col/:[0-9]+ {
 [^ <:]+/:[0-9]+:[0-9]+ |
 "<scratch space>" |
 "<built-in>" {
-  yylval->TOK_FILENAME = strdup(yytext);
+  yylval->TOK_FILENAME = push_filename(yytext);
   return TOK_FILENAME;
 }
 
