@@ -53,10 +53,10 @@ static void exec_sql(const char *s) {
     if (stmt)
 
 #define end_if_prepared_stmt()                                                 \
-  if (stmt) {                                                                  \
-    sqlite3_step(stmt);                                                        \
-    code = sqlite3_reset(stmt);                                                \
-  }                                                                            \
+    if (stmt) {                                                                \
+      sqlite3_step(stmt);                                                      \
+      code = sqlite3_reset(stmt);                                              \
+    }                                                                          \
   }                                                                            \
   while (0)
 
@@ -71,7 +71,7 @@ static int file_number(const char *filename) {
 static void dump_node(const struct node *node) {
   switch (node->kind) {
   case NODE_KIND_HEAD:
-    if_prepared_stmt("INSERT OR IGNORE INTO ast "
+    if_prepared_stmt("INSERT INTO ast "
                      " (kind, id,"
                      " begin_file, begin_line, begin_col,"
                      " end_file, end_line, end_col,"
@@ -121,33 +121,44 @@ static unsigned mark_specs(const struct def *def) {
   return specs;
 }
 
-static void dump_decl(const struct decl *decl, const char *pointer) {
+static void dump_ref(const struct ref *ref, const char *kind, const char *id) {
+  if (!ref->pointer) {
+    return;
+  }
+
+  if_prepared_stmt("UPDATE ast SET ref = ?, name = ? WHERE kind = ? AND id = ?") {
+    sqlite3_bind_text(stmt, 1, ref->pointer, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, ref->sqname, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, kind, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 4, id, -1, SQLITE_STATIC);
+  }
+  end_if_prepared_stmt();
+}
+
+static void dump_def(const struct def *def, const char *kind, const char *id) {
+  if_prepared_stmt("UPDATE ast SET type = ?, specs = ? WHERE kind = ? AND id = ?") {
+    sqlite3_bind_text(stmt, 1, def->type.qualified, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, mark_specs(def));
+    sqlite3_bind_text(stmt, 3, kind, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 4, id, -1, SQLITE_STATIC);
+  }
+  end_if_prepared_stmt();
+  dump_ref(&def->ref, kind, id);
+}
+
+static void dump_decl(const struct decl *decl, const char *kind, const char *id) {
   switch (decl->kind) {
   case DECL_KIND_V8:
-    if_prepared_stmt("UPDATE ast"
-                     " SET ref = ?, name = ?"
-                     " WHERE id = ?") {
-      const struct def *def = &decl->variants.v8.def;
-      const struct ref *ref = &def->ref;
-
-      sqlite3_bind_text(stmt, 1, ref->pointer, -1, SQLITE_STATIC);
-      sqlite3_bind_text(stmt, 2, ref->sqname, -1, SQLITE_STATIC);
-      sqlite3_bind_text(stmt, 3, pointer, -1, SQLITE_STATIC);
-    }
-    end_if_prepared_stmt();
+    dump_def(&decl->variants.v8.def, kind, id);
     break;
   case DECL_KIND_V9:
-    if_prepared_stmt("UPDATE ast"
-                     " SET name = ?, type = ?, specs = ?"
-                     " WHERE id = ?") {
-      const struct def *def = &decl->variants.v9.def;
-
+    if_prepared_stmt("UPDATE ast SET name = ? WHERE kind = ? AND id = ?") {
       sqlite3_bind_text(stmt, 1, decl->variants.v9.name, -1, SQLITE_STATIC);
-      sqlite3_bind_text(stmt, 2, def->type.qualified, -1, SQLITE_STATIC);
-      sqlite3_bind_int(stmt, 3, mark_specs(def));
-      sqlite3_bind_text(stmt, 4, pointer, -1, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 2, kind, -1, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 3, id, -1, SQLITE_STATIC);
     }
     end_if_prepared_stmt();
+    dump_def(&decl->variants.v9.def, kind, id);
     break;
   default:
     break;
@@ -157,7 +168,7 @@ static void dump_decl(const struct decl *decl, const char *pointer) {
 static void dump_ast(const struct ast *ast, int max_level) {
   exec_sql("CREATE TABLE ast ("
            " kind TEXT,"
-           " id TEXT PRIMARY KEY,"
+           " id TEXT,"
            " begin_file INTEGER,"
            " begin_line INTEGER,"
            " begin_col INTEGER,"
@@ -170,13 +181,14 @@ static void dump_ast(const struct ast *ast, int max_level) {
            " name TEXT,"
            " type TEXT,"
            " specs INTEGER,"
-           " ref TEXT)");
+           " ref TEXT,"
+           " CONSTRAINT PK_ast PRIMARY KEY (kind, id))");
 
   for (unsigned i = 0; i < ast->i; ++i) {
     const struct node *node = &ast->data[i];
     if (max_level == 0 || node->level <= max_level) {
       dump_node(node);
-      dump_decl(&node->decl, node->pointer);
+      dump_decl(&node->decl, node->name, node->pointer);
     }
   }
 }
@@ -197,7 +209,7 @@ static void dump_hierarchy(const struct ast *ast, int max_level) {
     case NODE_KIND_HEAD:
       assert(node->level < MAX_AST_LEVEL);
 
-      if_prepared_stmt("INSERT OR IGNORE INTO hierarchy (id, parent)"
+      if_prepared_stmt("INSERT INTO hierarchy (id, parent)"
                        " VALUES (?, ?)") {
         sqlite3_bind_text(stmt, 1, node->pointer, -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, parents[node->level], -1, SQLITE_STATIC);
@@ -222,7 +234,7 @@ static void dump_source() {
            " number INTEGER)");
 
   for (unsigned i = 0; i < filenames.i; ++i) {
-    if_prepared_stmt("INSERT OR IGNORE INTO source (filename, number)"
+    if_prepared_stmt("INSERT INTO source (filename, number)"
                      " VALUES (?, ?)") {
       sqlite3_bind_text(stmt, 1, (char *)filenames.data[i], -1, SQLITE_STATIC);
       sqlite3_bind_int(stmt, 2, i);

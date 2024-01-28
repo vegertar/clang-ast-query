@@ -211,6 +211,7 @@
 // Emitted in the implementation file.
 %code {
   #include <assert.h>
+  #include <stdio.h>
 
   struct ast ast;
   struct array filenames;
@@ -226,6 +227,17 @@
 
   static DEF_ARRAY_METHOD(ast, push, struct node);
   static DEF_ARRAY_METHOD(ast, clear, _Bool);
+
+  static void print_type(FILE *fp, const struct type *type);
+  static void print_array(FILE *fp, const struct array *array);
+  static void print_sloc(FILE *fp, const struct sloc *sloc);
+  static void print_srange(FILE *fp, const struct srange *srange);
+  static void print_ref(FILE *fp, const struct ref *ref);
+  static void print_op(FILE *fp, const struct op *op);
+  static void print_mem(FILE *fp, const struct mem *mem);
+  static void print_def(FILE *fp, const struct def *def);
+  static void print_decl(FILE *fp, const struct decl *decl);
+  static void print_node(FILE *fp, const struct node *node);
 }
 
 // Include the header in the implementation rather than duplicating it.
@@ -264,18 +276,22 @@
 %param {const user_context *uctx}
 
 // Formatting semantic values in debug traces.
-%printer { fprintf (yyo, "%s", "\\n"); } EOL;
-%printer { fprintf (yyo, "%s", "<<<NULL>>>"); } NULL;
-%printer { fprintf (yyo, "%s", "<invalid sloc>"); } INVALID_SLOC;
-%printer { fprintf (yyo, "%s", "line"); } LINE;
-%printer { fprintf (yyo, "%s", "col"); } COL;
-%printer { fprintf (yyo, "%s", "value: Int"); } ENUM;
-%printer { fprintf (yyo, "%s", "field"); } FIELD;
-%printer { fprintf (yyo, "node<%d>", $$.kind); } node;
-%printer { fprintf (yyo, "decl<%d>", $$.kind); } decl;
-%printer { fprintf (yyo, "%s %s", $$.name, $$.pointer); } ref;
-%printer { fprintf (yyo, "%s", $$); } <string>;
-%printer { fprintf (yyo, "%d", $$); } <integer>;
+%printer { fprintf(yyo, "%s", "\\n"); } EOL;
+%printer { fprintf(yyo, "%s", "<<<NULL>>>"); } NULL;
+%printer { fprintf(yyo, "%s", "<invalid sloc>"); } INVALID_SLOC;
+%printer { fprintf(yyo, "%s", "line"); } LINE;
+%printer { fprintf(yyo, "%s", "col"); } COL;
+%printer { fprintf(yyo, "%s", "value: Int"); } ENUM;
+%printer { fprintf(yyo, "%s", "field"); } FIELD;
+%printer { fprintf(yyo, "%d", $$); } <integer>;
+%printer { fprintf(yyo, "\"%s\"", $$); } <string>;
+%printer { print_array(yyo, &$$); } <struct array>;
+%printer { print_sloc(yyo, &$$); } <struct sloc>;
+%printer { print_srange(yyo, &$$); } <struct srange>;
+%printer { print_ref(yyo, &$$); } <struct ref>;
+%printer { print_def(yyo, &$$); } <struct def>;
+%printer { print_decl(yyo, &$$); } <struct decl>;
+%printer { print_node(yyo, &$$); } <struct node>;
 
 %token
     EOL
@@ -728,9 +744,7 @@ char * search_filename(const char *filename, unsigned *i) {
     const unsigned mid = begin + (end - begin) / 2;
     const int d = strcmp(filename, (char *)filenames.data[mid]);
     if (d == 0) {
-      if (i) {
-        *i = mid;
-      }
+      if (i) *i = mid;
       return (char *)filenames.data[mid];
     }
     if (d < 0) {
@@ -740,9 +754,7 @@ char * search_filename(const char *filename, unsigned *i) {
     }
   }
 
-  if (i) {
-    *i = begin;
-  }
+  if (i) *i = begin;
   return NULL;
 }
 
@@ -762,7 +774,7 @@ static char *get_pointer(char *s) {
 }
 
 static void sloc_destroy(struct sloc *sloc) {
-  // the sloc->file is owned by loc_filenames
+  // the sloc->file is owned by global filenames
 }
 
 static void srange_destroy(struct srange *srange) {
@@ -786,7 +798,7 @@ static void op_destroy(struct op *op) {
 }
 
 static void mem_destroy(struct mem *mem) {
-  // the pointer was extracted from name hence freeing name is enough
+  // the pointer was extracted from the name hence freeing name is enough
   switch (mem->kind) {
   case MEM_KIND_NIL:
     break;
@@ -803,7 +815,7 @@ static void mem_destroy(struct mem *mem) {
 }
 
 static void ref_destroy(struct ref *ref) {
-  // the pointer was extracted from name hence freeing name is enough
+  // the pointer was extracted from the name hence freeing name is enough
   free((void *)ref->name);
   free((void *)ref->sqname);
   type_destroy(&ref->type);
@@ -881,7 +893,7 @@ static void decl_destroy(struct decl *decl) {
 static void node_destroy(struct node *node) {
   switch (node->kind) {
   case NODE_KIND_HEAD:
-    // the pointer was extracted from name hence freeing name is enough
+    // the pointer was extracted from the name hence freeing name is enough
     free((void *)node->name);
     free((void *)node->parent);
     free((void *)node->prev);
@@ -942,3 +954,157 @@ static IMPL_ARRAY_CLEAR(tags, tag_destroy)
 
 static IMPL_ARRAY_PUSH(ast, struct node)
 static IMPL_ARRAY_CLEAR(ast, node_destroy)
+
+static void print_type(FILE *fp, const struct type *type) {
+  if (type->qualified) {
+    fprintf(fp, "'%s'", type->qualified);
+    if (type->desugared) {
+      fprintf(fp, ":'%s'", type->desugared);
+    }
+  }
+}
+
+static void print_array(FILE *fp, const struct array *array) {
+  for (unsigned i = 0; i < array->i; ++i) {
+    fprintf(fp, "%s", (const char *)array->data[i]);
+    if (i < array->i - 1) {
+      fprintf(fp, " ");
+    }
+  }
+}
+
+static void print_sloc(FILE *fp, const struct sloc *sloc) {
+  if (sloc->file || sloc->line || sloc->col) {
+    fprintf(fp, "%s:%u:%u", sloc->file, sloc->line, sloc->col);
+  }
+}
+
+static void print_srange(FILE *fp, const struct srange *srange) {
+  print_sloc(fp, &srange->begin);
+  if (srange->end.file || srange->end.line || srange->end.col) {
+    fprintf(fp, ", ");
+    print_sloc(fp, &srange->end);
+  }
+}
+
+static void print_ref(FILE *fp, const struct ref *ref) {
+  if (ref->pointer) {
+    fprintf(fp, "%s %s", ref->name, ref->pointer);
+    if (ref->type.qualified) {
+      fprintf(fp, " ");
+      print_type(fp, &ref->type);
+    }
+  }
+}
+
+static void print_op(FILE *fp, const struct op *op) {
+  if (op->operator) {
+    fprintf(fp, "'%s'", op->operator);
+    for (unsigned i = 0; i < op->tags.i; ++i) {
+      fprintf(fp, " %s=", (const char *)op->tags.data[i].name);
+      print_type(fp, &op->tags.data[i].type);
+    }
+  }
+}
+
+static void print_mem(FILE *fp, const struct mem *mem) {
+  if (mem->kind) {
+    fprintf(fp, mem->kind == MEM_KIND_ARROW ? "->" : ".");
+    fprintf(fp, "%s %s", mem->name, mem->pointer);
+  }
+}
+
+static void print_def(FILE *fp, const struct def *def) {
+  fprintf(fp, "type(");
+  print_type(fp, &def->type);
+  fprintf(fp, ")");
+
+  fprintf(fp, " specs(");
+  print_array(fp, &def->specs);
+  fprintf(fp, ")");
+
+  fprintf(fp, " value(%s)", def->value ? def->value : "");
+  
+  fprintf(fp, " op(");
+  print_op(fp, &def->op);
+  fprintf(fp, ")");
+
+  fprintf(fp, " mem(");
+  print_mem(fp, &def->mem);
+  fprintf(fp, ")");
+
+  if (def->field) {
+    fprintf(fp, " field");
+  }
+
+  fprintf(fp, " ref(");
+  print_ref(fp, &def->ref);
+  fprintf(fp, ")");
+
+  fprintf(fp, " cast(%s)", def->cast ? def->cast : "");
+}
+
+static void print_comment(FILE *fp, const struct comment *comment) {
+  fprintf(fp, "%s=\"%s\"", comment->tag, comment->text);
+}
+
+static void print_decl(FILE *fp, const struct decl *decl) {
+  fprintf(fp, "<%d>", decl->kind);
+  switch (decl->kind) {
+  case DECL_KIND_NIL:
+    break;
+  case DECL_KIND_V1:
+    fprintf(fp, " class(%s)", decl->variants.v1.class);
+    break;
+  case DECL_KIND_V2:
+    fprintf(fp, " name(%s)", decl->variants.v2.name);
+    break;
+  case DECL_KIND_V3:
+    fprintf(fp, " class(%s) name(%s)", decl->variants.v3.class, decl->variants.v3.name);
+    break;
+  case DECL_KIND_V4:
+    fprintf(fp, " sqname(%s) pointer(%s)", decl->variants.v4.sqname, decl->variants.v4.pointer);
+    break;
+  case DECL_KIND_V5:
+    fprintf(fp, " sqname(%s) trait(%s)", decl->variants.v5.sqname, decl->variants.v5.trait);
+    break;
+  case DECL_KIND_V6:
+    fprintf(fp, " sqname(%s) trait(%s) def(", decl->variants.v6.sqname, decl->variants.v6.trait);
+    print_def(fp, &decl->variants.v6.def);
+    fprintf(fp, ")");
+    break;
+  case DECL_KIND_V7:
+    fprintf(fp, " sqname(%s) def(", decl->variants.v7.sqname);
+    print_def(fp, &decl->variants.v7.def);
+    fprintf(fp, ")");
+    break;
+  case DECL_KIND_V8:
+    fprintf(fp, " def(");
+    print_def(fp, &decl->variants.v8.def);
+    fprintf(fp, ")");
+    break;
+  case DECL_KIND_V9:
+    fprintf(fp, " name(%s) def(", decl->variants.v9.name);
+    print_def(fp, &decl->variants.v9.def);
+    fprintf(fp, ")");
+    break;
+  case DECL_KIND_V10:
+    fprintf(fp, " seq(");
+    print_array(fp, &decl->variants.v10.seq);
+    fprintf(fp, ")");
+    break;
+  case DECL_KIND_V11:
+    fprintf(fp, " name(%s) seq(", decl->variants.v11.name);
+    print_array(fp, &decl->variants.v11.seq);
+    fprintf(fp, ")");
+    break;
+  case DECL_KIND_V12:
+    fprintf(fp, " comment(");
+    print_comment(fp, &decl->variants.v12.comment);
+    fprintf(fp, ")");
+    break;
+  }
+}
+
+static void print_node(FILE *fp, const struct node *node) {
+}

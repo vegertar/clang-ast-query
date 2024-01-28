@@ -6,6 +6,7 @@
 
 %{
 #include "parse.h"
+#include <assert.h>
 
 // Each time a rule is matched, advance the end cursor/position.
 #define YY_USER_ACTION                          \
@@ -23,11 +24,10 @@ static inline char * qname() {
 }
 
 static char * push_filename(char *filename) {
-  unsigned i;
+  unsigned i = -1;
   char *found = search_filename(filename, &i);
-  if (found) {
-    return found;
-  }
+  assert(found || i != -1);
+  if (found) return found;
 
   array_push(&filenames, NULL);
   memmove(&filenames.data[i + 1],
