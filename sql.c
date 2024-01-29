@@ -1,17 +1,23 @@
 #include "parse.h"
 #include <sqlite3.h>
+
+#ifdef USE_TREE_SITTER
+# include <tree_sitter/api.h>
+#endif // USE_TREE_SITTER
+
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
 
 #ifndef MAX_AST_LEVEL
-#define MAX_AST_LEVEL 255
-#endif
+# define MAX_AST_LEVEL 255
+#endif // !MAX_AST_LEVEL
 
 #ifndef MAX_STMT_SIZE
-#define MAX_STMT_SIZE 16
-#endif
+# define MAX_STMT_SIZE 16
+#endif // !MAX_STMT_SIZE
 
 // Credit: https://stackoverflow.com/a/2124385
 #define PP_NARG(...) PP_NARG_(__VA_ARGS__, PP_RSEQ_N())
@@ -73,6 +79,9 @@
 
 #define END_INSERT_INTO() end_if_prepared_stmt()
 
+#define FILL_TEXT(k, v) sqlite3_bind_text(stmt, k, v, -1, SQLITE_STATIC)
+#define FILL_INT(k, v) sqlite3_bind_int(stmt, k, v)
+
 enum spec {
   SPEC_EXTERN = 1U,
   SPEC_STATIC = 1U << 1,
@@ -87,6 +96,8 @@ static char *err;
 static int code;
 
 static void dump_ast(const struct ast *ast, int max_level);
+static void dump_tst();
+static void dump_src();
 
 static void exec_sql(const char *s) {
   if (!db || code) {
@@ -128,21 +139,6 @@ static unsigned mark_specs(const struct def *def) {
   return specs;
 }
 
-static void dump_source() {
-  exec_sql("CREATE TABLE source ("
-           " filename TEXT PRIMARY KEY,"
-           " number INTEGER)");
-
-  for (unsigned i = 0; i < filenames.i; ++i) {
-    if_prepared_stmt("INSERT INTO source (filename, number)"
-                     " VALUES (?, ?)") {
-      sqlite3_bind_text(stmt, 1, (char *)filenames.data[i], -1, SQLITE_STATIC);
-      sqlite3_bind_int(stmt, 2, i);
-    }
-    end_if_prepared_stmt();
-  }
-}
-
 
 int dump(int max_level, const char *db_file) {
   sqlite3_open(db_file, &db);
@@ -151,7 +147,8 @@ int dump(int max_level, const char *db_file) {
   exec_sql("PRAGMA journal_mode = MEMORY");
   exec_sql("BEGIN TRANSACTION");
   dump_ast(&ast, max_level);
-  dump_source();
+  dump_tst();
+  dump_src();
   exec_sql("END TRANSACTION");
 
   for (int i = 0; i < MAX_STMT_SIZE; ++i) {
@@ -202,23 +199,23 @@ static void dump_ast(const struct ast *ast, int max_level) {
         switch (node->kind) {
         case NODE_KIND_HEAD:
           assert(node->level < MAX_AST_LEVEL);
-          sqlite3_bind_int(stmt, NUMBER, i);
-          sqlite3_bind_int(stmt, PARENT_NUMBER, parents[node->level]);
+          FILL_INT(NUMBER, i);
+          FILL_INT(PARENT_NUMBER, parents[node->level]);
           if (node->level + 1 < MAX_AST_LEVEL) {
             parents[node->level + 1] = i;
           }
 
-          sqlite3_bind_text(stmt, KIND, node->name, -1, SQLITE_STATIC);
-          sqlite3_bind_text(stmt, PTR, node->pointer, -1, SQLITE_STATIC);
-          sqlite3_bind_int(stmt, BEGIN_SRC, src_number(node->range.begin.file));
-          sqlite3_bind_int(stmt, BEGIN_ROW, node->range.begin.line);
-          sqlite3_bind_int(stmt, BEGIN_COL, node->range.begin.col);
-          sqlite3_bind_int(stmt, END_SRC, src_number(node->range.end.file));
-          sqlite3_bind_int(stmt, END_ROW, node->range.end.line);
-          sqlite3_bind_int(stmt, END_COL, node->range.end.col);
-          sqlite3_bind_int(stmt, SRC, src_number(node->loc.file));
-          sqlite3_bind_int(stmt, ROW, node->loc.line);
-          sqlite3_bind_int(stmt, COL, node->loc.col);
+          FILL_TEXT(KIND, node->name);
+          FILL_TEXT(PTR, node->pointer);
+          FILL_INT(BEGIN_SRC, src_number(node->range.begin.file));
+          FILL_INT(BEGIN_ROW, node->range.begin.line);
+          FILL_INT(BEGIN_COL, node->range.begin.col);
+          FILL_INT(END_SRC, src_number(node->range.end.file));
+          FILL_INT(END_ROW, node->range.end.line);
+          FILL_INT(END_COL, node->range.end.col);
+          FILL_INT(SRC, src_number(node->loc.file));
+          FILL_INT(ROW, node->loc.line);
+          FILL_INT(COL, node->loc.col);
           break;
         case NODE_KIND_ENUM:
           break;
@@ -229,15 +226,15 @@ static void dump_ast(const struct ast *ast, int max_level) {
 #define FILL_REF(expr) do {                                                \
     const struct ref *ref = expr;                                          \
     if (ref->pointer) {                                                    \
-      sqlite3_bind_text(stmt, REF_PTR, ref->pointer, -1, SQLITE_STATIC);   \
-      sqlite3_bind_text(stmt, NAME, ref->sqname, -1, SQLITE_STATIC);       \
+      FILL_TEXT(REF_PTR, ref->pointer);                                    \
+      FILL_TEXT(NAME, ref->sqname);                                        \
     }                                                                      \
   } while (0)
 
 #define FILL_DEF(expr) do {                                                \
     const struct def *def = expr;                                          \
-    sqlite3_bind_text(stmt, TYPE, def->type.qualified, -1, SQLITE_STATIC); \
-    sqlite3_bind_int(stmt, SPECS, mark_specs(def));                        \
+    FILL_TEXT(TYPE, def->type.qualified);                                  \
+    FILL_INT(SPECS, mark_specs(def));                                      \
     FILL_REF(&def->ref);                                                   \
   } while (0)
 
@@ -246,7 +243,7 @@ static void dump_ast(const struct ast *ast, int max_level) {
           FILL_DEF(&decl->variants.v8.def);
           break;
         case DECL_KIND_V9:
-          sqlite3_bind_text(stmt, NAME, decl->variants.v9.name, -1, SQLITE_STATIC);
+          FILL_TEXT(NAME, decl->variants.v9.name);
           FILL_DEF(&decl->variants.v9.def);
           break;
         default:
@@ -255,5 +252,88 @@ static void dump_ast(const struct ast *ast, int max_level) {
       }
       END_INSERT_INTO();
     }
+  }
+}
+
+#ifdef USE_TREE_SITTER
+
+struct ts_file_input {
+  FILE *fp;
+  char buffer[BUFSIZ];
+  size_t n;
+  size_t total;
+};
+
+static const char * ts_file_input_read(void *payload,
+                                       uint32_t byte_index,
+                                       TSPoint position,
+                                       uint32_t *bytes_read) {
+  struct ts_file_input *self = (struct ts_file_input *)payload;
+  if (byte_index < self->total) {
+    size_t rest = self->total - byte_index;
+    size_t offset = self->n - rest;
+    *bytes_read = rest;
+    return self->buffer + offset;
+  }
+
+  size_t n = fread(self->buffer, 1, sizeof(self->buffer), self->fp);
+  *bytes_read = self->n = n;
+  self->total += n;
+  return self->buffer;
+}
+
+static void clear_ts_file_input(struct ts_file_input *self) {
+  if (self->fp) {
+    fclose(self->fp);
+    self->fp = NULL;
+    self->n = self->total = 0;
+  }
+}
+
+#endif // USE_TREE_SITTER
+
+static void dump_tst() {
+#ifdef USE_TREE_SITTER
+  TSLanguage *tree_sitter_c();
+  TSParser *parser = ts_parser_new();
+  ts_parser_set_language(parser, tree_sitter_c());
+  struct ts_file_input input = {};
+
+  for (unsigned i = 0; i < filenames.i; ++i) {
+    const char *filename = (char *)filenames.data[i];
+    if (strcmp(filename, "<built-in>") == 0 ||
+        strcmp(filename, "<scratch space>") == 0) {
+      continue;
+    }
+
+    if (!(input.fp = fopen(filename, "ro"))) {
+      fprintf(stderr, "%s: open('%s') error: %s\n",
+              __func__, filename, strerror(errno));
+      continue;
+    }
+
+    TSTree *tree = ts_parser_parse(parser, NULL, (TSInput){&input, ts_file_input_read});
+    // TODO: walk tree
+
+    ts_tree_delete(tree);
+    clear_ts_file_input(&input);
+  }
+
+  ts_parser_delete(parser);
+#endif // USE_TREE_SITTER
+}
+
+static void dump_src() {
+  exec_sql("CREATE TABLE src ("
+           " filename TEXT PRIMARY KEY,"
+           " number INTEGER)");
+
+  for (unsigned i = 0; i < filenames.i; ++i) {
+    if_prepared_stmt("INSERT INTO src (filename, number)"
+                     " VALUES (?, ?)") {
+      FILL_TEXT(1, (char *)filenames.data[i]);
+      FILL_INT(2, i);
+    }
+    end_if_prepared_stmt();
   }
 }

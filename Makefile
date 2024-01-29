@@ -4,6 +4,8 @@ CFLAGS= -MMD -Werror -std=gnu11
 LDFLAGS= -lfl -lsqlite3
 LEXFLAGS= 
 YACCFLAGS= -Werror
+SRCS= sql.c
+GENSRCS= parse.c scan.c
 
 ifdef RELEASE
 CFLAGS+= -O2 -DNDEBUG
@@ -11,8 +13,15 @@ else
 CFLAGS+= -g -O0
 endif
 
-SRCS= sql.c
-GENSRCS= parse.c scan.c
+ifdef USE_TREE_SITTER
+TREE_SITTER_DIR?= ${HOME}/tree-sitter
+TREE_SITTER_C_DIR?= ${HOME}/tree-sitter-c
+TREE_SITTER_CFLAGS= -I${TREE_SITTER_DIR}/lib/include
+TREE_SITTER_LDFLAGS= ${TREE_SITTER_DIR}/libtree-sitter.a
+CFLAGS+= -DUSE_TREE_SITTER ${TREE_SITTER_CFLAGS}
+LDFLAGS+= ${TREE_SITTER_LDFLAGS}
+SRCS+= ${TREE_SITTER_C_DIR}/src/parser.c
+endif
 
 build: test.out
 
