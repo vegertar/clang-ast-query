@@ -13,14 +13,14 @@
   typedef char * string;
   typedef int integer;
 
-#define DEF_ARRAY(name, type) \
-  struct name {  \
-    unsigned n; \
-    unsigned i; \
-    type *data;  \
+#define DECL_ARRAY(name, type) \
+  struct name {                \
+    unsigned n;                \
+    unsigned i;                \
+    type *data;                \
   }
 
-  DEF_ARRAY(array, void *);
+  DECL_ARRAY(array, void *);
 
   struct sloc {
     const char *file;
@@ -43,7 +43,7 @@
     struct type type;
   };
 
-  DEF_ARRAY(tags, struct tag);
+  DECL_ARRAY(tags, struct tag);
 
   struct op {
     const char *operator;
@@ -172,7 +172,7 @@
     struct array opts;
   };
 
-  DEF_ARRAY(ast, struct node);
+  DECL_ARRAY(ast, struct node);
 
   // Exchanging information with the parser.
   typedef struct {
@@ -202,10 +202,40 @@
   int dump(int max_level, const char *db_file);
   char *search_filename(const char *filename, unsigned *i);
 
-  #define DEF_ARRAY_METHOD(name, method, ...) \
+  #define DECL_ARRAY_METHOD(name, method, ...) \
     struct name * name##_##method(struct name *p, ##__VA_ARGS__)
 
-  DEF_ARRAY_METHOD(array, push, void *);
+  #define IMPL_ARRAY_PUSH(name, type)                            \
+    struct name * name##_push(struct name *p, type item) {       \
+      if (p->i == p->n) {                                        \
+        unsigned n = p->n ? 2 * p->n : 1;                        \
+        type *data = (type *)realloc(p->data, sizeof(type) * n); \
+        assert(data);                                            \
+        p->data = data;                                          \
+        p->n = n;                                                \
+      }                                                          \
+      p->data[p->i++] = item;                                    \
+      return p;                                                  \
+    }
+
+  #define IMPL_ARRAY_CLEAR(name, f)                              \
+    struct name * name##_clear(struct name *p, int destroy) {    \
+      if (destroy == 0 || destroy == 1) {                        \
+        for (unsigned i = 0; i < p->i; ++i) {                    \
+          f(&p->data[i]);                                        \
+        }                                                        \
+      }                                                          \
+      p->i = 0;                                                  \
+      if (destroy && p->n) {                                     \
+        free(p->data);                                           \
+        p->n = 0;                                                \
+        p->data = NULL;                                          \
+      }                                                          \
+      return p;                                                  \
+    }
+
+  DECL_ARRAY_METHOD(array, push, void *);
+  DECL_ARRAY_METHOD(array, clear, int);
 }
 
 // Emitted in the implementation file.
@@ -220,13 +250,11 @@
 
   static char *get_pointer(char *s);
 
-  static DEF_ARRAY_METHOD(array, clear, _Bool);
+  static DECL_ARRAY_METHOD(tags, push, struct tag);
+  static DECL_ARRAY_METHOD(tags, clear, int);
 
-  static DEF_ARRAY_METHOD(tags, push, struct tag);
-  static DEF_ARRAY_METHOD(tags, clear, _Bool);
-
-  static DEF_ARRAY_METHOD(ast, push, struct node);
-  static DEF_ARRAY_METHOD(ast, clear, _Bool);
+  static DECL_ARRAY_METHOD(ast, push, struct node);
+  static DECL_ARRAY_METHOD(ast, clear, int);
 
   static void print_type(FILE *fp, const struct type *type);
   static void print_array(FILE *fp, const struct array *array);
@@ -915,39 +943,12 @@ static void node_destroy(struct node *node) {
   }
 }
 
-#define IMPL_ARRAY_PUSH(name, type) \
-  struct name * name##_push(struct name *p, type item) { \
-    if (p->i == p->n) { \
-      unsigned n = p->n ? 2 * p->n : 1; \
-      type *data = (type *)realloc(p->data, sizeof(type) * n); \
-      assert(data); \
-      p->data = data; \
-      p->n = n; \
-    } \
-    p->data[p->i++] = item; \
-    return p; \
-  }
-
-#define IMPL_ARRAY_CLEAR(name, f) \
-  struct name * name##_clear(struct name *p, _Bool destroy) { \
-    for (unsigned i = 0; i < p->i; ++i) { \
-      f(&p->data[i]); \
-    } \
-    p->i = 0; \
-    if (destroy && p->n) { \
-      free(p->data); \
-      p->n = 0; \
-      p->data = NULL; \
-    } \
-    return p; \
-  }
-
 static void void_destroy(void **p) {
   free(*p);
 }
 
 IMPL_ARRAY_PUSH(array, void *)
-static IMPL_ARRAY_CLEAR(array, void_destroy)
+IMPL_ARRAY_CLEAR(array, void_destroy)
 
 static IMPL_ARRAY_PUSH(tags, struct tag)
 static IMPL_ARRAY_CLEAR(tags, tag_destroy)

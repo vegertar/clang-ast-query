@@ -63,9 +63,11 @@ int main(int argc, char **argv) {
 
   FILE *fp = stdin;
   if (optind < argc) {
-    fp = fopen(argv[optind], "r");
+    const char *filename = argv[optind];
+    fp = fopen(filename, "r");
     if (!fp) {
-      fprintf(stderr, "open('%s') error: %s\n", argv[1], strerror(errno));
+      fprintf(stderr, "%s: open('%s') error: %s\n",
+              __func__, filename, strerror(errno));
       return 1;
     }
   }

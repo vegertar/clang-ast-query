@@ -67,6 +67,7 @@
 #define end_if_prepared_stmt()                                                 \
     if (!code && stmt) {                                                       \
       sqlite3_step(stmt);                                                      \
+      sqlite3_clear_bindings(stmt);                                            \
       code = sqlite3_reset(stmt);                                              \
     }                                                                          \
   }                                                                            \
@@ -96,7 +97,7 @@ static char *err;
 static int code;
 
 static void dump_ast(const struct ast *ast, int max_level);
-static void dump_tst();
+static void dump_cst();
 static void dump_src();
 
 static void exec_sql(const char *s) {
@@ -139,6 +140,10 @@ static unsigned mark_specs(const struct def *def) {
   return specs;
 }
 
+static inline _Bool is_internal_file(const char *filename) {
+  return strcmp(filename, "<built-in>") == 0 ||
+      strcmp(filename, "<scratch space>") == 0;
+}
 
 int dump(int max_level, const char *db_file) {
   sqlite3_open(db_file, &db);
@@ -147,7 +152,7 @@ int dump(int max_level, const char *db_file) {
   exec_sql("PRAGMA journal_mode = MEMORY");
   exec_sql("BEGIN TRANSACTION");
   dump_ast(&ast, max_level);
-  dump_tst();
+  dump_cst();
   dump_src();
   exec_sql("END TRANSACTION");
 
@@ -157,7 +162,7 @@ int dump(int max_level, const char *db_file) {
     }
   }
 
-  if (code) {
+  if (code && !err) {
     fprintf(stderr, "sqlite3 error(%d): %s\n", code, sqlite3_errstr(code));
   }
   sqlite3_close(db);
@@ -290,19 +295,36 @@ static void clear_ts_file_input(struct ts_file_input *self) {
   }
 }
 
+typedef struct {
+  unsigned indent;
+  TSNode node;
+} ts_node_wrapper;
+
+DECL_ARRAY(ts_node_list, ts_node_wrapper);
+IMPL_ARRAY_PUSH(ts_node_list, ts_node_wrapper)
+IMPL_ARRAY_CLEAR(ts_node_list, (void))
+
 #endif // USE_TREE_SITTER
 
-static void dump_tst() {
+static void dump_cst() {
 #ifdef USE_TREE_SITTER
+  exec_sql("CREATE TABLE cst ("
+           " src INTEGER,"
+           " symbol INTEGER,"
+           " begin_row INTEGER,"
+           " begin_col INTEGER,"
+           " end_row INTEGER,"
+           " end_col INTEGER)");
+
   TSLanguage *tree_sitter_c();
+  TSLanguage *lang = tree_sitter_c();
   TSParser *parser = ts_parser_new();
-  ts_parser_set_language(parser, tree_sitter_c());
+  ts_parser_set_language(parser, lang);
   struct ts_file_input input = {};
 
   for (unsigned i = 0; i < filenames.i; ++i) {
     const char *filename = (char *)filenames.data[i];
-    if (strcmp(filename, "<built-in>") == 0 ||
-        strcmp(filename, "<scratch space>") == 0) {
+    if (is_internal_file(filename)) {
       continue;
     }
 
@@ -312,9 +334,53 @@ static void dump_tst() {
       continue;
     }
 
-    TSTree *tree = ts_parser_parse(parser, NULL, (TSInput){&input, ts_file_input_read});
-    // TODO: walk tree
+    int src = src_number(filename);
+    TSTree *tree = ts_parser_parse(parser, NULL, (TSInput){
+        &input,
+        ts_file_input_read,
+    });
+    struct ts_node_list stack = {};
+    ts_node_list_push(&stack, (ts_node_wrapper){0, ts_tree_root_node(tree)});
 
+    // A preorder traversal
+    while (stack.i) {
+      ts_node_wrapper top = stack.data[--stack.i];
+      uint32_t n = ts_node_child_count(top.node);
+      int symbol = ts_node_symbol(top.node);      
+      const TSPoint start = ts_node_start_point(top.node);
+      const TSPoint end = ts_node_end_point(top.node);
+
+      if (yydebug) {
+        printf("%*s<%d:%s> [%u, %u] - [%u, %u]\n", top.indent, "",
+              symbol,
+              ts_node_is_named(top.node) ? ts_language_symbol_name(lang, symbol) : "",
+              start.row + 1, start.column + 1, end.row + 1, end.column + 1);
+      }
+
+      // Only insert leaf nodes so that all ranges are disjoint
+      if (n == 0) {
+        if_prepared_stmt("INSERT INTO cst (src, symbol, begin_row, begin_col, end_row, end_col)"
+                         " VALUES (?, ?, ?, ?, ?, ?)") {
+          FILL_INT(1, src);
+          FILL_INT(2, symbol);
+          FILL_INT(3, start.row + 1);
+          FILL_INT(4, start.column + 1);
+          FILL_INT(5, end.row + 1);
+          FILL_INT(6, end.column + 1);
+        }
+        end_if_prepared_stmt();
+      }
+
+      for (uint32_t i = 0; i < n; ++i) {
+        // Push children in reverse order so that the leftmost child is on top of the stack
+        ts_node_list_push(&stack, (ts_node_wrapper){
+            top.indent + 1,
+            ts_node_child(top.node, n - 1 - i),
+        });
+      }
+    }
+
+    ts_node_list_clear(&stack, 2);
     ts_tree_delete(tree);
     clear_ts_file_input(&input);
   }
