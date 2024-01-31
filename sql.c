@@ -41,13 +41,13 @@
 
 #define VALUES_I1(n) VALUES_I2(n)
 #define VALUES_I2(n) VALUES##n()
-#define VALUES17() \
+#define VALUES18() \
   "?,?,?," \
   "?,?,?," \
   "?,?,?," \
   "?,?,?," \
   "?,?,?," \
-  "?,?"
+  "?,?,?"
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
@@ -185,7 +185,8 @@ static void dump_ast(const struct ast *ast, int max_level) {
            " row INTEGER,"
            " col INTEGER,"
            " name TEXT,"
-           " type TEXT,"
+           " qualified_type TEXT,"
+           " desugared_type TEXT,"
            " specs INTEGER,"
            " ref_ptr TEXT)");
 
@@ -200,7 +201,7 @@ static void dump_ast(const struct ast *ast, int max_level) {
                   BEGIN_SRC, BEGIN_ROW, BEGIN_COL,
                   END_SRC, END_ROW, END_COL,
                   SRC, ROW, COL,
-                  NAME, TYPE, SPECS, REF_PTR) {
+                  NAME, QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_PTR) {
         switch (node->kind) {
         case NODE_KIND_HEAD:
           assert(node->level < MAX_AST_LEVEL);
@@ -238,7 +239,8 @@ static void dump_ast(const struct ast *ast, int max_level) {
 
 #define FILL_DEF(expr) do {                                                \
     const struct def *def = expr;                                          \
-    FILL_TEXT(TYPE, def->type.qualified);                                  \
+    FILL_TEXT(QUALIFIED_TYPE, def->type.qualified);                        \
+    FILL_TEXT(DESUGARED_TYPE, def->type.desugared);                        \
     FILL_INT(SPECS, mark_specs(def));                                      \
     FILL_REF(&def->ref);                                                   \
   } while (0)
@@ -346,7 +348,9 @@ static void dump_cst() {
     while (stack.i) {
       ts_node_wrapper top = stack.data[--stack.i];
       uint32_t n = ts_node_child_count(top.node);
-      int symbol = ts_node_symbol(top.node);      
+      int symbol = ts_node_symbol(top.node);
+
+      // Note that TSPoint uses a zero-based index.
       const TSPoint start = ts_node_start_point(top.node);
       const TSPoint end = ts_node_end_point(top.node);
 
