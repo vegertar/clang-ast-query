@@ -10,15 +10,10 @@
 
 // Emitted in the header file, before the definition of YYSTYPE.
 %code requires {
+  #include "array.h"
+
   typedef char * string;
   typedef int integer;
-
-#define DECL_ARRAY(name, type) \
-  struct name {                \
-    unsigned n;                \
-    unsigned i;                \
-    type *data;                \
-  }
 
   DECL_ARRAY(array, void *);
 
@@ -202,44 +197,13 @@
   int dump(int max_level, const char *db_file);
   char *search_filename(const char *filename, unsigned *i);
 
-  #define DECL_ARRAY_METHOD(name, method, ...) \
-    struct name * name##_##method(struct name *p, ##__VA_ARGS__)
-
-  #define IMPL_ARRAY_PUSH(name, type)                            \
-    struct name * name##_push(struct name *p, type item) {       \
-      if (p->i == p->n) {                                        \
-        unsigned n = p->n ? 2 * p->n : 1;                        \
-        type *data = (type *)realloc(p->data, sizeof(type) * n); \
-        assert(data);                                            \
-        p->data = data;                                          \
-        p->n = n;                                                \
-      }                                                          \
-      p->data[p->i++] = item;                                    \
-      return p;                                                  \
-    }
-
-  #define IMPL_ARRAY_CLEAR(name, f)                              \
-    struct name * name##_clear(struct name *p, int destroy) {    \
-      if (destroy == 0 || destroy == 1) {                        \
-        for (unsigned i = 0; i < p->i; ++i) {                    \
-          f(&p->data[i]);                                        \
-        }                                                        \
-      }                                                          \
-      p->i = 0;                                                  \
-      if (destroy && p->n) {                                     \
-        free(p->data);                                           \
-        p->n = 0;                                                \
-        p->data = NULL;                                          \
-      }                                                          \
-      return p;                                                  \
-    }
-
   DECL_ARRAY_METHOD(array, push, void *);
   DECL_ARRAY_METHOD(array, clear, int);
 }
 
 // Emitted in the implementation file.
 %code {
+  #include "test.h"
   #include <assert.h>
   #include <stdio.h>
 
@@ -760,30 +724,38 @@ int parse(YYLTYPE *lloc, const user_context *uctx) {
   return status;
 }
 
+static inline int compare_string(const void *a, void **b) {
+  return strcmp((const char *)a, (const char *)*b);
+}
+
+static IMPL_ARRAY_BSEARCH(array, compare_string)
+
+static inline char * binary_search(const struct array *array,
+                                  const char *s,
+                                  unsigned *i) {
+  return array_bsearch(array, s, i) ? array->data[*i] : NULL;
+}
+
+TEST(binary_search, {
+  struct array ss = {};
+  const char *input[] = {"a", "b", "c", "d"};
+  for (int i = 0; i < sizeof(input) / sizeof(*input); ++i) {
+    array_push(&ss, (void *)input[i]);
+  }
+
+  unsigned j;
+  for (unsigned i = 0; i < ss.i; ++i) {
+    ASSERT(binary_search(&ss, (char *)ss.data[i], &j));
+    ASSERT(i == j);
+  }
+
+  ASSERT(!binary_search(&ss, "f", &j));
+  ASSERT(ss.i == j);
+  array_clear(&ss, 2);
+})
+
 char * search_filename(const char *filename, unsigned *i) {
-  if (!filename) {
-    return NULL;
-  }
-
-  unsigned begin = 0;
-  unsigned end = filenames.i;
-
-  while (begin < end) {
-    const unsigned mid = begin + (end - begin) / 2;
-    const int d = strcmp(filename, (char *)filenames.data[mid]);
-    if (d == 0) {
-      if (i) *i = mid;
-      return (char *)filenames.data[mid];
-    }
-    if (d < 0) {
-      end = mid;
-    } else {
-      begin = mid + 1;
-    }
-  }
-
-  if (i) *i = begin;
-  return NULL;
+  return binary_search(&filenames, filename, i);
 }
 
 void destroy() {

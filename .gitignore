@@ -5,7 +5,10 @@
 !/Makefile
 !/scan.l
 !/parse.y
+!/main.c
 !/test.c
+!/test.h
+!/array.h
 !/sql.c
 !/.clang-format
 !/samples

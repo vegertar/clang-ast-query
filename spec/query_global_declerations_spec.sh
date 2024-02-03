@@ -1,6 +1,6 @@
 create() {
   db=$(mktemp /tmp/clang-ast-query-db.XXXXXX)
-  ./test.out -x $db -l 2 $1
+  ./caq -x $db -l 2 $1
 }
 
 Describe 'Query Global Declerations'

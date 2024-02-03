@@ -1,3 +1,4 @@
+#include "test.h"
 #include "parse.h"
 #include <sqlite3.h>
 
