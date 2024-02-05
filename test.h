@@ -1,8 +1,8 @@
 #pragma once
 
 #ifdef USE_TEST
-# define __test_call __attribute__ ((unused,__section__ (".testcall.test")))
-# define __test_name __attribute__ ((unused,__section__ (".testname.test")))
+# define __test_call __attribute__((__section__(".testcall.test")))
+# define __test_name __attribute__((__section__(".testname.test")))
 
 extern int (*test)(void);
 
@@ -29,5 +29,5 @@ extern int (*test)(void);
 # define ASSERT(value) ASSERT_FMT(value, "")
 #else
 # define TEST(...)
-# define RUN_TEST(...)
+# define RUN_TEST(...) (-1)
 #endif

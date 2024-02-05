@@ -8,15 +8,14 @@ int (*test)(void) __test_call = run_test;
 
 static int run_test() {
   static const char *name __test_name = NULL;
-  int c = 0;
-  unsigned failed = 0;
-  unsigned n = 0;
+  int failed = 0;
+  int n = 0;
   void **p = (void **)&test;
   const char **q = &name;
   while (*++p) {
     ++n;
     fprintf(stderr, "TEST(%s)", q[n]);
-    c = ((int (*)(void))*p)();
+    int c = ((int (*)(void))*p)();
     if (c) {
       ++failed;
       fprintf(stderr, ":FAILED\n");
@@ -26,8 +25,8 @@ static int run_test() {
     }
   }
 
-  fprintf(stderr, "RAN %u tests, %u PASSED\n", n, n - failed);
-  return c;
+  fprintf(stderr, "RAN %d tests, %d PASSED\n", n, n - failed);
+  return failed;
 }
 
 #endif // USE_TEST

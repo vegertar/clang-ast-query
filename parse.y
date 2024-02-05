@@ -293,6 +293,8 @@
     COL
     ENUM
     FIELD
+    REMARK_TU
+    REMARK_VAR_TYPE
   <integer>
     LEVEL
   <string>
@@ -374,6 +376,7 @@ start: node EOL
     $2.level = $1;
     ast_push(&ast, $2);
   }
+ | remark EOL
 
 node: HEAD parent prev range loc attrs labels decl opts
   {
@@ -404,6 +407,10 @@ node: HEAD parent prev range loc attrs labels decl opts
       .kind = NODE_KIND_NULL,
     };
   }
+
+remark:
+  | REMARK_TU file_sloc
+  | REMARK_VAR_TYPE POINTER POINTER
 
 parent: { $$ = NULL; }
  | PARENT

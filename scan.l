@@ -93,6 +93,14 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return TOK_ENUM;
 }
 
+^"#TU:" {
+  return TOK_REMARK_TU;
+}
+
+^"#VAR-TYPE:" {
+  return TOK_REMARK_VAR_TYPE;
+}
+
 {ATTR}/[ \n] {
   yylval->TOK_ATTR = strdup(yytext);
   return TOK_ATTR;

@@ -10,7 +10,8 @@
 !/test.h
 !/array.h
 !/sql.c
-!/.clang-format
+!/remark.cc
+!/remark.h
 !/samples
 !/spec
 !/.shellspec

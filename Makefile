@@ -1,9 +1,13 @@
 LEX= flex
 YACC= bison
-CFLAGS= -MMD -Werror -std=gnu11
-LDFLAGS= -lfl -lsqlite3
 LEXFLAGS= 
 YACCFLAGS= -Werror
+
+CC= cc
+CXX= c++
+CFLAGS= -MMD -Werror -std=gnu11
+CXXFLAGS= -Werror -std=c++20 -fno-exceptions -fno-rtti
+LDFLAGS= -lfl -lsqlite3
 
 ifdef RELEASE
 CFLAGS+= -O2 -DNDEBUG
@@ -26,16 +30,24 @@ CFLAGS+= -DUSE_TEST
 SRCS+= test.c
 endif
 
+ifdef USE_CLANG_TOOL
+LLVM_DIR= /usr/lib/llvm-17
+CFLAGS+= -DUSE_CLANG_TOOL
+CXXFLAGS+= -I${LLVM_DIR}/include
+LDFLAGS+= -L${LLVM_DIR}/lib -lclang-cpp -lLLVM -lstdc++
+SRCS+= remark.cc
+endif
+
 SRCS+= sql.c main.c
 GENHDRS+= parse.h
 GENSRCS+= parse.c scan.c
 
 build: caq
 
-OBJS= ${SRCS:.c=.o}
+OBJS:= $(addsuffix .o,$(basename ${SRCS}))
 -include ${OBJS:.o=.d}
 
-test: test-parse test-mem test-query
+test: test-parse test-mem test-query test-fun
 
 test-parse: build
 	@for i in samples/*.gz; do printf "\r%-30s" $$i; zcat $$i | ./caq || exit 1; done
@@ -47,8 +59,8 @@ test-mem: build
 test-query: build
 	@shellspec
 
-test-sql: build
-	@./caq -x samples/main.ast | sqlite3
+test-fun: build
+	@./caq -t
 
 caq: ${OBJS} ${GENSRCS}
 	${CC} -o $@ ${CFLAGS} $^ ${LDFLAGS}
@@ -63,4 +75,4 @@ scan.c: scan.l
 clean:
 	rm -f *.out *.o ${GENSRCS} ${GENHDRS}
 
-.PHONY: build test test-parse test-query clean
+.PHONY: build test test-parse test-query test-fun test-mem clean
