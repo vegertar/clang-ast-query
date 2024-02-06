@@ -8,6 +8,7 @@
 #include <clang/Frontend/MultiplexConsumer.h>
 #include <clang/Tooling/Tooling.h>
 
+#include <cassert>
 #include <cerrno>
 #include <cstring>
 #include <fstream>
@@ -187,6 +188,12 @@ std::string read_content(std::istream &in) {
   return s;
 }
 
+int print_line(char *line, size_t n, size_t cap, void *data) {
+  assert(n + 1 < cap);
+  llvm::outs() << std::string_view{line, n};
+  return 0;
+}
+
 } // namespace
 
 int remark(const char *filename, char **opts, int n,
@@ -201,14 +208,17 @@ int remark(const char *filename, char **opts, int n,
   if (filename) {
     std::ifstream in(filename);
     if (!in) {
-        llvm::errs() << "open " << filename << ":" << std::strerror(errno);
-        return 1;
+      llvm::errs() << "cannot open '" << filename << "': " << std::strerror(errno) << '\n';
+      return 1;
     }
     code = read_content(in);
+    in.close();
   } else {
     filename = "input.c";
     code = read_content(std::cin);
   }
+
+  if (!parse_line) parse_line = print_line;
 
   return clang::tooling::runToolOnCodeWithArgs(
       std::make_unique<frontend_action>(parse_line, data),
@@ -216,18 +226,3 @@ int remark(const char *filename, char **opts, int n,
       args,
       filename) ? 0 : -1;
 }
-
-#ifdef REMARK_MAIN
-
-#include <cassert>
-
-static int print_line(char *line, size_t n, size_t cap, void *data) {
-  assert(n + 1 < cap);
-  llvm::outs() << std::string_view{line, n};
-  return 0;
-}
-
-int main(int argc, char **argv) {
-  remark(argv[1], argv + 2, argc > 1 ? argc - 2 : 0, print_line, NULL);
-}
-#endif

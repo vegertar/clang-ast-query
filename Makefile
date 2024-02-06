@@ -10,7 +10,8 @@ CXXFLAGS= -Werror -std=c++20 -fno-exceptions -fno-rtti
 LDFLAGS= -lfl -lsqlite3
 
 ifdef RELEASE
-CFLAGS+= -O2 -DNDEBUG
+CPPFLAGS+= -DNDEBUG
+CFLAGS+= -O2
 else
 CFLAGS+= -g -O0
 endif
@@ -20,19 +21,20 @@ TREE_SITTER_DIR?= ${HOME}/tree-sitter
 TREE_SITTER_C_DIR?= ${HOME}/tree-sitter-c
 TREE_SITTER_CFLAGS= -I${TREE_SITTER_DIR}/lib/include
 TREE_SITTER_LDFLAGS= ${TREE_SITTER_DIR}/libtree-sitter.a
-CFLAGS+= -DUSE_TREE_SITTER ${TREE_SITTER_CFLAGS}
+CPPFLAGS+= -DUSE_TREE_SITTER
+CFLAGS+= ${TREE_SITTER_CFLAGS}
 LDFLAGS+= ${TREE_SITTER_LDFLAGS}
 SRCS+= ${TREE_SITTER_C_DIR}/src/parser.c
 endif
 
 ifdef USE_TEST
-CFLAGS+= -DUSE_TEST
+CPPFLAGS+= -DUSE_TEST
 SRCS+= test.c
 endif
 
 ifdef USE_CLANG_TOOL
-LLVM_DIR= /usr/lib/llvm-17
-CFLAGS+= -DUSE_CLANG_TOOL
+LLVM_DIR?= /usr/lib/llvm-17
+CPPFLAGS+= -DUSE_CLANG_TOOL
 CXXFLAGS+= -I${LLVM_DIR}/include
 LDFLAGS+= -L${LLVM_DIR}/lib -lclang-cpp -lLLVM -lstdc++
 SRCS+= remark.cc

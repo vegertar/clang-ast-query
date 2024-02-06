@@ -42,13 +42,14 @@
 
 #define VALUES_I1(n) VALUES_I2(n)
 #define VALUES_I2(n) VALUES##n()
-#define VALUES18() \
+#define VALUES19() \
   "?,?,?," \
   "?,?,?," \
   "?,?,?," \
   "?,?,?," \
   "?,?,?," \
-  "?,?,?"
+  "?,?,?," \
+  "?"
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
@@ -189,7 +190,8 @@ static void dump_ast(const struct ast *ast, int max_level) {
            " qualified_type TEXT,"
            " desugared_type TEXT,"
            " specs INTEGER,"
-           " ref_ptr TEXT)");
+           " ref_ptr TEXT,"
+           " type_ptr TEXT)");
 
   unsigned parents[MAX_AST_LEVEL + 1] = {-1};
   for (unsigned i = 0; i < ast->i; ++i) {
@@ -198,7 +200,7 @@ static void dump_ast(const struct ast *ast, int max_level) {
     if (max_level == 0 || node->level <= max_level) {
       INSERT_INTO(ast,
                   NUMBER, PARENT_NUMBER,
-                  KIND, PTR,
+                  KIND, PTR, TYPE_PTR,
                   BEGIN_SRC, BEGIN_ROW, BEGIN_COL,
                   END_SRC, END_ROW, END_COL,
                   SRC, ROW, COL,
@@ -214,6 +216,7 @@ static void dump_ast(const struct ast *ast, int max_level) {
 
           FILL_TEXT(KIND, node->name);
           FILL_TEXT(PTR, node->pointer);
+          FILL_TEXT(TYPE_PTR, find_var_type_map(node->pointer));
           FILL_INT(BEGIN_SRC, src_number(node->range.begin.file));
           FILL_INT(BEGIN_ROW, node->range.begin.line);
           FILL_INT(BEGIN_COL, node->range.begin.col);

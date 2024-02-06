@@ -169,6 +169,13 @@
 
   DECL_ARRAY(ast, struct node);
 
+  struct var_type_pair {
+    const char *var;
+    const char *type;
+  };
+
+  DECL_ARRAY(var_type_map, struct var_type_pair);
+
   // Exchanging information with the parser.
   typedef struct {
     // Whether to not emit error messages.
@@ -195,10 +202,16 @@
   int parse(YYLTYPE *lloc, const user_context *uctx);
   void destroy();
   int dump(int max_level, const char *db_file);
+
+  /// If the filename is not found, a copy will be pushed and returned.
+  char *push_filename(const char *filename);
+  /// The memory of the found filename is owned by the underlying array.
   char *search_filename(const char *filename, unsigned *i);
 
-  DECL_ARRAY_METHOD(array, push, void *);
-  DECL_ARRAY_METHOD(array, clear, int);
+  /// Memory ownership of the parameters will be transferred to the underlying map.
+  struct var_type_pair add_var_type_map(const char *var, const char *type);
+  /// The memory of the found type is owned by the underlying map.
+  const char *find_var_type_map(const char *var);
 }
 
 // Emitted in the implementation file.
@@ -209,16 +222,25 @@
 
   struct ast ast;
   struct array filenames;
+  static struct var_type_map var_type_map;
   static char *last_loc_file;
   static unsigned last_loc_line;
 
   static char *get_pointer(char *s);
 
-  static DECL_ARRAY_METHOD(tags, push, struct tag);
-  static DECL_ARRAY_METHOD(tags, clear, int);
+  #define DECL_METHOD(name, method, ...)                   \
+    struct name * name##_##method(struct name *p, ##__VA_ARGS__)
 
-  static DECL_ARRAY_METHOD(ast, push, struct node);
-  static DECL_ARRAY_METHOD(ast, clear, int);
+  static DECL_METHOD(array, push, void *);
+  static DECL_METHOD(array, clear, int);
+
+  static DECL_METHOD(tags, push, struct tag);
+  static DECL_METHOD(tags, clear, int);
+
+  static DECL_METHOD(ast, push, struct node);
+  static DECL_METHOD(ast, clear, int);
+
+  static DECL_METHOD(var_type_map, clear, int);
 
   static void print_type(FILE *fp, const struct type *type);
   static void print_array(FILE *fp, const struct array *array);
@@ -228,6 +250,7 @@
   static void print_op(FILE *fp, const struct op *op);
   static void print_mem(FILE *fp, const struct mem *mem);
   static void print_def(FILE *fp, const struct def *def);
+  static void print_comment(FILE *fp, const struct comment *comment);
   static void print_decl(FILE *fp, const struct decl *decl);
   static void print_node(FILE *fp, const struct node *node);
 }
@@ -275,13 +298,18 @@
 %printer { fprintf(yyo, "%s", "col"); } COL;
 %printer { fprintf(yyo, "%s", "value: Int"); } ENUM;
 %printer { fprintf(yyo, "%s", "field"); } FIELD;
+%printer { fprintf(yyo, "var(%s) type(%s)", $$.var, $$.type); } remark_var_type;
 %printer { fprintf(yyo, "%d", $$); } <integer>;
 %printer { fprintf(yyo, "\"%s\"", $$); } <string>;
+%printer { print_type(yyo, &$$); } <struct type>;
 %printer { print_array(yyo, &$$); } <struct array>;
 %printer { print_sloc(yyo, &$$); } <struct sloc>;
 %printer { print_srange(yyo, &$$); } <struct srange>;
 %printer { print_ref(yyo, &$$); } <struct ref>;
+%printer { print_op(yyo, &$$); } <struct op>;
+%printer { print_mem(yyo, &$$); } <struct mem>;
 %printer { print_def(yyo, &$$); } <struct def>;
+%printer { print_comment(yyo, &$$); } <struct comment>;
 %printer { print_decl(yyo, &$$); } <struct decl>;
 %printer { print_node(yyo, &$$); } <struct node>;
 
@@ -360,6 +388,8 @@
     decl
   <struct node>
     node
+  <struct var_type_pair>
+    remark_var_type
 
 %%
 
@@ -368,6 +398,7 @@ start: node EOL
     if (ast.i) {
       ast_clear(&ast, 0);
       array_clear(&filenames, 0);
+      var_type_map_clear(&var_type_map, 0);
     }
     ast_push(&ast, $1);
   }
@@ -408,9 +439,14 @@ node: HEAD parent prev range loc attrs labels decl opts
     };
   }
 
-remark:
-  | REMARK_TU file_sloc
-  | REMARK_VAR_TYPE POINTER POINTER
+remark: remark_tu | remark_var_type
+
+remark_tu: REMARK_TU file_sloc
+
+remark_var_type: REMARK_VAR_TYPE POINTER POINTER
+  {
+    $$ = add_var_type_map($2, $3);
+  }
 
 parent: { $$ = NULL; }
  | PARENT
@@ -735,12 +771,40 @@ static inline int compare_string(const void *a, void **b) {
   return strcmp((const char *)a, (const char *)*b);
 }
 
+static inline char *copy_string(const void *a) {
+  return strdup((const char *)a);
+}
+
 static IMPL_ARRAY_BSEARCH(array, compare_string)
+static IMPL_ARRAY_BPUSH(array, copy_string)
+
+TEST(array_bpush, {
+  struct array ss = {};
+  const char *input[] = {"a", "b", "c", "d"};
+  const int n = sizeof(input) / sizeof(*input);
+  for (int i = 0; i < n; ++i) {
+    ASSERT(array_bpush(&ss, input[n - i - 1], NULL));
+  }
+
+  for (int i = 0; i < n; ++i) {
+    ASSERT(strcmp(ss.data[i], input[i]) == 0);
+  }
+
+  ASSERT(!array_bpush(&ss, "a", NULL));
+  ASSERT(ss.i == n);
+  array_clear(&ss, 1);
+})
 
 static inline char * binary_search(const struct array *array,
                                   const char *s,
                                   unsigned *i) {
   return array_bsearch(array, s, i) ? array->data[*i] : NULL;
+}
+
+static inline char * binary_push(struct array *array, const char *s) {
+  unsigned i;
+  array_bpush(array, s, &i);
+  return array->data[i];
 }
 
 TEST(binary_search, {
@@ -765,9 +829,46 @@ char * search_filename(const char *filename, unsigned *i) {
   return binary_search(&filenames, filename, i);
 }
 
+char * push_filename(const char *filename) {
+  return binary_push(&filenames, filename);
+}
+
+static int compare_var_type(const void *a, struct var_type_pair *b) {
+  return strcmp((const char *)a, b->var);
+}
+
+static struct var_type_pair create_var_type(const void *p) {
+  return *(const struct var_type_pair *)p;
+}
+
+static void free_var_type(void *p) {
+  struct var_type_pair *pair = (struct var_type_pair *)p;
+  free((void *)pair->var);
+  free((void *)pair->type);
+}
+
+static IMPL_ARRAY_PUSH(var_type_map, struct var_type_pair)
+static IMPL_ARRAY_BSEARCH(var_type_map, compare_var_type)
+static IMPL_ARRAY_BPUSH(var_type_map, create_var_type)
+static IMPL_ARRAY_CLEAR(var_type_map, free_var_type)
+
+struct var_type_pair add_var_type_map(const char *var, const char *type) {
+  struct var_type_pair pair = {var, type};
+  _Bool pushed = var_type_map_bpush(&var_type_map, &pair, NULL);
+  assert(pushed);
+  return pair;
+}
+
+const char *find_var_type_map(const char *var) {
+  unsigned i;
+  _Bool found = var_type_map_bsearch(&var_type_map, var, &i);
+  return found ? var_type_map.data[i].type : NULL;
+}
+
 void destroy() {
   ast_clear(&ast, 1);
   array_clear(&filenames, 1);
+  var_type_map_clear(&var_type_map, 1);
 }
 
 static char *get_pointer(char *s) {
@@ -1087,4 +1188,29 @@ static void print_decl(FILE *fp, const struct decl *decl) {
 }
 
 static void print_node(FILE *fp, const struct node *node) {
+  fprintf(fp, "<%d>", node->kind);
+  switch (node->kind) {
+  case NODE_KIND_HEAD:
+    fprintf(fp, "name(%s) pointer(%s) parent(%s) prev(%s)",
+            node->name, node->pointer, node->parent, node->prev);
+    fprintf(fp, " range(");
+    print_srange(fp, &node->range);
+    fprintf(fp, ") loc(");
+    print_sloc(fp, &node->loc);
+    fprintf(fp, ") attrs(");
+    print_array(fp, &node->attrs);
+    fprintf(fp, ") labels(");
+    print_array(fp, &node->labels);
+    fprintf(fp, ") decl(");
+    print_decl(fp, &node->decl);
+    fprintf(fp, ") opts(");
+    print_array(fp, &node->opts);
+    fprintf(fp, ")");
+    break;
+  case NODE_KIND_ENUM:
+    fprintf(fp, " name(%s)", node->name);
+    break;
+  case NODE_KIND_NULL:
+    break;
+  }
 }

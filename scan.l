@@ -23,20 +23,6 @@ static inline char * qname() {
   return strndup(yytext + 1, yyleng - 2);
 }
 
-static char * push_filename(char *filename) {
-  unsigned i = -1;
-  char *found = search_filename(filename, &i);
-  assert(found || i != -1);
-  if (found) return found;
-
-  array_push(&filenames, NULL);
-  memmove(&filenames.data[i + 1],
-          &filenames.data[i],
-          (filenames.i - i - 1) * sizeof(void *));
-  filenames.data[i] = strdup(filename);
-  return filenames.data[i];
-}
-
 %}
 
 INDENT ^[ \|`]+-
