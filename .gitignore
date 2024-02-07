@@ -8,6 +8,8 @@
 !/main.c
 !/test.c
 !/test.h
+!/print.c
+!/print.h
 !/array.h
 !/sql.c
 !/remark.cc

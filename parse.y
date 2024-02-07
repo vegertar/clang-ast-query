@@ -217,6 +217,7 @@
 // Emitted in the implementation file.
 %code {
   #include "test.h"
+  #include "print.h"
   #include <assert.h>
   #include <stdio.h>
 
@@ -241,18 +242,6 @@
   static DECL_METHOD(ast, clear, int);
 
   static DECL_METHOD(var_type_map, clear, int);
-
-  static void print_type(FILE *fp, const struct type *type);
-  static void print_array(FILE *fp, const struct array *array);
-  static void print_sloc(FILE *fp, const struct sloc *sloc);
-  static void print_srange(FILE *fp, const struct srange *srange);
-  static void print_ref(FILE *fp, const struct ref *ref);
-  static void print_op(FILE *fp, const struct op *op);
-  static void print_mem(FILE *fp, const struct mem *mem);
-  static void print_def(FILE *fp, const struct def *def);
-  static void print_comment(FILE *fp, const struct comment *comment);
-  static void print_decl(FILE *fp, const struct decl *decl);
-  static void print_node(FILE *fp, const struct node *node);
 }
 
 // Include the header in the implementation rather than duplicating it.
@@ -778,16 +767,25 @@ static inline char *copy_string(const void *a) {
 static IMPL_ARRAY_BSEARCH(array, compare_string)
 static IMPL_ARRAY_BPUSH(array, copy_string)
 
+#ifdef USE_TEST
+static int cmpstringp(const void *p1, const void *p2) {
+  return strcmp(* (char * const *) p1, * (char * const *) p2);
+}
+#endif // USE_TEST
+
 TEST(array_bpush, {
   struct array ss = {};
-  const char *input[] = {"a", "b", "c", "d"};
+  const char *input[] = {"a", "c", "b", "0", "3", "1"};
   const int n = sizeof(input) / sizeof(*input);
   for (int i = 0; i < n; ++i) {
-    ASSERT(array_bpush(&ss, input[n - i - 1], NULL));
+    ASSERT(array_bpush(&ss, input[i], NULL));
   }
 
+  qsort(&input[0], n, sizeof(input[0]), cmpstringp);
   for (int i = 0; i < n; ++i) {
-    ASSERT(strcmp(ss.data[i], input[i]) == 0);
+    ASSERT_FMT(strcmp(ss.data[i], input[i]) == 0,
+               "\n\t:[%d] expect \"%s\", got \"%s\"\n\t",
+               i, input[i], (char *)ss.data[i]);
   }
 
   ASSERT(!array_bpush(&ss, "a", NULL));
@@ -826,7 +824,10 @@ TEST(binary_search, {
 })
 
 char * search_filename(const char *filename, unsigned *i) {
-  return binary_search(&filenames, filename, i);
+  unsigned j = -1;
+  char *s = binary_search(&filenames, filename, &j);
+  if (i) *i = j;
+  return s;
 }
 
 char * push_filename(const char *filename) {
@@ -834,7 +835,7 @@ char * push_filename(const char *filename) {
 }
 
 static int compare_var_type(const void *a, struct var_type_pair *b) {
-  return strcmp((const char *)a, b->var);
+  return strcmp(((const struct var_type_pair *)a)->var, b->var);
 }
 
 static struct var_type_pair create_var_type(const void *p) {
@@ -861,7 +862,7 @@ struct var_type_pair add_var_type_map(const char *var, const char *type) {
 
 const char *find_var_type_map(const char *var) {
   unsigned i;
-  _Bool found = var_type_map_bsearch(&var_type_map, var, &i);
+  _Bool found = var_type_map_bsearch(&var_type_map, &var, &i);
   return found ? var_type_map.data[i].type : NULL;
 }
 
@@ -1035,182 +1036,3 @@ static IMPL_ARRAY_CLEAR(tags, tag_destroy)
 
 static IMPL_ARRAY_PUSH(ast, struct node)
 static IMPL_ARRAY_CLEAR(ast, node_destroy)
-
-static void print_type(FILE *fp, const struct type *type) {
-  if (type->qualified) {
-    fprintf(fp, "'%s'", type->qualified);
-    if (type->desugared) {
-      fprintf(fp, ":'%s'", type->desugared);
-    }
-  }
-}
-
-static void print_array(FILE *fp, const struct array *array) {
-  for (unsigned i = 0; i < array->i; ++i) {
-    fprintf(fp, "%s", (const char *)array->data[i]);
-    if (i < array->i - 1) {
-      fprintf(fp, " ");
-    }
-  }
-}
-
-static void print_sloc(FILE *fp, const struct sloc *sloc) {
-  if (sloc->file || sloc->line || sloc->col) {
-    fprintf(fp, "%s:%u:%u", sloc->file, sloc->line, sloc->col);
-  }
-}
-
-static void print_srange(FILE *fp, const struct srange *srange) {
-  print_sloc(fp, &srange->begin);
-  if (srange->end.file || srange->end.line || srange->end.col) {
-    fprintf(fp, ", ");
-    print_sloc(fp, &srange->end);
-  }
-}
-
-static void print_ref(FILE *fp, const struct ref *ref) {
-  if (ref->pointer) {
-    fprintf(fp, "%s %s", ref->name, ref->pointer);
-    if (ref->type.qualified) {
-      fprintf(fp, " ");
-      print_type(fp, &ref->type);
-    }
-  }
-}
-
-static void print_op(FILE *fp, const struct op *op) {
-  if (op->operator) {
-    fprintf(fp, "'%s'", op->operator);
-    for (unsigned i = 0; i < op->tags.i; ++i) {
-      fprintf(fp, " %s=", (const char *)op->tags.data[i].name);
-      print_type(fp, &op->tags.data[i].type);
-    }
-  }
-}
-
-static void print_mem(FILE *fp, const struct mem *mem) {
-  if (mem->kind) {
-    fprintf(fp, mem->kind == MEM_KIND_ARROW ? "->" : ".");
-    fprintf(fp, "%s %s", mem->name, mem->pointer);
-  }
-}
-
-static void print_def(FILE *fp, const struct def *def) {
-  fprintf(fp, "type(");
-  print_type(fp, &def->type);
-  fprintf(fp, ")");
-
-  fprintf(fp, " specs(");
-  print_array(fp, &def->specs);
-  fprintf(fp, ")");
-
-  fprintf(fp, " value(%s)", def->value ? def->value : "");
-  
-  fprintf(fp, " op(");
-  print_op(fp, &def->op);
-  fprintf(fp, ")");
-
-  fprintf(fp, " mem(");
-  print_mem(fp, &def->mem);
-  fprintf(fp, ")");
-
-  if (def->field) {
-    fprintf(fp, " field");
-  }
-
-  fprintf(fp, " ref(");
-  print_ref(fp, &def->ref);
-  fprintf(fp, ")");
-
-  fprintf(fp, " cast(%s)", def->cast ? def->cast : "");
-}
-
-static void print_comment(FILE *fp, const struct comment *comment) {
-  fprintf(fp, "%s=\"%s\"", comment->tag, comment->text);
-}
-
-static void print_decl(FILE *fp, const struct decl *decl) {
-  fprintf(fp, "<%d>", decl->kind);
-  switch (decl->kind) {
-  case DECL_KIND_NIL:
-    break;
-  case DECL_KIND_V1:
-    fprintf(fp, " class(%s)", decl->variants.v1.class);
-    break;
-  case DECL_KIND_V2:
-    fprintf(fp, " name(%s)", decl->variants.v2.name);
-    break;
-  case DECL_KIND_V3:
-    fprintf(fp, " class(%s) name(%s)", decl->variants.v3.class, decl->variants.v3.name);
-    break;
-  case DECL_KIND_V4:
-    fprintf(fp, " sqname(%s) pointer(%s)", decl->variants.v4.sqname, decl->variants.v4.pointer);
-    break;
-  case DECL_KIND_V5:
-    fprintf(fp, " sqname(%s) trait(%s)", decl->variants.v5.sqname, decl->variants.v5.trait);
-    break;
-  case DECL_KIND_V6:
-    fprintf(fp, " sqname(%s) trait(%s) def(", decl->variants.v6.sqname, decl->variants.v6.trait);
-    print_def(fp, &decl->variants.v6.def);
-    fprintf(fp, ")");
-    break;
-  case DECL_KIND_V7:
-    fprintf(fp, " sqname(%s) def(", decl->variants.v7.sqname);
-    print_def(fp, &decl->variants.v7.def);
-    fprintf(fp, ")");
-    break;
-  case DECL_KIND_V8:
-    fprintf(fp, " def(");
-    print_def(fp, &decl->variants.v8.def);
-    fprintf(fp, ")");
-    break;
-  case DECL_KIND_V9:
-    fprintf(fp, " name(%s) def(", decl->variants.v9.name);
-    print_def(fp, &decl->variants.v9.def);
-    fprintf(fp, ")");
-    break;
-  case DECL_KIND_V10:
-    fprintf(fp, " seq(");
-    print_array(fp, &decl->variants.v10.seq);
-    fprintf(fp, ")");
-    break;
-  case DECL_KIND_V11:
-    fprintf(fp, " name(%s) seq(", decl->variants.v11.name);
-    print_array(fp, &decl->variants.v11.seq);
-    fprintf(fp, ")");
-    break;
-  case DECL_KIND_V12:
-    fprintf(fp, " comment(");
-    print_comment(fp, &decl->variants.v12.comment);
-    fprintf(fp, ")");
-    break;
-  }
-}
-
-static void print_node(FILE *fp, const struct node *node) {
-  fprintf(fp, "<%d>", node->kind);
-  switch (node->kind) {
-  case NODE_KIND_HEAD:
-    fprintf(fp, "name(%s) pointer(%s) parent(%s) prev(%s)",
-            node->name, node->pointer, node->parent, node->prev);
-    fprintf(fp, " range(");
-    print_srange(fp, &node->range);
-    fprintf(fp, ") loc(");
-    print_sloc(fp, &node->loc);
-    fprintf(fp, ") attrs(");
-    print_array(fp, &node->attrs);
-    fprintf(fp, ") labels(");
-    print_array(fp, &node->labels);
-    fprintf(fp, ") decl(");
-    print_decl(fp, &node->decl);
-    fprintf(fp, ") opts(");
-    print_array(fp, &node->opts);
-    fprintf(fp, ")");
-    break;
-  case NODE_KIND_ENUM:
-    fprintf(fp, " name(%s)", node->name);
-    break;
-  case NODE_KIND_NULL:
-    break;
-  }
-}

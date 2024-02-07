@@ -177,6 +177,7 @@ static void dump_ast(const struct ast *ast, int max_level) {
            " parent_number INTEGER,"
            " kind TEXT,"
            " ptr TEXT,"
+           " type_ptr TEXT,"
            " begin_src INTEGER,"
            " begin_row INTEGER,"
            " begin_col INTEGER,"
@@ -190,8 +191,7 @@ static void dump_ast(const struct ast *ast, int max_level) {
            " qualified_type TEXT,"
            " desugared_type TEXT,"
            " specs INTEGER,"
-           " ref_ptr TEXT,"
-           " type_ptr TEXT)");
+           " ref_ptr TEXT)");
 
   unsigned parents[MAX_AST_LEVEL + 1] = {-1};
   for (unsigned i = 0; i < ast->i; ++i) {
@@ -360,9 +360,9 @@ static void dump_cst() {
 
       if (yydebug) {
         printf("%*s<%d:%s> [%u, %u] - [%u, %u]\n", top.indent, "",
-              symbol,
-              ts_node_is_named(top.node) ? ts_language_symbol_name(lang, symbol) : "",
-              start.row + 1, start.column + 1, end.row + 1, end.column + 1);
+               symbol,
+               ts_node_is_named(top.node) ? ts_language_symbol_name(lang, symbol) : "",
+               start.row + 1, start.column + 1, end.row + 1, end.column + 1);
       }
 
       // Only insert leaf nodes so that all ranges are disjoint

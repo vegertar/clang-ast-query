@@ -16,6 +16,12 @@ else
 CFLAGS+= -g -O0
 endif
 
+ifdef USE_TEST
+CPPFLAGS+= -DUSE_TEST
+# Must be the first linked one
+SRCS:= test.c
+endif
+
 ifdef USE_TREE_SITTER
 TREE_SITTER_DIR?= ${HOME}/tree-sitter
 TREE_SITTER_C_DIR?= ${HOME}/tree-sitter-c
@@ -27,11 +33,6 @@ LDFLAGS+= ${TREE_SITTER_LDFLAGS}
 SRCS+= ${TREE_SITTER_C_DIR}/src/parser.c
 endif
 
-ifdef USE_TEST
-CPPFLAGS+= -DUSE_TEST
-SRCS+= test.c
-endif
-
 ifdef USE_CLANG_TOOL
 LLVM_DIR?= /usr/lib/llvm-17
 CPPFLAGS+= -DUSE_CLANG_TOOL
@@ -40,8 +41,8 @@ LDFLAGS+= -L${LLVM_DIR}/lib -lclang-cpp -lLLVM -lstdc++
 SRCS+= remark.cc
 endif
 
-SRCS+= sql.c main.c
-GENHDRS+= parse.h
+SRCS+= print.c sql.c main.c
+GENHDRS+= parse.h scan.h
 GENSRCS+= parse.c scan.c
 
 build: caq
@@ -65,12 +66,13 @@ test-fun: build
 	@./caq -t
 
 caq: ${OBJS} ${GENSRCS}
-	${CC} -o $@ ${CFLAGS} $^ ${LDFLAGS}
+	${CC} -o $@ ${CPPFLAGS} ${CFLAGS} $^ ${LDFLAGS}
 
 parse.h: parse.c
 parse.c: parse.y
 	${YACC} -d $< ${YACCFLAGS} -o $@
 
+scan.h: scan.c
 scan.c: scan.l
 	${LEX} --header-file=$(basename $<).h -o $@ ${LEXFLAGS} $<
 
