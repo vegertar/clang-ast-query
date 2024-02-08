@@ -79,11 +79,26 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return TOK_ENUM;
 }
 
-^"#TU:" {
+^"#TU:".+ {
+  int n = sscanf(yytext, "#TU:%s", tu);
+  if (n != 1) return TOK_YYUNDEF;
+  yylval->TOK_REMARK_TU = tu;
   return TOK_REMARK_TU;
 }
 
-^"#VAR-TYPE:" {
+^"#CWD:".+ {
+  int n = sscanf(yytext, "#CWD:%s", cwd);
+  if (n != 1) return TOK_YYUNDEF;
+  yylval->TOK_REMARK_CWD = cwd;
+  return TOK_REMARK_CWD;
+}
+
+^"#VAR-TYPE:".+ {
+  char var[32];
+  char type[32];
+  int n = sscanf(yytext, "#VAR-TYPE:%s %s", var, type);
+  if (n != 2) return TOK_YYUNDEF;
+  yylval->TOK_REMARK_VAR_TYPE = add_var_type_map(strdup(var), strdup(type));
   return TOK_REMARK_VAR_TYPE;
 }
 

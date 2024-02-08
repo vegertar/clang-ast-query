@@ -8,6 +8,8 @@
 #include <clang/Frontend/MultiplexConsumer.h>
 #include <clang/Tooling/Tooling.h>
 
+#include <unistd.h>
+
 #include <cassert>
 #include <cerrno>
 #include <cstring>
@@ -114,8 +116,12 @@ class ast_consumer final : public ASTConsumer {
 
   void HandleTranslationUnit(ASTContext &ctx) override {
     auto &sm = ctx.getSourceManager();
-    out << "#TU:" << sm.getFileEntryForID(sm.getMainFileID())->getName()
-        << ':' << 0 << ':' << 0 << '\n'; // To match the file_sloc pattern
+    const auto file = sm.getFileEntryForID(sm.getMainFileID());
+    const auto &filename = file->getName();
+    char cwd[PATH_MAX];
+
+    out << "#TU:" << filename << '\n';
+    out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
     return impl->HandleTranslationUnit(ctx);
   }
 

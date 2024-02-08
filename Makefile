@@ -41,11 +41,11 @@ LDFLAGS+= -L${LLVM_DIR}/lib -lclang-cpp -lLLVM -lstdc++
 SRCS+= remark.cc
 endif
 
-SRCS+= print.c sql.c main.c
 GENHDRS+= parse.h scan.h
 GENSRCS+= parse.c scan.c
+SRCS+= print.c sql.c main.c ${GENSRCS}
 
-build: caq
+build: ${GENHDRS} caq
 
 OBJS:= $(addsuffix .o,$(basename ${SRCS}))
 -include ${OBJS:.o=.d}
@@ -65,8 +65,8 @@ test-query: build
 test-fun: build
 	@./caq -t
 
-caq: ${OBJS} ${GENSRCS}
-	${CC} -o $@ ${CPPFLAGS} ${CFLAGS} $^ ${LDFLAGS}
+caq: ${OBJS}
+	${CC} -o $@ $^ ${LDFLAGS}
 
 parse.h: parse.c
 parse.c: parse.y
@@ -77,6 +77,6 @@ scan.c: scan.l
 	${LEX} --header-file=$(basename $<).h -o $@ ${LEXFLAGS} $<
 
 clean:
-	rm -f *.out *.o ${GENSRCS} ${GENHDRS}
+	rm -f caq *.output *.out *.o *.d ${GENSRCS} ${GENHDRS}
 
 .PHONY: build test test-parse test-query test-fun test-mem clean

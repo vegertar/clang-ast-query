@@ -199,6 +199,13 @@
   extern struct ast ast;
   extern struct array filenames;
 
+  #ifndef PATH_MAX
+  # define PATH_MAX 4096
+  #endif // !PATH_MAX
+
+  extern char tu[PATH_MAX];
+  extern char cwd[PATH_MAX];
+
   int parse(YYLTYPE *lloc, const user_context *uctx);
   void destroy();
   int dump(int max_level, const char *db_file);
@@ -223,6 +230,9 @@
 
   struct ast ast;
   struct array filenames;
+  char tu[PATH_MAX];
+  char cwd[PATH_MAX];
+
   static struct var_type_map var_type_map;
   static char *last_loc_file;
   static unsigned last_loc_line;
@@ -287,7 +297,7 @@
 %printer { fprintf(yyo, "%s", "col"); } COL;
 %printer { fprintf(yyo, "%s", "value: Int"); } ENUM;
 %printer { fprintf(yyo, "%s", "field"); } FIELD;
-%printer { fprintf(yyo, "var(%s) type(%s)", $$.var, $$.type); } remark_var_type;
+%printer { fprintf(yyo, "var(%s) type(%s)", $$.var, $$.type); } REMARK_VAR_TYPE;
 %printer { fprintf(yyo, "%d", $$); } <integer>;
 %printer { fprintf(yyo, "\"%s\"", $$); } <string>;
 %printer { print_type(yyo, &$$); } <struct type>;
@@ -310,8 +320,6 @@
     COL
     ENUM
     FIELD
-    REMARK_TU
-    REMARK_VAR_TYPE
   <integer>
     LEVEL
   <string>
@@ -335,6 +343,10 @@
     STRING
     NUMBER
     INTEGER
+    REMARK_TU
+    REMARK_CWD
+  <struct var_type_pair>
+    REMARK_VAR_TYPE
 
 %nterm
   <_Bool>
@@ -377,8 +389,6 @@
     decl
   <struct node>
     node
-  <struct var_type_pair>
-    remark_var_type
 
 %%
 
@@ -428,14 +438,7 @@ node: HEAD parent prev range loc attrs labels decl opts
     };
   }
 
-remark: remark_tu | remark_var_type
-
-remark_tu: REMARK_TU file_sloc
-
-remark_var_type: REMARK_VAR_TYPE POINTER POINTER
-  {
-    $$ = add_var_type_map($2, $3);
-  }
+remark: REMARK_TU | REMARK_CWD | REMARK_VAR_TYPE
 
 parent: { $$ = NULL; }
  | PARENT

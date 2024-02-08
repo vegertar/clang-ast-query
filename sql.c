@@ -83,6 +83,7 @@
 #define END_INSERT_INTO() end_if_prepared_stmt()
 
 #define FILL_TEXT(k, v) sqlite3_bind_text(stmt, k, v, -1, SQLITE_STATIC)
+#define FILL_TEXT_COPY(k, v) sqlite3_bind_text(stmt, k, v, -1, SQLITE_TRANSIENT)
 #define FILL_INT(k, v) sqlite3_bind_int(stmt, k, v)
 
 enum spec {
@@ -402,10 +403,22 @@ static void dump_src() {
            " filename TEXT PRIMARY KEY,"
            " number INTEGER)");
 
+  char resolved[PATH_MAX];
   for (unsigned i = 0; i < filenames.i; ++i) {
+    const char *filename = (char *)filenames.data[i];
+    if (is_internal_file(filename)) {
+      continue;
+    }
+
+    char *fullpath = realpath(filename, resolved);
+    if (!fullpath) {
+      fprintf(stderr, "%s: realpath(%s) error: %s",
+              __func__, filename, strerror(errno));
+      abort();
+    }
     if_prepared_stmt("INSERT INTO src (filename, number)"
                      " VALUES (?, ?)") {
-      FILL_TEXT(1, (char *)filenames.data[i]);
+      FILL_TEXT_COPY(1, fullpath);
       FILL_INT(2, i);
     }
     end_if_prepared_stmt();
