@@ -10,12 +10,6 @@
 
 #include <unistd.h>
 
-#include <cassert>
-#include <cerrno>
-#include <cstring>
-#include <fstream>
-#include <iostream>
-
 namespace {
 
 using namespace clang;
@@ -71,18 +65,22 @@ class match_callback : public MatchFinder::MatchCallback {
 
   void run(const MatchFinder::MatchResult &result) override {
     if (auto var = result.Nodes.getNodeAs<VarDecl>("var")) {
-      Decl *type = nullptr;
-      auto p = var->getType().getTypePtr();
-      if (auto t = p->getAs<TypedefType>()) {
-        type = t->getDecl();
-      } else if (auto t = p->getAs<TagType>()) {
-        type = t->getDecl();
-      }
-
-      if (type) {
+      if (auto type = decl(var->getType().getTypePtr())) {
         out << "#VAR-TYPE:" << var << ' ' << type << '\n';
       }
     }
+  }
+
+  Decl *decl(const Type *p) {
+    Decl *type = nullptr;
+    if (auto t = p->getAs<TypedefType>()) {
+      type = t->getDecl();
+    } else if (auto t = p->getAs<TagType>()) {
+      type = t->getDecl();
+    } else if (auto t = p->getAs<PointerType>()) {
+      type = decl(t->getPointeeType().getTypePtr());
+    }
+    return type;
   }
 
  private:
@@ -184,25 +182,17 @@ class frontend_action : public ASTFrontendAction {
   void *data = nullptr;
 };
 
-std::string read_content(std::istream &in) {
-  char buffer[BUFSIZ];
-  std::string s;
-  auto rdbuf = in.rdbuf();
-  while (auto n = rdbuf->sgetn(buffer, sizeof(buffer))) {
-    s.insert(s.end(), buffer, buffer + n);
-  }
-  return s;
-}
-
 int print_line(char *line, size_t n, size_t cap, void *data) {
-  assert(n + 1 < cap);
   llvm::outs() << std::string_view{line, n};
   return 0;
 }
 
 } // namespace
 
-int remark(const char *filename, char **opts, int n,
+int remark(const char *code,
+           size_t size,
+           const char *filename,
+           char **opts, int n,
            int (*parse_line)(char *line, size_t n, size_t cap, void *data),
            void *data) {
   std::vector<std::string> args(opts, opts + n);
@@ -210,25 +200,12 @@ int remark(const char *filename, char **opts, int n,
   args.push_back("-ast-dump");
   args.push_back("-fno-color-diagnostics");
 
-  std::string code;
-  if (filename) {
-    std::ifstream in(filename);
-    if (!in) {
-      llvm::errs() << "cannot open '" << filename << "': " << std::strerror(errno) << '\n';
-      return 1;
-    }
-    code = read_content(in);
-    in.close();
-  } else {
-    filename = "input.c";
-    code = read_content(std::cin);
-  }
-
+  if (!filename) filename = "input.c";
   if (!parse_line) parse_line = print_line;
 
   return clang::tooling::runToolOnCodeWithArgs(
       std::make_unique<frontend_action>(parse_line, data),
-      code,
+      std::string_view{code, size},
       args,
       filename) ? 0 : -1;
 }

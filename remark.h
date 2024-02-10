@@ -8,7 +8,11 @@ using std::size_t;
 extern "C" {
 #endif
 
-int remark(const char *filename, char **opts, int n,
+int remark(const char *code,
+           size_t size,
+           const char *filename,
+           char **opts,
+           int n,
            int (*parse_line)(char *line, size_t n, size_t cap, void *data),
            void *data);
 

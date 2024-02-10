@@ -208,7 +208,7 @@
 
   int parse(YYLTYPE *lloc, const user_context *uctx);
   void destroy();
-  int dump(int max_level, const char *db_file);
+  int dump(const char *db_file);
 
   /// If the filename is not found, a copy will be pushed and returned.
   char *push_filename(const char *filename);
@@ -802,12 +802,6 @@ static inline char * binary_search(const struct array *array,
   return array_bsearch(array, s, i) ? array->data[*i] : NULL;
 }
 
-static inline char * binary_push(struct array *array, const char *s) {
-  unsigned i;
-  array_bpush(array, s, &i);
-  return array->data[i];
-}
-
 TEST(binary_search, {
   struct array ss = {};
   const char *input[] = {"a", "b", "c", "d"};
@@ -834,7 +828,9 @@ char * search_filename(const char *filename, unsigned *i) {
 }
 
 char * push_filename(const char *filename) {
-  return binary_push(&filenames, filename);
+  unsigned i;
+  array_bpush(&filenames, filename, &i);
+  return filenames.data[i];
 }
 
 static int compare_var_type(const void *a, struct var_type_pair *b) {

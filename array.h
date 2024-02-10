@@ -7,6 +7,29 @@
     type *data;                                                \
   }
 
+#define IMPL_ARRAY_RESERVE(name, type)                         \
+  struct name * name##_reserve(struct name *p, unsigned n) {   \
+    if (p->n < n) {                                            \
+      type *data = (type *)realloc(p->data, sizeof(type) * n); \
+      assert(data);                                            \
+      p->data = data;                                          \
+      p->n = n;                                                \
+    }                                                          \
+    return p;                                                  \
+  }
+
+#define IMPL_ARRAY_SET(name, type)                             \
+  struct name * name##_set(struct name *p, int i, type item) { \
+    assert(i >= 0);                                            \
+    name##_reserve(p, i + 1);                                  \
+    if (p->i <= i) {                                           \
+      memset(&p->data[i], 0, (i - p->i) * sizeof(type));       \
+      p->i = i + 1;                                            \
+    }                                                          \
+    p->data[i] = item;                                         \
+    return p;                                                  \
+  }
+
 #define IMPL_ARRAY_PUSH(name, type)                            \
   struct name * name##_push(struct name *p, type item) {       \
     if (p->i == p->n) {                                        \
@@ -17,6 +40,16 @@
       p->n = n;                                                \
     }                                                          \
     p->data[p->i++] = item;                                    \
+    return p;                                                  \
+  }
+
+#define IMPL_ARRAY_APPEND(name, type)                          \
+  struct name * name##_append(struct name *p,                  \
+                              type *src,                       \
+                              size_t len) {                    \
+    name##_reserve(p, p->i + len);                             \
+    memcpy(&p->data[p->i], src, len);                          \
+    p->i += len;                                               \
     return p;                                                  \
   }
 
@@ -45,7 +78,7 @@
     assert(found || j != -1);                                  \
                                                                \
     if (!found) {                                              \
-      if (p->i) {                                              \
+      if (j < p->i) {                                          \
         name##_push(p, p->data[0]);                            \
         memmove(&p->data[j + 1],                               \
                 &p->data[j],                                   \

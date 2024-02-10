@@ -12,14 +12,20 @@ LDFLAGS= -lfl -lsqlite3
 ifdef RELEASE
 CPPFLAGS+= -DNDEBUG
 CFLAGS+= -O2
+CXXFLAGS+= -O2
 else
 CFLAGS+= -g -O0
+CXXFLAGS+= -g -O0
 endif
 
 ifdef USE_TEST
 CPPFLAGS+= -DUSE_TEST
 # Must be the first linked one
 SRCS:= test.c
+endif
+
+ifdef USE_LOG
+CPPFLAGS+= -DUSE_LOG
 endif
 
 ifdef USE_TREE_SITTER
