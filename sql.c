@@ -44,36 +44,35 @@
 #define VALUES_I1(n) VALUES_I2(n)
 #define VALUES_I2(n) VALUES##n()
 #define VALUES18() \
-  "?,?,?," \
-  "?,?,?," \
-  "?,?,?," \
-  "?,?,?," \
-  "?,?,?," \
+  "?,?,?,"         \
+  "?,?,?,"         \
+  "?,?,?,"         \
+  "?,?,?,"         \
+  "?,?,?,"         \
   "?,?,?"
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
     static sqlite3_stmt *stmt = NULL;                                          \
     __VA_ARGS__;                                                               \
-    if (!err && !stmt) {                                                      \
+    if (!err && !stmt) {                                                       \
       int i = 0;                                                               \
       while (i < MAX_STMT_SIZE && stmts[i]) {                                  \
         ++i;                                                                   \
       }                                                                        \
       assert(i < MAX_STMT_SIZE);                                               \
-      err = sqlite3_prepare_v2(db, sql, sizeof(sql), &stmts[i], NULL);        \
+      err = sqlite3_prepare_v2(db, sql, sizeof(sql), &stmts[i], NULL);         \
       stmt = stmts[i];                                                         \
     }                                                                          \
+    if (stmt) sqlite3_clear_bindings(stmt);                                    \
     if (!err && stmt)
 
 #define end_if_prepared_stmt()                                                 \
-    if (!err && stmt) {                                                       \
+    if (!err && stmt) {                                                        \
       sqlite3_step(stmt);                                                      \
-      sqlite3_clear_bindings(stmt);                                            \
-      err = sqlite3_reset(stmt);                                              \
+      err = sqlite3_reset(stmt);                                               \
     }                                                                          \
-  }                                                                            \
-  while (0)
+  } while (0)
 
 #define INSERT_INTO(table, ...)                                                \
   if_prepared_stmt("INSERT INTO " #table " (" #__VA_ARGS__ ") VALUES ("        \
@@ -114,9 +113,10 @@ static int compare_position(struct position a, struct position b) {
 
 struct cst_node {
   int symbol;
+  int kind;
+  int decl;
   struct position begin;
   struct position end;
-  int decl;
 };
 
 static int compare_cst_node(const void *a, struct cst_node *b) {
@@ -127,12 +127,10 @@ static int compare_cst_node(const void *a, struct cst_node *b) {
 
 DECL_ARRAY(cst, struct cst_node);
 IMPL_ARRAY_PUSH(cst, struct cst_node)
-IMPL_ARRAY_BSEARCH(cst, compare_cst_node);
+IMPL_ARRAY_BSEARCH(cst, compare_cst_node)
 IMPL_ARRAY_CLEAR(cst, (void))
 
-static void destroy_cst(void *p) {
-  cst_clear((struct cst *)p, 2);
-}
+static void destroy_cst(void *p) { cst_clear((struct cst *)p, 2); }
 
 DECL_ARRAY(cst_set, struct cst);
 IMPL_ARRAY_RESERVE(cst_set, struct cst)
@@ -144,6 +142,26 @@ static struct cst_node * find_cst(const struct cst_set *cst_set,
                                   int line,
                                   int col);
 
+struct decl_number_entry {
+  const char *decl;
+  unsigned var;
+  unsigned type;
+};
+
+static int compare_decl_number(const void *a, struct decl_number_entry *b) {
+  return strcmp(((const struct decl_number_entry *)a)->decl, b->decl);
+}
+
+static struct decl_number_entry create_decl_number(const void *p) {
+  return *(const struct decl_number_entry *)p;
+}
+
+DECL_ARRAY(decl_number_map, struct decl_number_entry);
+static IMPL_ARRAY_PUSH(decl_number_map, struct decl_number_entry)
+static IMPL_ARRAY_BSEARCH(decl_number_map, compare_decl_number)
+static IMPL_ARRAY_BPUSH(decl_number_map, create_decl_number)
+static IMPL_ARRAY_CLEAR(decl_number_map, (void))
+
 #else
 
 struct cst_set {};
@@ -152,7 +170,7 @@ struct cst_set {};
 
 static void dump_src(struct cst_set *cst_set);
 static void dump_ast(const struct cst_set *cst_set, const struct ast *ast);
-
+static void dump_cst(const struct cst_set *cst_set);
 
 static void exec_sql(const char *s) {
   if (!db || err) {
@@ -196,7 +214,7 @@ static unsigned mark_specs(const struct def *def) {
 
 static inline _Bool is_internal_file(const char *filename) {
   return strcmp(filename, "<built-in>") == 0 ||
-      strcmp(filename, "<scratch space>") == 0;
+         strcmp(filename, "<scratch space>") == 0;
 }
 
 int dump(const char *db_file) {
@@ -209,6 +227,7 @@ int dump(const char *db_file) {
   exec_sql("BEGIN TRANSACTION");
   dump_src(&cst_set);
   dump_ast(&cst_set, &ast);
+  dump_cst(&cst_set);
   exec_sql("END TRANSACTION");
 
   for (int i = 0; i < MAX_STMT_SIZE; ++i) {
@@ -227,6 +246,83 @@ int dump(const char *db_file) {
 
   return err;
 }
+
+enum name_kind {
+  NAME_KIND_UNKNOWN = 0U,
+  NAME_KIND_DECL = 1U,
+  NAME_KIND_VALUABLE_DECL = 3U,
+  NAME_KIND_FUNCTION_DECL = 7U,
+};
+
+static enum name_kind name_kind(const char *name) {
+  unsigned kind = NAME_KIND_UNKNOWN;
+  size_t n = strlen(name);
+  if (n > 4 && strcmp(name + n - 4, "Decl") == 0) {
+    kind = NAME_KIND_DECL;
+    if (n == 12 && strncmp("Function", name, 8) == 0)
+      kind = NAME_KIND_FUNCTION_DECL;
+    else if (n >= 7 && strncmp("Var", name + n - 7, 3) == 0)
+      kind = NAME_KIND_VALUABLE_DECL;
+  }
+  return kind;
+}
+
+enum symbol_kind {
+  SYMBOL_KIND_UNKNOWN = 0,
+  SYMBOL_KIND_IDENTIFIER = 1,
+  SYMBOL_KIND_TYPE = 2,
+};
+
+static enum symbol_kind symbol_kind(int symbol) {
+  // See also https://raw.githubusercontent.com/tree-sitter/tree-sitter-c/master/src/parser.c
+  switch (symbol) {
+  case 1:   // identifier
+  case 150: // true
+  case 151: // false
+  case 152: // NULL
+  case 153: // nullptr
+  case 345: // field
+    return SYMBOL_KIND_IDENTIFIER;
+  case 89:  // primitive type
+  case 347: // custom type
+    return SYMBOL_KIND_TYPE;
+  default:
+    return SYMBOL_KIND_UNKNOWN;
+  }
+}
+
+#ifdef USE_TREE_SITTER
+
+static void print_cst_node(const struct cst_node *cst_node,
+                           const struct node *node,
+                           int line,
+                           int col) {
+  if (!line || !col) return;
+  fprintf(stderr, "(%p)%*s%s:%d:%d -> ", node->pointer, node->level, "",
+          node->range.begin.file, line, col);
+  if (!cst_node) fprintf(stderr, "NULL\n");
+  else fprintf(stderr, "<%d>[%d:%d - %d:%d]\n", cst_node->symbol,
+               cst_node->begin.row, cst_node->begin.col,
+               cst_node->end.row, cst_node->end.col);
+}
+
+static void set_cst_decl(struct cst_node *cst_node,
+                         struct decl_number_entry entry) {
+  if (cst_node && entry.decl) {
+    switch (cst_node->kind) {
+    case SYMBOL_KIND_IDENTIFIER:
+      cst_node->decl = entry.var;
+      break;
+    case SYMBOL_KIND_TYPE:
+      cst_node->decl = entry.type;
+      break;
+    default:
+      break;
+    }
+  }
+}
+
+#endif // USE_TREE_SITTER
 
 static void dump_ast(const struct cst_set *cst_set, const struct ast *ast) {
   exec_sql("CREATE TABLE ast ("
@@ -248,23 +344,25 @@ static void dump_ast(const struct cst_set *cst_set, const struct ast *ast) {
            " desugared_type TEXT,"
            " specs INTEGER,"
            " ref_ptr TEXT)");
-/// We augment five type-relevant fields: type, type_ptr, type_src, type_row, type_col.
-/// The type field represents the minimal tokenized type, such as 'uint8_t' in "const uint8_t **".
-/// The type_ptr field indicates the original type declaration.
-/// Specifically, in the case of a function, type and type_ptr represent the corresponding return type.
-/// The set of positional type fields (type_src, type_row, type_col) simplifies query statements.
-          //  " type TEXT,"
-          //  " type_ptr TEXT,"
-          //  " type_src INTEGER,"
-          //  " type_row INTEGER,"
-          //  " type_col INTEGER)");
 
   unsigned parents[MAX_AST_LEVEL + 1] = {-1};
+
+#ifdef USE_TREE_SITTER
+  struct decl_number_map decl_number_map = {};
+#endif // USE_TREE_SITTER
+
   for (unsigned i = 0; i < ast->i; ++i) {
     const struct node *node = &ast->data[i];
     const struct decl *decl = &node->decl;
+    const char *ref_ptr = NULL;
     int parent_number = -1;
+    int begin_src = -1, begin_line = 0, begin_col = 0;
     int src = -1, line = 0, col = 0;
+
+#ifdef USE_TREE_SITTER
+    struct cst_node *begin_cst_node = NULL;
+    struct cst_node *cst_node = NULL;
+#endif // USE_TREE_SITTER
 
     INSERT_INTO(ast,
                 NUMBER, PARENT_NUMBER,
@@ -273,59 +371,11 @@ static void dump_ast(const struct cst_set *cst_set, const struct ast *ast) {
                 END_SRC, END_ROW, END_COL,
                 SRC, ROW, COL,
                 NAME, QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_PTR) {
-      switch (node->kind) {
-      case NODE_KIND_HEAD:
-        assert(node->level < MAX_AST_LEVEL);
-        parent_number = parents[node->level];
-        if (node->level + 1 < MAX_AST_LEVEL) parents[node->level + 1] = i;
-
-        src = src_number(node->range.begin.file);
-        line = node->range.begin.line;
-        col = node->range.begin.col;
-
-#ifdef USE_TREE_SITTER
-        if (src != -1) {
-          struct cst_node *cst_node = find_cst(cst_set, src, line, col);
-# ifdef USE_LOG
-          fprintf(stderr, "%*s%s:%d:%d -> ", node->level, "",
-                  node->range.begin.file, line, col);
-          if (!cst_node) fprintf(stderr, "NULL\n");
-          else fprintf(stderr, "<%d>[%d:%d - %d:%d]\n", cst_node->symbol,
-                       cst_node->begin.row, cst_node->begin.col,
-                       cst_node->end.row, cst_node->end.col);
-# endif // USE_LOG
-
-          if (cst_node) {
-            // TODO:
-          }
-        }
-#endif // USE_TREE_SITTER
-
-        FILL_INT(NUMBER, i);
-        FILL_INT(PARENT_NUMBER, parent_number);
-        FILL_TEXT(KIND, node->name);
-        FILL_TEXT(PTR, node->pointer);
-        FILL_INT(BEGIN_SRC, src);
-        FILL_INT(BEGIN_ROW, line);
-        FILL_INT(BEGIN_COL, col);
-        FILL_INT(END_SRC, src_number(node->range.end.file));
-        FILL_INT(END_ROW, node->range.end.line);
-        FILL_INT(END_COL, node->range.end.col);
-        FILL_INT(SRC, src_number(node->loc.file));
-        FILL_INT(ROW, node->loc.line);
-        FILL_INT(COL, node->loc.col);
-        // FILL_TEXT(TYPE_PTR, find_var_type_map(node->pointer));
-        break;
-      case NODE_KIND_ENUM:
-        break;
-      case NODE_KIND_NULL:
-        break;
-      }
 
 #define FILL_REF(expr) do {                                                \
     const struct ref *ref = expr;                                          \
     if (ref->pointer) {                                                    \
-      FILL_TEXT(REF_PTR, ref->pointer);                                    \
+      FILL_TEXT(REF_PTR, (ref_ptr = ref->pointer));                        \
       FILL_TEXT(NAME, ref->sqname);                                        \
     }                                                                      \
   } while (0)
@@ -349,9 +399,100 @@ static void dump_ast(const struct cst_set *cst_set, const struct ast *ast) {
       default:
         break;
       }
+
+      switch (node->kind) {
+      case NODE_KIND_HEAD:
+        assert(node->level < MAX_AST_LEVEL);
+        parent_number = parents[node->level];
+        if (node->level + 1 < MAX_AST_LEVEL) parents[node->level + 1] = i;
+
+        begin_src = src_number(node->range.begin.file);
+        begin_line = node->range.begin.line;
+        begin_col = node->range.begin.col;
+
+#ifdef USE_TREE_SITTER
+        begin_cst_node = find_cst(cst_set, begin_src, begin_line, begin_col);
+
+# ifdef USE_LOG
+        print_cst_node(begin_cst_node, node, begin_line, begin_col);
+# endif // USE_LOG
+
+        if (!begin_cst_node) continue;
+
+        // We leave the default numbers to be 0, which indicates the TranslationUnitDecl.
+        struct decl_number_entry entry = {};
+        const unsigned kind = name_kind(node->name);
+
+        if (kind & NAME_KIND_DECL) {
+          entry.decl = node->pointer;
+          if (kind & NAME_KIND_VALUABLE_DECL) {
+            const char *type_ptr = find_var_type_map(node->pointer);
+            if (type_ptr) {
+              unsigned j;
+              _Bool found = decl_number_map_bsearch(&decl_number_map, &type_ptr, &j);
+              assert(found);
+              entry.type = decl_number_map.data[j].type;
+            } else if (kind & NAME_KIND_FUNCTION_DECL) {
+              // The first token following the beginning position of the FunctionDecl represents the return type.
+              entry.type = i;
+            }
+            entry.var = i;
+          } else {
+            entry.type = i;
+          }
+
+          _Bool pushed = decl_number_map_bpush(&decl_number_map, &entry, NULL);
+          assert(pushed);
+        } else if (ref_ptr) {
+          unsigned j;
+          _Bool found = decl_number_map_bsearch(&decl_number_map, &ref_ptr, &j);
+          assert(found);
+          entry = decl_number_map.data[j];
+        }
+
+        set_cst_decl(begin_cst_node, entry);
+
+        src = src_number(node->loc.file);
+        line = node->loc.line;
+        col = node->loc.col;
+        cst_node = find_cst(cst_set, src, line, col);
+
+# ifdef USE_LOG
+        print_cst_node(cst_node, node, line, col);
+# endif // USE_LOG
+
+        set_cst_decl(cst_node, entry);
+
+        if (!(kind & NAME_KIND_DECL)) continue;
+
+#endif // USE_TREE_SITTER
+
+        FILL_INT(NUMBER, i);
+        FILL_INT(PARENT_NUMBER, parent_number);
+        FILL_TEXT(KIND, node->name);
+        FILL_TEXT(PTR, node->pointer);
+        FILL_INT(BEGIN_SRC, begin_src);
+        FILL_INT(BEGIN_ROW, begin_line);
+        FILL_INT(BEGIN_COL, begin_col);
+        FILL_INT(END_SRC, src_number(node->range.end.file));
+        FILL_INT(END_ROW, node->range.end.line);
+        FILL_INT(END_COL, node->range.end.col);
+        FILL_INT(SRC, src);
+        FILL_INT(ROW, line);
+        FILL_INT(COL, col);
+        break;
+      case NODE_KIND_ENUM:
+        break;
+      case NODE_KIND_NULL:
+        break;
+      }
     }
     END_INSERT_INTO();
   }
+
+#ifdef USE_TREE_SITTER
+  decl_number_map_clear(&decl_number_map, 2);
+#endif // USE_TREE_SITTER
 }
 
 #ifdef USE_TREE_SITTER
@@ -395,24 +536,6 @@ static void clear_ts_file_input(struct ts_file_input *self) {
     fclose(self->fp);
     self->fp = NULL;
     self->n = self->total = 0;
-  }
-}
-
-static int symbol_kind(int symbol) {
-  // See also https://raw.githubusercontent.com/tree-sitter/tree-sitter-c/master/src/parser.c
-  switch (symbol) {
-  case 1: // identifier
-  case 150: // true
-  case 151: // false
-  case 152: // NULL
-  case 153: // nullptr
-  case 345: // field
-    return 1;
-  case 89: // primitive type
-  case 347: // custom type
-    return 2;
-  default:
-    return 0;
   }
 }
 
@@ -460,6 +583,7 @@ static struct cst create_cst(const char *filename,
       if (kind && memcmp(&start, &end, sizeof(TSPoint))) {
         cst_push(&cst, (struct cst_node){
             .symbol = symbol,
+            .kind = kind,
             .begin = (struct position){start.row + 1, start.column + 1},
             .end = (struct position){end.row + 1, end.column + 1},
           });
@@ -551,14 +675,6 @@ static void dump_src(struct cst_set *cst_set) {
            " number INTEGER)");
 
 #ifdef USE_TREE_SITTER
-  exec_sql("CREATE TABLE cst ("
-           " src INTEGER,"
-           " symbol INTEGER,"
-           " begin_row INTEGER,"
-           " begin_col INTEGER,"
-           " end_row INTEGER,"
-           " end_col INTEGER)");
-
   TSLanguage *tree_sitter_c();
   TSLanguage *lang = tree_sitter_c();
   TSParser *parser = ts_parser_new();
@@ -589,15 +705,35 @@ static void dump_src(struct cst_set *cst_set) {
 
     const char *code = strcmp(filename, tu) == 0 ? tu_code : NULL;
     size_t size = code ? tu_size : 0;
-    struct cst cst = create_cst(fullpath, code, size, parser);
-    cst_set_set(cst_set, i, cst);
+    cst_set_set(cst_set, i, create_cst(fullpath, code, size, parser));
+#endif // USE_TREE_SITTER
+  }
 
+#ifdef USE_TREE_SITTER
+  ts_parser_delete(parser);
+#endif // USE_TREE_SITTER
+}
+
+static void dump_cst(const struct cst_set *cst_set) {
+#ifdef USE_TREE_SITTER
+  exec_sql("CREATE TABLE cst ("
+           " src INTEGER,"
+           " decl INTEGER,"
+           " begin_row INTEGER,"
+           " begin_col INTEGER,"
+           " end_row INTEGER,"
+           " end_col INTEGER)");
+
+  for (unsigned i = 0; i < cst_set->i; ++i) {
+    struct cst cst = cst_set->data[i];
     for (unsigned j = 0; j < cst.i; ++j) {
       struct cst_node *cst_node = &cst.data[j];
-      if_prepared_stmt("INSERT INTO cst (src, symbol, begin_row, begin_col, end_row, end_col)"
+      if (!cst_node->decl) continue;
+
+      if_prepared_stmt("INSERT INTO cst (src, decl, begin_row, begin_col, end_row, end_col)"
                        " VALUES (?, ?, ?, ?, ?, ?)") {
         FILL_INT(1, i);
-        FILL_INT(2, cst_node->symbol);
+        FILL_INT(2, cst_node->decl);
         FILL_INT(3, cst_node->begin.row);
         FILL_INT(4, cst_node->begin.col);
         FILL_INT(5, cst_node->end.row);
@@ -605,10 +741,6 @@ static void dump_src(struct cst_set *cst_set) {
       }
       end_if_prepared_stmt();
     }
-#endif // USE_TREE_SITTER
   }
-
-#ifdef USE_TREE_SITTER
-  ts_parser_delete(parser);
 #endif // USE_TREE_SITTER
 }

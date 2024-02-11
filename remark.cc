@@ -15,7 +15,8 @@ namespace {
 using namespace clang;
 using namespace clang::ast_matchers;
 
-auto matcher = varDecl(anything()).bind("var");
+auto var = varDecl(anything()).bind("var");
+auto func = functionDecl(anything()).bind("func");
 
 class raw_line_ostream : public raw_ostream {
  public:
@@ -64,10 +65,18 @@ class match_callback : public MatchFinder::MatchCallback {
   explicit match_callback(raw_ostream &out) : out(out) {}
 
   void run(const MatchFinder::MatchResult &result) override {
-    if (auto var = result.Nodes.getNodeAs<VarDecl>("var")) {
-      if (auto type = decl(var->getType().getTypePtr())) {
-        out << "#VAR-TYPE:" << var << ' ' << type << '\n';
-      }
+    const void *obj = nullptr;
+    const Type *value_type = nullptr;
+    if (auto p = result.Nodes.getNodeAs<VarDecl>("var")) {
+      obj = p;
+      value_type = p->getType().getTypePtr();
+    } else if (auto p = result.Nodes.getNodeAs<FunctionDecl>("func")) {
+      obj = p;
+      value_type = p->getReturnType().getTypePtr();
+    }
+
+    if (auto type = decl(value_type)) {
+      out << "#VAR-TYPE:" << obj << ' ' << type << '\n';
     }
   }
 
@@ -91,7 +100,8 @@ class ast_consumer final : public ASTConsumer {
  public:
   ast_consumer(std::unique_ptr<raw_ostream> os)
       : out(os ? *os : llvm::outs()), os(std::move(os)), cb(out) {
-    finder.addMatcher(matcher, &cb);
+    finder.addMatcher(var, &cb);
+    finder.addMatcher(func, &cb);
     impl = finder.newASTConsumer();
   }
 
