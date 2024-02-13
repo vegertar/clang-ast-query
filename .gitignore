@@ -11,6 +11,7 @@
 !/print.c
 !/print.h
 !/array.h
+!/array.c
 !/sql.c
 !/remark.cc
 !/remark.h

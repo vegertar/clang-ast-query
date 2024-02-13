@@ -33,7 +33,7 @@ struct parser_context {
 DECL_ARRAY(string, char);
 IMPL_ARRAY_RESERVE(string, char)
 IMPL_ARRAY_APPEND(string, char)
-IMPL_ARRAY_CLEAR(string, (void))
+IMPL_ARRAY_CLEAR(string, NULL)
 
 static struct string in_content;
 

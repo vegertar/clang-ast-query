@@ -763,8 +763,8 @@ static inline int compare_string(const void *a, void **b) {
   return strcmp((const char *)a, (const char *)*b);
 }
 
-static inline char *copy_string(const void *a) {
-  return strdup((const char *)a);
+static inline void *copy_string(void *src, const void *a, size_t n) {
+  return (*(void **)src = strdup((const char *)a));
 }
 
 static IMPL_ARRAY_BSEARCH(array, compare_string)
@@ -837,10 +837,6 @@ static int compare_var_type(const void *a, struct var_type_pair *b) {
   return strcmp(((const struct var_type_pair *)a)->var, b->var);
 }
 
-static struct var_type_pair create_var_type(const void *p) {
-  return *(const struct var_type_pair *)p;
-}
-
 static void free_var_type(void *p) {
   struct var_type_pair *pair = (struct var_type_pair *)p;
   free((void *)pair->var);
@@ -849,7 +845,7 @@ static void free_var_type(void *p) {
 
 static IMPL_ARRAY_PUSH(var_type_map, struct var_type_pair)
 static IMPL_ARRAY_BSEARCH(var_type_map, compare_var_type)
-static IMPL_ARRAY_BPUSH(var_type_map, create_var_type)
+static IMPL_ARRAY_BPUSH(var_type_map, NULL)
 static IMPL_ARRAY_CLEAR(var_type_map, free_var_type)
 
 struct var_type_pair add_var_type_map(const char *var, const char *type) {

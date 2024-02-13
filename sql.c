@@ -119,22 +119,20 @@ struct cst_node {
   struct position end;
 };
 
-static int compare_cst_node(const void *a, struct cst_node *b) {
-  if (compare_position(*(struct position *)a, b->begin) < 0) return -1;
-  if (compare_position(*(struct position *)a, b->end) >= 0) return 1;
-  return 0;
-}
-
 DECL_ARRAY(cst, struct cst_node);
 IMPL_ARRAY_PUSH(cst, struct cst_node)
-IMPL_ARRAY_BSEARCH(cst, compare_cst_node)
-IMPL_ARRAY_CLEAR(cst, (void))
+IMPL_ARRAY_CLEAR(cst, NULL)
+
+struct cst_wrapper {
+  struct cst cst;
+  ARRAY_size_t i; // Zero-based index at which to start searching
+};
 
 static void destroy_cst(void *p) { cst_clear((struct cst *)p, 2); }
 
-DECL_ARRAY(cst_set, struct cst);
-IMPL_ARRAY_RESERVE(cst_set, struct cst)
-IMPL_ARRAY_SET(cst_set, struct cst)
+DECL_ARRAY(cst_set, struct cst_wrapper);
+IMPL_ARRAY_RESERVE(cst_set, struct cst_wrapper)
+IMPL_ARRAY_SET(cst_set, struct cst_wrapper)
 IMPL_ARRAY_CLEAR(cst_set, destroy_cst)
 
 static struct cst_node * find_cst(const struct cst_set *cst_set,
@@ -152,15 +150,11 @@ static int compare_decl_number(const void *a, struct decl_number_entry *b) {
   return strcmp(((const struct decl_number_entry *)a)->decl, b->decl);
 }
 
-static struct decl_number_entry create_decl_number(const void *p) {
-  return *(const struct decl_number_entry *)p;
-}
-
 DECL_ARRAY(decl_number_map, struct decl_number_entry);
 static IMPL_ARRAY_PUSH(decl_number_map, struct decl_number_entry)
 static IMPL_ARRAY_BSEARCH(decl_number_map, compare_decl_number)
-static IMPL_ARRAY_BPUSH(decl_number_map, create_decl_number)
-static IMPL_ARRAY_CLEAR(decl_number_map, (void))
+static IMPL_ARRAY_BPUSH(decl_number_map, NULL)
+static IMPL_ARRAY_CLEAR(decl_number_map, NULL)
 
 #else
 
@@ -185,7 +179,7 @@ static void exec_sql(const char *s) {
 }
 
 static int src_number(const char *filename) {
-  unsigned i = UINT_MAX;
+  unsigned i = -1;
   char *found = search_filename(filename, &i);
   assert(filename == NULL || found);
   assert(i == -1 || i < INT_MAX);
@@ -296,9 +290,11 @@ static enum symbol_kind symbol_kind(int symbol) {
 static void print_cst_node(const struct cst_node *cst_node,
                            const struct node *node,
                            int line,
-                           int col) {
+                           int col,
+                           _Bool is_begin) {
   if (!line || !col) return;
-  fprintf(stderr, "(%p)%*s%s:%d:%d -> ", node->pointer, node->level, "",
+  fprintf(stderr, "%-16s%s%s | %*s%s:%d:%d -> ",
+          node->name, is_begin ? "^" : " ", node->pointer, node->level, "",
           node->range.begin.file, line, col);
   if (!cst_node) fprintf(stderr, "NULL\n");
   else fprintf(stderr, "<%d>[%d:%d - %d:%d]\n", cst_node->symbol,
@@ -414,7 +410,7 @@ static void dump_ast(const struct cst_set *cst_set, const struct ast *ast) {
         begin_cst_node = find_cst(cst_set, begin_src, begin_line, begin_col);
 
 # ifdef USE_LOG
-        print_cst_node(begin_cst_node, node, begin_line, begin_col);
+        print_cst_node(begin_cst_node, node, begin_line, begin_col, 1);
 # endif // USE_LOG
 
         if (!begin_cst_node) continue;
@@ -458,7 +454,7 @@ static void dump_ast(const struct cst_set *cst_set, const struct ast *ast) {
         cst_node = find_cst(cst_set, src, line, col);
 
 # ifdef USE_LOG
-        print_cst_node(cst_node, node, line, col);
+        print_cst_node(cst_node, node, line, col, 0);
 # endif // USE_LOG
 
         set_cst_decl(cst_node, entry);
@@ -511,7 +507,7 @@ typedef struct {
 
 DECL_ARRAY(ts_node_list, ts_node_wrapper);
 IMPL_ARRAY_PUSH(ts_node_list, ts_node_wrapper)
-IMPL_ARRAY_CLEAR(ts_node_list, (void))
+IMPL_ARRAY_CLEAR(ts_node_list, NULL)
 
 static const char * ts_file_input_read(void *payload,
                                        uint32_t byte_index,
@@ -611,12 +607,16 @@ static struct cst_node * find_cst(const struct cst_set *cst_set,
                                   int line,
                                   int col) {
   if (src < 0 || src >= cst_set->i) return NULL;
-  const struct cst *cst = &cst_set->data[src];
-  if (cst->i == 0) return NULL;
+  struct cst_wrapper *cst_wrapper = &cst_set->data[src];
   struct position pos = {line, col};
-  unsigned i = -1;
-  cst_bsearch(cst, &pos, &i);
-  return i < cst->i ? &cst->data[i] : NULL;
+  while (cst_wrapper->i < cst_wrapper->cst.i) {
+    struct cst_node *v = &cst_wrapper->cst.data[cst_wrapper->i];
+    int d = compare_position(pos, v->begin);
+    if (d <= 0)
+      return v;
+    cst_wrapper->i += 1;
+  }
+  return NULL;
 }
 
 #endif // USE_TREE_SITTER
@@ -705,7 +705,7 @@ static void dump_src(struct cst_set *cst_set) {
 
     const char *code = strcmp(filename, tu) == 0 ? tu_code : NULL;
     size_t size = code ? tu_size : 0;
-    cst_set_set(cst_set, i, create_cst(fullpath, code, size, parser));
+    cst_set_set(cst_set, i, (struct cst_wrapper){create_cst(fullpath, code, size, parser)});
 #endif // USE_TREE_SITTER
   }
 
@@ -725,7 +725,7 @@ static void dump_cst(const struct cst_set *cst_set) {
            " end_col INTEGER)");
 
   for (unsigned i = 0; i < cst_set->i; ++i) {
-    struct cst cst = cst_set->data[i];
+    struct cst cst = cst_set->data[i].cst;
     for (unsigned j = 0; j < cst.i; ++j) {
       struct cst_node *cst_node = &cst.data[j];
       if (!cst_node->decl) continue;
