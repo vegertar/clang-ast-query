@@ -176,6 +176,13 @@
 
   DECL_ARRAY(var_type_map, struct var_type_pair);
 
+  struct src {
+    const char *filename;
+    unsigned number;
+  };
+
+  DECL_ARRAY(src_set, struct src);
+
   // Exchanging information with the parser.
   typedef struct {
     // Whether to not emit error messages.
@@ -197,7 +204,7 @@
     __attribute__ ((__format__ (__printf__, 3, 4)));
 
   extern struct ast ast;
-  extern struct array filenames;
+  extern struct src_set src_set;
 
   #ifndef PATH_MAX
   # define PATH_MAX 4096
@@ -210,10 +217,10 @@
   void destroy();
   int dump(const char *db_file);
 
-  /// If the filename is not found, a copy will be pushed and returned.
-  char *push_filename(const char *filename);
+  /// If the filename is not found, a copy will be added and returned.
+  const char *add_src(const char *filename);
   /// The memory of the found filename is owned by the underlying array.
-  char *search_filename(const char *filename, unsigned *i);
+  const char *search_src(const char *filename, unsigned *number);
 
   /// Memory ownership of the parameters will be transferred to the underlying map.
   struct var_type_pair add_var_type_map(const char *var, const char *type);
@@ -229,12 +236,12 @@
   #include <stdio.h>
 
   struct ast ast;
-  struct array filenames;
+  struct src_set src_set;
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
 
   static struct var_type_map var_type_map;
-  static char *last_loc_file;
+  static char *last_loc_src;
   static unsigned last_loc_line;
 
   static char *get_pointer(char *s);
@@ -250,6 +257,8 @@
 
   static DECL_METHOD(ast, push, struct node);
   static DECL_METHOD(ast, clear, int);
+
+  static DECL_METHOD(src_set, clear, int);
 
   static DECL_METHOD(var_type_map, clear, int);
 }
@@ -332,7 +341,7 @@
     SQNAME
     DQNAME
     BQNAME
-    FILENAME
+    SRC
     OPERATOR
     OPTION
     ATTR
@@ -396,7 +405,7 @@ start: node EOL
   {
     if (ast.i) {
       ast_clear(&ast, 0);
-      array_clear(&filenames, 0);
+      src_set_clear(&src_set, 0);
       var_type_map_clear(&var_type_map, 0);
     }
     ast_push(&ast, $1);
@@ -552,22 +561,22 @@ sloc: INVALID_SLOC { $$ = (struct sloc){}; }
  | line_sloc
  | col_sloc
 
-file_sloc: FILENAME ':' INTEGER ':' INTEGER
+file_sloc: SRC ':' INTEGER ':' INTEGER
   {
-    last_loc_file = $1;
+    last_loc_src = $1;
     last_loc_line = strtoul($3, NULL, 10);
-    $$ = (struct sloc){last_loc_file, last_loc_line, strtoul($5, NULL, 10)};
+    $$ = (struct sloc){last_loc_src, last_loc_line, strtoul($5, NULL, 10)};
   }
 
 line_sloc: LINE ':' INTEGER ':' INTEGER
   {
     last_loc_line = strtoul($3, NULL, 10);
-    $$ = (struct sloc){last_loc_file, last_loc_line, strtoul($5, NULL, 10)};
+    $$ = (struct sloc){last_loc_src, last_loc_line, strtoul($5, NULL, 10)};
   }
 
 col_sloc: COL ':' INTEGER
   {
-    $$ = (struct sloc){last_loc_file, last_loc_line, strtoul($3, NULL, 10)};
+    $$ = (struct sloc){last_loc_src, last_loc_line, strtoul($3, NULL, 10)};
   }
 
 def: type specs value op mem field ref cast
@@ -759,82 +768,51 @@ int parse(YYLTYPE *lloc, const user_context *uctx) {
   return status;
 }
 
-static inline int compare_string(const void *a, void **b) {
-  return strcmp((const char *)a, (const char *)*b);
+static int compare_src(const void *a, const void *b, size_t n) {
+  const char *x = ((const struct src *)a)->filename;
+  const char *y = ((const struct src *)b)->filename;
+  return strcmp(x, y);
 }
 
-static inline void *copy_string(void *src, const void *a, size_t n) {
-  return (*(void **)src = strdup((const char *)a));
+static void *init_src(void *a, const void *b, size_t n) {
+  struct src *x = (struct src *)a;
+  const struct src *y = (const struct src *)b;
+  x->filename = strdup(y->filename);
+  x->number = y->number;
+  return x;
 }
 
-static IMPL_ARRAY_BSEARCH(array, compare_string)
-static IMPL_ARRAY_BPUSH(array, copy_string)
-
-#ifdef USE_TEST
-static int cmpstringp(const void *p1, const void *p2) {
-  return strcmp(* (char * const *) p1, * (char * const *) p2);
-}
-#endif // USE_TEST
-
-TEST(array_bpush, {
-  struct array ss = {};
-  const char *input[] = {"a", "c", "b", "0", "3", "1"};
-  const int n = sizeof(input) / sizeof(*input);
-  for (int i = 0; i < n; ++i) {
-    ASSERT(array_bpush(&ss, input[i], NULL));
-  }
-
-  qsort(&input[0], n, sizeof(input[0]), cmpstringp);
-  for (int i = 0; i < n; ++i) {
-    ASSERT_FMT(strcmp(ss.data[i], input[i]) == 0,
-               "\n\t:[%d] expect \"%s\", got \"%s\"\n\t",
-               i, input[i], (char *)ss.data[i]);
-  }
-
-  ASSERT(!array_bpush(&ss, "a", NULL));
-  ASSERT(ss.i == n);
-  array_clear(&ss, 1);
-})
-
-static inline char * binary_search(const struct array *array,
-                                  const char *s,
-                                  unsigned *i) {
-  return array_bsearch(array, s, i) ? array->data[*i] : NULL;
+static void free_src(void *p) {
+  struct src *src = (struct src *)p;
+  free((void *)src->filename);
 }
 
-TEST(binary_search, {
-  struct array ss = {};
-  const char *input[] = {"a", "b", "c", "d"};
-  for (int i = 0; i < sizeof(input) / sizeof(*input); ++i) {
-    array_push(&ss, (void *)input[i]);
-  }
+static IMPL_ARRAY_BSEARCH(src_set, compare_src)
+static IMPL_ARRAY_BADD(src_set, init_src)
+static IMPL_ARRAY_CLEAR(src_set, free_src)
 
-  unsigned j;
-  for (unsigned i = 0; i < ss.i; ++i) {
-    ASSERT(binary_search(&ss, (char *)ss.data[i], &j));
-    ASSERT(i == j);
-  }
-
-  ASSERT(!binary_search(&ss, "f", &j));
-  ASSERT(ss.i == j);
-  array_clear(&ss, 2);
-})
-
-char * search_filename(const char *filename, unsigned *i) {
+const char * search_src(const char *filename, unsigned *number) {
+  const char *s = NULL;
   unsigned j = -1;
-  char *s = binary_search(&filenames, filename, &j);
-  if (i) *i = j;
+  if (filename && src_set_bsearch(&src_set, &filename, &j)) {
+    s = src_set.data[j].filename;
+    if (number) *number = src_set.data[j].number;
+  }
+
   return s;
 }
 
-char * push_filename(const char *filename) {
+const char * add_src(const char *filename) {
   unsigned i;
-  array_bpush(&filenames, filename, &i);
-  return filenames.data[i];
+  struct src src = {filename, src_set.i};
+  src_set_badd(&src_set, &src, &i);
+  return src_set.data[i].filename;
 }
 
-static int compare_var_type(const void *a, struct var_type_pair *b) {
-  return strcmp(((const struct var_type_pair *)a)->var, b->var);
+static int compare_var_type(const void *a, const void *b, size_t n) {
+  const char *x = ((const struct var_type_pair *)a)->var;
+  const char *y = ((const struct var_type_pair *)b)->var;
+  return strcmp(x, y);
 }
 
 static void free_var_type(void *p) {
@@ -845,13 +823,13 @@ static void free_var_type(void *p) {
 
 static IMPL_ARRAY_PUSH(var_type_map, struct var_type_pair)
 static IMPL_ARRAY_BSEARCH(var_type_map, compare_var_type)
-static IMPL_ARRAY_BPUSH(var_type_map, NULL)
+static IMPL_ARRAY_BADD(var_type_map, NULL)
 static IMPL_ARRAY_CLEAR(var_type_map, free_var_type)
 
 struct var_type_pair add_var_type_map(const char *var, const char *type) {
   struct var_type_pair pair = {var, type};
-  _Bool pushed = var_type_map_bpush(&var_type_map, &pair, NULL);
-  assert(pushed);
+  _Bool added = var_type_map_badd(&var_type_map, &pair, NULL);
+  assert(added);
   return pair;
 }
 
@@ -863,7 +841,7 @@ const char *find_var_type_map(const char *var) {
 
 void destroy() {
   ast_clear(&ast, 1);
-  array_clear(&filenames, 1);
+  src_set_clear(&src_set, 1);
   var_type_map_clear(&var_type_map, 1);
 }
 
@@ -878,7 +856,7 @@ static char *get_pointer(char *s) {
 }
 
 static void sloc_destroy(struct sloc *sloc) {
-  // the sloc->file is owned by global filenames
+  // the sloc->file is owned by the global src_set
 }
 
 static void srange_destroy(struct srange *srange) {
@@ -891,7 +869,8 @@ static void type_destroy(struct type *type) {
   free((void *)type->desugared);
 }
 
-static void tag_destroy(struct tag *tag) {
+static void tag_destroy(void *p) {
+  struct tag *tag = (struct tag *)p;
   free((void *)tag->name);
   type_destroy(&tag->type);
 }
@@ -994,7 +973,8 @@ static void decl_destroy(struct decl *decl) {
   }
 }
 
-static void node_destroy(struct node *node) {
+static void node_destroy(void *p) {
+  struct node *node = (struct node *)p;
   switch (node->kind) {
   case NODE_KIND_HEAD:
     // the pointer was extracted from the name hence freeing name is enough
@@ -1019,8 +999,8 @@ static void node_destroy(struct node *node) {
   }
 }
 
-static void void_destroy(void **p) {
-  free(*p);
+static void void_destroy(void *p) {
+  free(*(void **)p);
 }
 
 IMPL_ARRAY_PUSH(array, void *)

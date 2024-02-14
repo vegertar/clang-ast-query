@@ -173,8 +173,8 @@ col/:[0-9]+ {
 [^ <:]+/:[0-9]+:[0-9]+ |
 "<scratch space>" |
 "<built-in>" {
-  yylval->TOK_FILENAME = push_filename(yytext);
-  return TOK_FILENAME;
+  yylval->TOK_SRC = (char *)add_src(yytext);
+  return TOK_SRC;
 }
 
 field/" "Field[ \n] {

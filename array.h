@@ -44,18 +44,17 @@
 #define IMPL_ARRAY_CLEAR(name, destroy)                                        \
   struct name *name##_clear(struct name *p, int option) {                      \
     return (struct name *)ARRAY_clear((struct ARRAY_base *)p,                  \
-                                      sizeof(p->data[0]),                      \
-                                      (ARRAY_destroy_t)destroy, option);       \
+                                      sizeof(p->data[0]), destroy, option);    \
   }
 
 #define IMPL_ARRAY_BSEARCH(name, compare)                                      \
   _Bool name##_bsearch(const struct name *p, const void *v, ARRAY_size_t *i) { \
-    return ARRAY_bsearch((struct ARRAY_base *)p, sizeof(p->data[0]),           \
-                         (ARRAY_compare_t)compare, v, i);                      \
+    return ARRAY_bsearch((struct ARRAY_base *)p, sizeof(p->data[0]), compare,  \
+                         v, i);                                                \
   }
 
-#define IMPL_ARRAY_BPUSH(name, init)                                           \
-  _Bool name##_bpush(struct name *p, const void *v, ARRAY_size_t *i) {         \
+#define IMPL_ARRAY_BADD(name, init)                                            \
+  _Bool name##_badd(struct name *p, const void *v, ARRAY_size_t *i) {          \
     ARRAY_size_t j = -1;                                                       \
     const _Bool found = name##_bsearch(p, v, &j);                              \
     assert(found || j != -1);                                                  \

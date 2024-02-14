@@ -49,7 +49,9 @@ struct ARRAY_base *ARRAY_set(struct ARRAY_base *p, ARRAY_size_t size,
                              ARRAY_size_t nmem, ARRAY_move_t init) {
   assert(at >= 0);
   ARRAY_size_t i = at + nmem;
-  ARRAY_reserve(p, size, proper_capacity(i));
+
+  if (p->n < i)
+    ARRAY_reserve(p, size, proper_capacity(i));
 
   if (p->i < i) {
     if (p->i < at)
