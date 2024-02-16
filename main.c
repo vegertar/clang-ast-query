@@ -17,7 +17,7 @@ static int debug_flag;
 static int text_flag;
 static int cc_flag;
 static const char *in_filename;
-static const char *db_filename;
+static const char *out_filename;
 static const char *tu_filename;
 static FILE *text_file;
 
@@ -41,8 +41,11 @@ static int parse_line(char *line, size_t n, size_t cap, void *data) {
   assert(n + 1 < cap);
   line[n] = line[n + 1] = 0;
 
-  if (text_file)
+  if (text_file) {
     fwrite(line, n, 1, text_file);
+    return 0;
+  }
+
   YY_BUFFER_STATE buffer = yy_scan_buffer(line, n + 2);
 
   struct parser_context *ctx = (struct parser_context *)data;
@@ -130,28 +133,20 @@ static int cc_mode(int argc, char **argv) {
 int main(int argc, char **argv) {
   int c;
 
-  while ((c = getopt(argc, argv, "ht::T::dcf:o:x")) != -1)
+  while ((c = getopt(argc, argv, "ht::T::dci:o:")) != -1)
     switch (c) {
     case 'h':
-      fprintf(stderr,
-              "Usage: %s [OPTION]... [-c [-- [CLANG OPTION]...]] [FILE]\n",
+      fprintf(stderr, "Usage: %s [OPTION]... [-- [CLANG OPTION]...] [FILE]\n",
               argv[0]);
-      fprintf(
-          stderr,
-          "The utility to handle Clang AST from FILE (the stdin by default)\n\n"
-          "If -c is specified, the input FILE must be named with a .c"
-          " extension.\n\n"
-          "Additionally, -o in CLANG OPTION will export the SQLite3 database"
-          " rather than the ordinary object file.\n\n");
-      fprintf(stderr, "\t-t[help]\trun test\n");
-      fprintf(stderr, "\t-T[help]\toperate toggle\n");
-      fprintf(stderr, "\t-d\t\tenable yydebug\n");
-      fprintf(stderr,
-              "\t-f\t\tspecify the filename if read code from stdin with -c\n");
-      fprintf(stderr, "\t-c\t\tread from .c source\n");
-      fprintf(stderr, "\t-o DB\t\texport SQLite3 database\n");
-      fprintf(stderr, "\t-x\t\tdump the AST text into DB.text or stdout\n");
-      fprintf(stderr, "\t-h\t\tdisplay this help and exit\n");
+      fprintf(stderr, "The utility to handle Clang AST from FILE (the stdin by "
+                      "default)\n\n");
+      fprintf(stderr, "\t-t[help]   run test\n");
+      fprintf(stderr, "\t-T[help]   operate toggle\n");
+      fprintf(stderr, "\t-d         enable debug\n");
+      fprintf(stderr, "\t-c         only dump text\n");
+      fprintf(stderr, "\t-i NAME    name the input TU\n");
+      fprintf(stderr, "\t-o OUTPUT  specify the output file\n");
+      fprintf(stderr, "\t-h         display this help and exit\n");
       return 0;
     case 't':
       return optarg && strcmp(optarg, "help") == 0 ? test_help()
@@ -166,16 +161,13 @@ int main(int argc, char **argv) {
       debug_flag = 1;
       break;
     case 'c':
-      cc_flag = 1;
+      text_flag = 1;
       break;
-    case 'f':
+    case 'i':
       tu_filename = optarg;
       break;
     case 'o':
-      db_filename = optarg;
-      break;
-    case 'x':
-      text_flag = 1;
+      out_filename = optarg;
       break;
     default:
       exit(1);
@@ -186,7 +178,7 @@ int main(int argc, char **argv) {
 
   in_filename = argv[optind];
 
-  // enable cc mode if provide a .c filename
+  // examine the CLANG OPTION
   for (int i = optind; i < argc; ++i) {
     const char *s = argv[i];
     size_t n = strlen(s);
@@ -194,40 +186,33 @@ int main(int argc, char **argv) {
       in_filename = s;
       argv[i] = "";
       cc_flag = 1;
+    } else if (n == 2) {
+      if (s[0] == '-' && s[1] == 'c')
+        text_flag = 1;
+      else if (i + 1 < argc && s[0] == '-' && s[1] == 'o')
+        out_filename = argv[i + 1];
     }
   }
 
-  // allow the cc mode to specify the db filename by -o
+  if (text_flag && out_filename && !(text_file = fopen(out_filename, "w"))) {
+    fprintf(stderr, "%s: open('%s') error: %s\n", __func__, out_filename,
+            strerror(errno));
+    return 1;
+  }
+
+  int err = 0;
   if (cc_flag) {
-    for (int i = optind; i + 1 < argc; ++i) {
-      if (strcmp(argv[i], "-o") == 0)
-        db_filename = argv[i + 1];
-    }
-  }
-
-  if (text_flag) {
-    if (db_filename) {
-      char filename[BUFSIZ];
-      snprintf(filename, sizeof(filename), "%s.text", db_filename);
-      if (!(text_file = fopen(filename, "w"))) {
-        fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
-                strerror(errno));
-        return 1;
-      }
-    } else {
-      text_file = stdout;
-    }
-  }
-
-  if (cc_flag)
     prepare_tu(&in_content);
+    err = cc_mode(argc, argv);
+  } else {
+    err = text_mode(argc, argv);
+  }
 
-  int err = cc_flag ? cc_mode(argc, argv) : text_mode(argc, argv);
-  if (!err && db_filename)
-    err = dump(db_filename);
-  if (db_filename && text_file)
+  if (!err && !text_flag && out_filename)
+    err = dump(out_filename);
+
+  if (text_file)
     fclose(text_file);
-
   destroy();
   yylex_destroy();
   string_clear(&in_content, 2);

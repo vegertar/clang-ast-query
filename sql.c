@@ -39,13 +39,14 @@
 
 #define VALUES_I1(n) VALUES_I2(n)
 #define VALUES_I2(n) VALUES##n()
-#define VALUES18()                                                             \
+#define VALUES19()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
-  "?,?,?"
+  "?,?,?,"                                                                     \
+  "?"
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
@@ -104,11 +105,7 @@ struct position {
 };
 
 static int compare_position(struct position a, struct position b) {
-  if (a.row < b.row)
-    return -1;
-  if (a.row == b.row)
-    return a.col - b.col;
-  return 1;
+  return (a.row < b.row) ? -1 : (a.row == b.row) ? (a.col - b.col) : 1;
 }
 
 struct cst_node {
@@ -120,8 +117,8 @@ struct cst_node {
 };
 
 DECL_ARRAY(cst, struct cst_node);
-IMPL_ARRAY_PUSH(cst, struct cst_node);
-IMPL_ARRAY_CLEAR(cst, NULL);
+static inline IMPL_ARRAY_PUSH(cst, struct cst_node);
+static inline IMPL_ARRAY_CLEAR(cst, NULL);
 
 struct cst_wrapper {
   struct cst cst;
@@ -131,9 +128,9 @@ struct cst_wrapper {
 static void destroy_cst(void *p) { cst_clear((struct cst *)p, 2); }
 
 DECL_ARRAY(cst_set, struct cst_wrapper);
-IMPL_ARRAY_RESERVE(cst_set, struct cst_wrapper);
-IMPL_ARRAY_SET(cst_set, struct cst_wrapper);
-IMPL_ARRAY_CLEAR(cst_set, destroy_cst);
+static inline IMPL_ARRAY_RESERVE(cst_set, struct cst_wrapper);
+static inline IMPL_ARRAY_SET(cst_set, struct cst_wrapper);
+static inline IMPL_ARRAY_CLEAR(cst_set, destroy_cst);
 
 static void dump_src(struct cst_set *cst_set);
 static void dump_ast(const struct cst_set *cst_set, const struct ast *ast);
@@ -184,6 +181,18 @@ static unsigned mark_specs(const struct def *def) {
   }
   assert(specs <= INT_MAX);
   return specs;
+}
+
+static int numeric_class(const char *s) {
+  if (!s)
+    return 0;
+  if (strcmp(s, "struct") == 0)
+    return 1;
+  if (strcmp(s, "union") == 0)
+    return 2;
+  if (strcmp(s, "enum") == 0)
+    return 3;
+  return -1;
 }
 
 static inline _Bool is_internal_file(const char *filename) {
@@ -265,10 +274,10 @@ static int compare_decl_number(const void *a, const void *b, size_t n) {
 }
 
 DECL_ARRAY(decl_number_map, struct decl_number_pair);
-static IMPL_ARRAY_PUSH(decl_number_map, struct decl_number_pair);
-static IMPL_ARRAY_BSEARCH(decl_number_map, compare_decl_number);
-static IMPL_ARRAY_BADD(decl_number_map, NULL);
-static IMPL_ARRAY_CLEAR(decl_number_map, NULL);
+static inline IMPL_ARRAY_PUSH(decl_number_map, struct decl_number_pair);
+static inline IMPL_ARRAY_BSEARCH(decl_number_map, compare_decl_number);
+static inline IMPL_ARRAY_BADD(decl_number_map, NULL);
+static inline IMPL_ARRAY_CLEAR(decl_number_map, NULL);
 
 enum name_kind {
   NAME_KIND_UNKNOWN = 0U,
@@ -279,12 +288,15 @@ enum name_kind {
 
 static enum name_kind name_kind(const char *name) {
   unsigned kind = NAME_KIND_UNKNOWN;
+  if (!name)
+    return kind;
   size_t n = strlen(name);
   if (n > 4 && strcmp(name + n - 4, "Decl") == 0) {
     kind = NAME_KIND_DECL;
     if (n == 12 && strncmp("Function", name, 8) == 0)
       kind = NAME_KIND_FUNCTION_DECL;
-    else if (n >= 7 && strncmp("Var", name + n - 7, 3) == 0)
+    else if (n == 9 && strncmp("Field", name, 5) == 0 ||
+             n >= 7 && strncmp("Var", name + n - 7, 3) == 0)
       kind = NAME_KIND_VALUABLE_DECL;
   }
   return kind;
@@ -344,8 +356,8 @@ typedef struct {
 } ts_node_wrapper;
 
 DECL_ARRAY(ts_node_list, ts_node_wrapper);
-IMPL_ARRAY_PUSH(ts_node_list, ts_node_wrapper)
-IMPL_ARRAY_CLEAR(ts_node_list, NULL)
+static inline IMPL_ARRAY_PUSH(ts_node_list, ts_node_wrapper);
+static inline IMPL_ARRAY_CLEAR(ts_node_list, NULL);
 
 static const char *ts_file_input_read(void *payload, uint32_t byte_index,
                                       TSPoint position, uint32_t *bytes_read) {
@@ -489,8 +501,8 @@ static void dump_cst(const struct cst_set *cst_set) {
 struct positional_node {
   int src;
   struct position pos;
-  unsigned number;               // The index of current node.
-  struct decl_number_value decl; // The corresponding declaration node.
+  unsigned i;       // The index of current node.
+  const char *decl; // The pointer of the declaration node.
 };
 
 static int compare_positional_node(const void *a, const void *b) {
@@ -501,8 +513,8 @@ static int compare_positional_node(const void *a, const void *b) {
 }
 
 DECL_ARRAY(positional_node_set, struct positional_node);
-static IMPL_ARRAY_PUSH(positional_node_set, struct positional_node);
-static IMPL_ARRAY_CLEAR(positional_node_set, NULL);
+static inline IMPL_ARRAY_PUSH(positional_node_set, struct positional_node);
+static inline IMPL_ARRAY_CLEAR(positional_node_set, NULL);
 
 static void dump_ast(const struct cst_set *cst_set, const struct ast *ast)
 #else
@@ -510,7 +522,7 @@ static void dump_ast(const struct ast *ast)
 #endif // USE_TREE_SITTER
 {
   exec_sql("CREATE TABLE ast ("
-           " number INTEGER,"
+           " number INTEGER PRIMARY KEY,"
            " parent_number INTEGER,"
            " kind TEXT,"
            " ptr TEXT,"
@@ -524,6 +536,7 @@ static void dump_ast(const struct ast *ast)
            " row INTEGER,"
            " col INTEGER,"
            " name TEXT,"
+           " class INTEGER,"
            " qualified_type TEXT,"
            " desugared_type TEXT,"
            " specs INTEGER,"
@@ -532,6 +545,12 @@ static void dump_ast(const struct ast *ast)
 #ifdef USE_TREE_SITTER
   struct positional_node_set positional_node_set = {};
   struct decl_number_map decl_number_map = {};
+  _Bool found = 0, added = 0;
+  unsigned j = -1;
+  unsigned kind = 0;
+  const char *decl_ptr = NULL;
+  struct cst_node *last_cst_node = NULL;
+  unsigned last_decl_number = -1;
 #endif
 
   unsigned parents[MAX_AST_LEVEL + 1] = {-1};
@@ -543,21 +562,15 @@ static void dump_ast(const struct ast *ast)
     int begin_src = -1, begin_row = 0, begin_col = 0;
     int src = -1, row = 0, col = 0;
 
-#ifdef USE_TREE_SITTER
-    // We leave the default numbers to be 0, which indicates the
-    // TranslationUnitDecl.
-    struct decl_number_pair entry = {};
-    const unsigned kind = name_kind(node->name);
-    const char *type_ptr = NULL;
-    _Bool found = 0, added = 0;
-    unsigned j = -1;
-#endif // USE_TREE_SITTER
-
     INSERT_INTO(ast, NUMBER, PARENT_NUMBER, KIND, PTR, BEGIN_SRC, BEGIN_ROW,
-                BEGIN_COL, END_SRC, END_ROW, END_COL, SRC, ROW, COL, NAME,
-                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_PTR) {
+                BEGIN_COL, END_SRC, END_ROW, END_COL, SRC, ROW, COL, CLASS,
+                NAME, QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_PTR) {
 
       switch (decl->kind) {
+      case DECL_KIND_V3:
+        FILL_INT(CLASS, numeric_class(decl->variants.v3.class));
+        FILL_TEXT(NAME, decl->variants.v3.name);
+        break;
       case DECL_KIND_V8:
         FILL_DEF(&decl->variants.v8.def);
         break;
@@ -586,41 +599,30 @@ static void dump_ast(const struct ast *ast)
 
 #ifdef USE_TREE_SITTER
 
+        kind = name_kind(node->name);
         if (kind & NAME_KIND_DECL) {
-          entry.decl = node->pointer;
-          if (kind & NAME_KIND_VALUABLE_DECL) {
+          struct decl_number_pair entry = {node->pointer};
+          if ((kind & NAME_KIND_VALUABLE_DECL) == NAME_KIND_VALUABLE_DECL)
             entry.number.var = i;
-            if ((type_ptr = find_var_type_map(node->pointer))) {
-              found = decl_number_map_bsearch(&decl_number_map, &type_ptr, &j);
-              assert(found);
-              entry.number.type = decl_number_map.data[j].number.type;
-            } else if (kind & NAME_KIND_FUNCTION_DECL) {
-              // The first token following the beginning position of the
-              // FunctionDecl represents the return type which would be found by
-              // find_var_type_map().
-              entry.number.type = i;
-            }
-          } else {
+          else
             entry.number.type = i;
-          }
 
           added = decl_number_map_badd(&decl_number_map, &entry, NULL);
           assert(added);
-        } else if (ref_ptr) {
-          found = decl_number_map_bsearch(&decl_number_map, &ref_ptr, &j);
-          assert(found);
-          entry = decl_number_map.data[j];
+          decl_ptr = node->pointer;
+        } else {
+          decl_ptr = ref_ptr;
         }
 
-        if (entry.decl) {
+        if (decl_ptr) {
           if (begin_src != -1 && begin_row && begin_col)
             positional_node_set_push(
                 &positional_node_set,
                 (struct positional_node){
                     .src = begin_src,
                     .pos = (struct position){begin_row, begin_col},
-                    .number = i,
-                    .decl = entry.number,
+                    .i = i,
+                    .decl = decl_ptr,
                 });
 
           if (src != -1 && row && col)
@@ -628,8 +630,8 @@ static void dump_ast(const struct ast *ast)
                                      (struct positional_node){
                                          .src = src,
                                          .pos = (struct position){row, col},
-                                         .number = i,
-                                         .decl = entry.number,
+                                         .i = i,
+                                         .decl = decl_ptr,
                                      });
         }
 
@@ -659,16 +661,39 @@ static void dump_ast(const struct ast *ast)
   }
 
 #ifdef USE_TREE_SITTER
+  for (unsigned i = 0; i < decl_number_map.i; ++i) {
+    struct decl_number_pair *entry = &decl_number_map.data[i];
+    if (entry->number.var) {
+      const char *type_ptr = find_var_type_map(entry->decl);
+      if (type_ptr) {
+        found = decl_number_map_bsearch(&decl_number_map, &type_ptr, &j);
+        assert(found);
+        entry->number.type = decl_number_map.data[j].number.type;
+        assert(entry->number.type);
+      }
+    }
+  }
+
   qsort(positional_node_set.data, positional_node_set.i,
         sizeof(struct positional_node), compare_positional_node);
 
   for (unsigned i = 0; i < positional_node_set.i; ++i) {
     struct positional_node pos_node = positional_node_set.data[i];
     struct cst_node *cst_node = find_cst(cst_set, pos_node.src, pos_node.pos);
-    set_cst_decl(cst_node, pos_node.decl);
+
+    found = decl_number_map_bsearch(&decl_number_map, &pos_node.decl, &j);
+    assert(found);
+
+    // Revoke the last setting
+    if (last_cst_node && last_decl_number == j)
+      set_cst_decl(last_cst_node, (struct decl_number_value){});
+
+    set_cst_decl(cst_node, decl_number_map.data[j].number);
+    last_cst_node = cst_node;
+    last_decl_number = j;
 
     TOGGLE(print_ast_cst_match, {
-      struct node *node = &ast->data[pos_node.number];
+      struct node *node = &ast->data[pos_node.i];
       fprintf(stderr, "%-16s %s | %*s%s:%d:%d -> ", node->name, node->pointer,
               node->level, "", node->range.begin.file, pos_node.pos.row,
               pos_node.pos.col);

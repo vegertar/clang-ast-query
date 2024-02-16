@@ -66,4 +66,6 @@ int toggle(const char *option);
 
 #else
 #define TOGGLE(...)
+#define toggle_help(...) (-1)
+#define toggle(...) (-1)
 #endif // USE_TOGGLE
