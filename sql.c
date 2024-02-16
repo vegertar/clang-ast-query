@@ -39,13 +39,14 @@
 
 #define VALUES_I1(n) VALUES_I2(n)
 #define VALUES_I2(n) VALUES##n()
-#define VALUES18()                                                             \
+#define VALUES19()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
-  "?,?,?"
+  "?,?,?,"                                                                     \
+  "?"
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
@@ -104,11 +105,7 @@ struct position {
 };
 
 static int compare_position(struct position a, struct position b) {
-  if (a.row < b.row)
-    return -1;
-  if (a.row == b.row)
-    return a.col - b.col;
-  return 1;
+  return (a.row < b.row) ? -1 : (a.row == b.row) ? (a.col - b.col) : 1;
 }
 
 struct cst_node {
@@ -120,8 +117,8 @@ struct cst_node {
 };
 
 DECL_ARRAY(cst, struct cst_node);
-IMPL_ARRAY_PUSH(cst, struct cst_node);
-IMPL_ARRAY_CLEAR(cst, NULL);
+static inline IMPL_ARRAY_PUSH(cst, struct cst_node);
+static inline IMPL_ARRAY_CLEAR(cst, NULL);
 
 struct cst_wrapper {
   struct cst cst;
@@ -131,9 +128,9 @@ struct cst_wrapper {
 static void destroy_cst(void *p) { cst_clear((struct cst *)p, 2); }
 
 DECL_ARRAY(cst_set, struct cst_wrapper);
-IMPL_ARRAY_RESERVE(cst_set, struct cst_wrapper);
-IMPL_ARRAY_SET(cst_set, struct cst_wrapper);
-IMPL_ARRAY_CLEAR(cst_set, destroy_cst);
+static inline IMPL_ARRAY_RESERVE(cst_set, struct cst_wrapper);
+static inline IMPL_ARRAY_SET(cst_set, struct cst_wrapper);
+static inline IMPL_ARRAY_CLEAR(cst_set, destroy_cst);
 
 static void dump_src(struct cst_set *cst_set);
 static void dump_ast(const struct cst_set *cst_set, const struct ast *ast);
@@ -184,6 +181,18 @@ static unsigned mark_specs(const struct def *def) {
   }
   assert(specs <= INT_MAX);
   return specs;
+}
+
+static int numeric_class(const char *s) {
+  if (!s)
+    return 0;
+  if (strcmp(s, "struct") == 0)
+    return 1;
+  if (strcmp(s, "union") == 0)
+    return 2;
+  if (strcmp(s, "enum") == 0)
+    return 3;
+  return -1;
 }
 
 static inline _Bool is_internal_file(const char *filename) {
@@ -265,10 +274,10 @@ static int compare_decl_number(const void *a, const void *b, size_t n) {
 }
 
 DECL_ARRAY(decl_number_map, struct decl_number_pair);
-static IMPL_ARRAY_PUSH(decl_number_map, struct decl_number_pair);
-static IMPL_ARRAY_BSEARCH(decl_number_map, compare_decl_number);
-static IMPL_ARRAY_BADD(decl_number_map, NULL);
-static IMPL_ARRAY_CLEAR(decl_number_map, NULL);
+static inline IMPL_ARRAY_PUSH(decl_number_map, struct decl_number_pair);
+static inline IMPL_ARRAY_BSEARCH(decl_number_map, compare_decl_number);
+static inline IMPL_ARRAY_BADD(decl_number_map, NULL);
+static inline IMPL_ARRAY_CLEAR(decl_number_map, NULL);
 
 enum name_kind {
   NAME_KIND_UNKNOWN = 0U,
@@ -284,7 +293,8 @@ static enum name_kind name_kind(const char *name) {
     kind = NAME_KIND_DECL;
     if (n == 12 && strncmp("Function", name, 8) == 0)
       kind = NAME_KIND_FUNCTION_DECL;
-    else if (n >= 7 && strncmp("Var", name + n - 7, 3) == 0)
+    else if (n == 9 && strncmp("Field", name, 5) ||
+             n >= 7 && strncmp("Var", name + n - 7, 3) == 0)
       kind = NAME_KIND_VALUABLE_DECL;
   }
   return kind;
@@ -344,8 +354,8 @@ typedef struct {
 } ts_node_wrapper;
 
 DECL_ARRAY(ts_node_list, ts_node_wrapper);
-IMPL_ARRAY_PUSH(ts_node_list, ts_node_wrapper)
-IMPL_ARRAY_CLEAR(ts_node_list, NULL)
+static inline IMPL_ARRAY_PUSH(ts_node_list, ts_node_wrapper);
+static inline IMPL_ARRAY_CLEAR(ts_node_list, NULL);
 
 static const char *ts_file_input_read(void *payload, uint32_t byte_index,
                                       TSPoint position, uint32_t *bytes_read) {
@@ -501,8 +511,8 @@ static int compare_positional_node(const void *a, const void *b) {
 }
 
 DECL_ARRAY(positional_node_set, struct positional_node);
-static IMPL_ARRAY_PUSH(positional_node_set, struct positional_node);
-static IMPL_ARRAY_CLEAR(positional_node_set, NULL);
+static inline IMPL_ARRAY_PUSH(positional_node_set, struct positional_node);
+static inline IMPL_ARRAY_CLEAR(positional_node_set, NULL);
 
 static void dump_ast(const struct cst_set *cst_set, const struct ast *ast)
 #else
@@ -510,7 +520,7 @@ static void dump_ast(const struct ast *ast)
 #endif // USE_TREE_SITTER
 {
   exec_sql("CREATE TABLE ast ("
-           " number INTEGER,"
+           " number INTEGER PRIMARY KEY,"
            " parent_number INTEGER,"
            " kind TEXT,"
            " ptr TEXT,"
@@ -524,6 +534,7 @@ static void dump_ast(const struct ast *ast)
            " row INTEGER,"
            " col INTEGER,"
            " name TEXT,"
+           " class INTEGER,"
            " qualified_type TEXT,"
            " desugared_type TEXT,"
            " specs INTEGER,"
@@ -554,10 +565,14 @@ static void dump_ast(const struct ast *ast)
 #endif // USE_TREE_SITTER
 
     INSERT_INTO(ast, NUMBER, PARENT_NUMBER, KIND, PTR, BEGIN_SRC, BEGIN_ROW,
-                BEGIN_COL, END_SRC, END_ROW, END_COL, SRC, ROW, COL, NAME,
-                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_PTR) {
+                BEGIN_COL, END_SRC, END_ROW, END_COL, SRC, ROW, COL, CLASS,
+                NAME, QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_PTR) {
 
       switch (decl->kind) {
+      case DECL_KIND_V3:
+        FILL_INT(CLASS, numeric_class(decl->variants.v3.class));
+        FILL_TEXT(NAME, decl->variants.v3.name);
+        break;
       case DECL_KIND_V8:
         FILL_DEF(&decl->variants.v8.def);
         break;
