@@ -24,8 +24,10 @@ CPPFLAGS+= -DUSE_TEST
 SRCS:= test.c
 endif
 
-ifdef USE_LOG
-CPPFLAGS+= -DUSE_LOG
+ifdef USE_TOGGLE
+CPPFLAGS+= -DUSE_TOGGLE
+# Must be the first linked one
+SRCS:= test.c
 endif
 
 ifdef USE_TREE_SITTER

@@ -251,6 +251,8 @@ struct decl_number_value {
   unsigned type;
 };
 
+/// Represents a pair consisting of a pointer to a declaration node in
+/// an AST and its corresponding index number for variable or type.
 struct decl_number_pair {
   const char *decl;
   struct decl_number_value number;
@@ -311,18 +313,6 @@ static enum symbol_kind symbol_kind(int symbol) {
   default:
     return SYMBOL_KIND_UNKNOWN;
   }
-}
-
-static void print_cst_node(const struct cst_node *cst_node,
-                           const struct node *node, struct position pos) {
-  fprintf(stderr, "%-16s %s | %*s%s:%d:%d -> ", node->name, node->pointer,
-          node->level, "", node->range.begin.file, pos.row, pos.col);
-  if (!cst_node)
-    fprintf(stderr, "NULL\n");
-  else
-    fprintf(stderr, "<%d>[%d:%d - %d:%d]\n", cst_node->symbol,
-            cst_node->begin.row, cst_node->begin.col, cst_node->end.row,
-            cst_node->end.col);
 }
 
 static void set_cst_decl(struct cst_node *cst_node,
@@ -413,10 +403,9 @@ static struct cst create_cst(const char *filename, const char *code,
       const TSPoint start = ts_node_start_point(top.node);
       const TSPoint end = ts_node_end_point(top.node);
 
-#ifdef USE_LOG
-      fprintf(stderr, "%*s<%d> [%u, %u] - [%u, %u]\n", top.indent, "", symbol,
-              start.row + 1, start.column + 1, end.row + 1, end.column + 1);
-#endif // USE_LOG
+      TOGGLE(print_cst, fprintf(stderr, "%*s<%d> [%u, %u] - [%u, %u]\n",
+                                top.indent, "", symbol, start.row + 1,
+                                start.column + 1, end.row + 1, end.column + 1));
 
       // Also ignore zero-length tokens.
       if (kind && memcmp(&start, &end, sizeof(TSPoint))) {
@@ -499,9 +488,9 @@ static void dump_cst(const struct cst_set *cst_set) {
 
 struct positional_node {
   int src;
-  unsigned number;
   struct position pos;
-  struct decl_number_value decl;
+  unsigned number;               // The index of current node.
+  struct decl_number_value decl; // The corresponding declaration node.
 };
 
 static int compare_positional_node(const void *a, const void *b) {
@@ -677,9 +666,19 @@ static void dump_ast(const struct ast *ast)
     struct positional_node pos_node = positional_node_set.data[i];
     struct cst_node *cst_node = find_cst(cst_set, pos_node.src, pos_node.pos);
     set_cst_decl(cst_node, pos_node.decl);
-#ifdef USE_LOG
-    print_cst_node(cst_node, &ast->data[pos_node.number], pos_node.pos);
-#endif // USE_LOG
+
+    TOGGLE(print_ast_cst_match, {
+      struct node *node = &ast->data[pos_node.number];
+      fprintf(stderr, "%-16s %s | %*s%s:%d:%d -> ", node->name, node->pointer,
+              node->level, "", node->range.begin.file, pos_node.pos.row,
+              pos_node.pos.col);
+      if (!cst_node)
+        fprintf(stderr, "NULL\n");
+      else
+        fprintf(stderr, "<%d>[%d:%d - %d:%d]\n", cst_node->symbol,
+                cst_node->begin.row, cst_node->begin.col, cst_node->end.row,
+                cst_node->end.col);
+    });
   }
 
   decl_number_map_clear(&decl_number_map, 2);

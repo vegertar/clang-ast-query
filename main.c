@@ -1,16 +1,16 @@
-#include "test.h"
 #include "parse.h"
 #include "scan.h"
+#include "test.h"
 
 #ifdef USE_CLANG_TOOL
-# include "remark.h"
+#include "remark.h"
 #endif // USE_CLANG_TOOL
 
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 static int debug_flag;
@@ -39,16 +39,18 @@ static struct string in_content;
 
 static int parse_line(char *line, size_t n, size_t cap, void *data) {
   assert(n + 1 < cap);
-  line[n] = line[n+1] = 0;
+  line[n] = line[n + 1] = 0;
 
-  if (text_file) fwrite(line, n, 1, text_file);
+  if (text_file)
+    fwrite(line, n, 1, text_file);
   YY_BUFFER_STATE buffer = yy_scan_buffer(line, n + 2);
 
   struct parser_context *ctx = (struct parser_context *)data;
   ctx->uctx.line = line;
 
   int err = parse(&ctx->lloc, &ctx->uctx);
-  if (err) ctx->errs++;
+  if (err)
+    ctx->errs++;
   yy_delete_buffer(buffer);
   return err;
 }
@@ -56,7 +58,7 @@ static int parse_line(char *line, size_t n, size_t cap, void *data) {
 static int parse_file(FILE *fp) {
   char line[BUFSIZ];
   struct parser_context ctx = {
-    .lloc = (YYLTYPE){1, 1, 1, 1},
+      .lloc = (YYLTYPE){1, 1, 1, 1},
   };
 
   int err = 0;
@@ -69,24 +71,27 @@ static int parse_file(FILE *fp) {
 static inline FILE *open_file(const char *filename, const char *mode) {
   FILE *fp = fopen(filename, mode);
   if (!fp) {
-    fprintf(stderr, "%s: open('%s') error: %s\n",
-            __func__, in_filename, strerror(errno));
+    fprintf(stderr, "%s: open('%s') error: %s\n", __func__, in_filename,
+            strerror(errno));
   }
   return fp;
 }
 
 static int text_mode(int argc, char **argv) {
   FILE *fp = in_filename ? open_file(in_filename, "r") : stdin;
-  if (!fp) return 1;
+  if (!fp)
+    return 1;
 
   int err = parse_file(fp);
-  if (in_filename) fclose(fp);
+  if (in_filename)
+    fclose(fp);
   return err;
 }
 
 static void read_content(struct string *s) {
   FILE *fp = in_filename ? open_file(in_filename, "r") : stdin;
-  if (!fp) exit(1);
+  if (!fp)
+    exit(1);
 
   char buffer[BUFSIZ];
   size_t n = 0;
@@ -98,26 +103,23 @@ static void read_content(struct string *s) {
     exit(1);
   }
 
-  if (in_filename) fclose(fp);
+  if (in_filename)
+    fclose(fp);
 }
 
 static void prepare_tu(struct string *s) {
   read_content(s);
   tu_code = s->data;
   tu_size = s->i;
-  if (!tu_filename) tu_filename = in_filename;
+  if (!tu_filename)
+    tu_filename = in_filename;
 }
 
 static int cc_mode(int argc, char **argv) {
 #ifdef USE_CLANG_TOOL
-  struct parser_context ctx = { (YYLTYPE){1, 1, 1, 1} };
-  int err = remark(tu_code,
-                   tu_size,
-                   tu_filename,
-                   argv + optind,
-                   argc - optind,
-                   parse_line,
-                   &ctx);
+  struct parser_context ctx = {(YYLTYPE){1, 1, 1, 1}};
+  int err = remark(tu_code, tu_size, tu_filename, argv + optind, argc - optind,
+                   parse_line, &ctx);
   return err ? err : ctx.errs;
 #else
   fprintf(stderr, "CC mode is not compiled in\n");
@@ -128,24 +130,37 @@ static int cc_mode(int argc, char **argv) {
 int main(int argc, char **argv) {
   int c;
 
-  while ((c = getopt(argc, argv, "htdcf:o:x")) != -1)
+  while ((c = getopt(argc, argv, "ht::T::dcf:o:x")) != -1)
     switch (c) {
     case 'h':
-      fprintf(stderr, "Usage: %s [OPTION]... [-c [-- [CLANG OPTION]...]] [FILE]\n", argv[0]);
-      fprintf(stderr, "The utility to handle Clang AST from FILE (the stdin by default)\n\n"
-                      "If -c is specified, the input FILE must be named with a .c extension.\n\n"
-                      "Additionally, -o in CLANG OPTION will export the SQLite3 database"
-                      " rather than the ordinary object file.\n\n");
-      fprintf(stderr, "\t-t\t\trun test\n");
+      fprintf(stderr,
+              "Usage: %s [OPTION]... [-c [-- [CLANG OPTION]...]] [FILE]\n",
+              argv[0]);
+      fprintf(
+          stderr,
+          "The utility to handle Clang AST from FILE (the stdin by default)\n\n"
+          "If -c is specified, the input FILE must be named with a .c"
+          " extension.\n\n"
+          "Additionally, -o in CLANG OPTION will export the SQLite3 database"
+          " rather than the ordinary object file.\n\n");
+      fprintf(stderr, "\t-t[help]\trun test\n");
+      fprintf(stderr, "\t-T[help]\toperate toggle\n");
       fprintf(stderr, "\t-d\t\tenable yydebug\n");
-      fprintf(stderr, "\t-f\t\tspecify the filename if read code from stdin with -c\n");
+      fprintf(stderr,
+              "\t-f\t\tspecify the filename if read code from stdin with -c\n");
       fprintf(stderr, "\t-c\t\tread from .c source\n");
       fprintf(stderr, "\t-o DB\t\texport SQLite3 database\n");
       fprintf(stderr, "\t-x\t\tdump the AST text into DB.text or stdout\n");
       fprintf(stderr, "\t-h\t\tdisplay this help and exit\n");
       return 0;
     case 't':
-      return RUN_TEST();
+      return optarg && strcmp(optarg, "help") == 0 ? test_help()
+                                                   : RUN_TEST(optarg);
+    case 'T':
+      if (optarg && strcmp(optarg, "help") == 0)
+        return toggle_help();
+      if (toggle(optarg))
+        return -1;
       break;
     case 'd':
       debug_flag = 1;
@@ -166,7 +181,8 @@ int main(int argc, char **argv) {
       exit(1);
     }
 
-  if (debug_flag) yydebug = 1;
+  if (debug_flag)
+    yydebug = 1;
 
   in_filename = argv[optind];
 
@@ -194,8 +210,8 @@ int main(int argc, char **argv) {
       char filename[BUFSIZ];
       snprintf(filename, sizeof(filename), "%s.text", db_filename);
       if (!(text_file = fopen(filename, "w"))) {
-        fprintf(stderr, "%s: open('%s') error: %s\n",
-                __func__, filename, strerror(errno));
+        fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
+                strerror(errno));
         return 1;
       }
     } else {
@@ -203,11 +219,14 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (cc_flag) prepare_tu(&in_content);
+  if (cc_flag)
+    prepare_tu(&in_content);
 
   int err = cc_flag ? cc_mode(argc, argv) : text_mode(argc, argv);
-  if (!err && db_filename) err = dump(db_filename);
-  if (db_filename && text_file) fclose(text_file);
+  if (!err && db_filename)
+    err = dump(db_filename);
+  if (db_filename && text_file)
+    fclose(text_file);
 
   destroy();
   yylex_destroy();
