@@ -303,9 +303,11 @@ static enum name_kind name_kind(const char *name) {
 }
 
 enum symbol_kind {
-  SYMBOL_KIND_UNKNOWN = 0,
-  SYMBOL_KIND_IDENTIFIER = 1,
-  SYMBOL_KIND_TYPE = 2,
+  SYMBOL_KIND_UNKNOWN = 0U,
+  SYMBOL_KIND_IDENTIFIER = 1U,
+  SYMBOL_KIND_BUILTIN_TYPE = 2U,
+  SYMBOL_KIND_CUSTOM_TYPE = 6U,
+
 };
 
 static enum symbol_kind symbol_kind(int symbol) {
@@ -313,15 +315,19 @@ static enum symbol_kind symbol_kind(int symbol) {
   // https://raw.githubusercontent.com/tree-sitter/tree-sitter-c/master/src/parser.c
   switch (symbol) {
   case 1:   // identifier
-  case 150: // true
-  case 151: // false
-  case 152: // NULL
-  case 153: // nullptr
-  case 345: // field
+  case 155: // true
+  case 156: // false
+  case 157: // NULL
+  case 158: // nullptr
+  case 351: // field
     return SYMBOL_KIND_IDENTIFIER;
-  case 89:  // primitive type
-  case 347: // custom type
-    return SYMBOL_KIND_TYPE;
+  case 91: // void type
+  case 92: // boolean type
+  case 93: // complex type
+  case 94: // primitive type
+    return SYMBOL_KIND_BUILTIN_TYPE;
+  case 353: // custom type
+    return SYMBOL_KIND_CUSTOM_TYPE;
   default:
     return SYMBOL_KIND_UNKNOWN;
   }
@@ -334,7 +340,8 @@ static void set_cst_decl(struct cst_node *cst_node,
     case SYMBOL_KIND_IDENTIFIER:
       cst_node->decl = decl.var;
       break;
-    case SYMBOL_KIND_TYPE:
+    case SYMBOL_KIND_BUILTIN_TYPE:
+    case SYMBOL_KIND_CUSTOM_TYPE:
       cst_node->decl = decl.type;
       break;
     default:
@@ -402,34 +409,33 @@ static struct cst create_cst(const char *filename, const char *code,
   struct ts_node_list stack = {};
   ts_node_list_push(&stack, (ts_node_wrapper){0, ts_tree_root_node(tree)});
 
+  TOGGLE(print_cst, fprintf(stderr, "=== %s ===\n", filename));
+
   // A preorder traversal
   while (stack.i) {
     ts_node_wrapper top = stack.data[--stack.i];
     uint32_t n = ts_node_child_count(top.node);
     int symbol = ts_node_symbol(top.node);
-    int kind = symbol_kind(symbol);
+    unsigned kind = symbol_kind(symbol);
 
-    // Only insert leaf nodes so that all ranges are disjoint
-    if (n == 0) {
-      // Note that TSPoint uses a zero-based index.
-      const TSPoint start = ts_node_start_point(top.node);
-      const TSPoint end = ts_node_end_point(top.node);
+    // Note that TSPoint uses a zero-based index.
+    const TSPoint start = ts_node_start_point(top.node);
+    const TSPoint end = ts_node_end_point(top.node);
 
-      TOGGLE(print_cst, fprintf(stderr, "%*s<%d> [%u, %u] - [%u, %u]\n",
-                                top.indent, "", symbol, start.row + 1,
-                                start.column + 1, end.row + 1, end.column + 1));
+    TOGGLE(print_cst, fprintf(stderr, "%*s<%d:%u>[%u:%u - %u:%u]\n",
+                              top.indent * 2, "", symbol, kind, start.row + 1,
+                              start.column + 1, end.row + 1, end.column + 1));
 
-      // Also ignore zero-length tokens.
-      if (kind && memcmp(&start, &end, sizeof(TSPoint))) {
-        cst_push(
-            &cst,
-            (struct cst_node){
-                .symbol = symbol,
-                .kind = kind,
-                .begin = (struct position){start.row + 1, start.column + 1},
-                .end = (struct position){end.row + 1, end.column + 1},
-            });
-      }
+    // Only insert leaf nodes so that all ranges are disjoint.
+    // Also ignore zero-length tokens.
+    if (n == 0 && kind && memcmp(&start, &end, sizeof(TSPoint))) {
+      cst_push(&cst,
+               (struct cst_node){
+                   .symbol = symbol,
+                   .kind = kind,
+                   .begin = (struct position){start.row + 1, start.column + 1},
+                   .end = (struct position){end.row + 1, end.column + 1},
+               });
     }
 
     for (uint32_t i = 0; i < n; ++i) {
@@ -476,17 +482,29 @@ static void dump_cst(const struct cst_set *cst_set) {
            " end_row INTEGER,"
            " end_col INTEGER)");
 
-  for (unsigned i = 0; i < cst_set->i; ++i) {
-    struct cst cst = cst_set->data[i].cst;
+  for (unsigned i = 0; i < src_set.i; ++i) {
+    unsigned src = src_set.data[i].number;
+    struct cst cst = cst_set->data[src].cst;
+
+    TOGGLE(print_cst_node_missing_decl,
+           fprintf(stderr, "=== %s ===\n", src_set.data[i].filename));
+
     for (unsigned j = 0; j < cst.i; ++j) {
       struct cst_node *cst_node = &cst.data[j];
-      if (!cst_node->decl)
+      if (!cst_node->decl) {
+        TOGGLE(print_cst_node_missing_decl, {
+          if (cst_node->kind != SYMBOL_KIND_BUILTIN_TYPE)
+            fprintf(stderr, "<%d:%u>[%d:%d - %d:%d]\n", cst_node->symbol,
+                    cst_node->kind, cst_node->begin.row, cst_node->begin.col,
+                    cst_node->end.row, cst_node->end.col);
+        });
         continue;
+      }
 
       if_prepared_stmt(
           "INSERT INTO cst (src, decl, begin_row, begin_col, end_row, end_col)"
           " VALUES (?, ?, ?, ?, ?, ?)") {
-        FILL_INT(1, i);
+        FILL_INT(1, src);
         FILL_INT(2, cst_node->decl);
         FILL_INT(3, cst_node->begin.row);
         FILL_INT(4, cst_node->begin.col);
@@ -550,7 +568,6 @@ static void dump_ast(const struct ast *ast)
   unsigned kind = 0;
   const char *decl_ptr = NULL;
   struct cst_node *last_cst_node = NULL;
-  unsigned last_decl_number = -1;
 #endif
 
   unsigned parents[MAX_AST_LEVEL + 1] = {-1};
@@ -684,25 +701,28 @@ static void dump_ast(const struct ast *ast)
     found = decl_number_map_bsearch(&decl_number_map, &pos_node.decl, &j);
     assert(found);
 
+    set_cst_decl(cst_node, decl_number_map.data[j].number);
+
     // Revoke the last setting
-    if (last_cst_node && last_decl_number == j)
+    if (last_cst_node && cst_node &&
+        last_cst_node->symbol != cst_node->symbol &&
+        last_cst_node->decl == cst_node->decl)
       set_cst_decl(last_cst_node, (struct decl_number_value){});
 
-    set_cst_decl(cst_node, decl_number_map.data[j].number);
     last_cst_node = cst_node;
-    last_decl_number = j;
 
     TOGGLE(print_ast_cst_match, {
       struct node *node = &ast->data[pos_node.i];
       fprintf(stderr, "%-16s %s | %*s%s:%d:%d -> ", node->name, node->pointer,
-              node->level, "", node->range.begin.file, pos_node.pos.row,
+              node->level * 2, "", node->range.begin.file, pos_node.pos.row,
               pos_node.pos.col);
       if (!cst_node)
         fprintf(stderr, "NULL\n");
       else
-        fprintf(stderr, "<%d>[%d:%d - %d:%d]\n", cst_node->symbol,
-                cst_node->begin.row, cst_node->begin.col, cst_node->end.row,
-                cst_node->end.col);
+        fprintf(stderr, "%s <%d>[%d:%d - %d:%d]\n",
+                (cst_node->decl ? ast->data[cst_node->decl].pointer : "NULL"),
+                cst_node->symbol, cst_node->begin.row, cst_node->begin.col,
+                cst_node->end.row, cst_node->end.col);
     });
   }
 

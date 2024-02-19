@@ -133,7 +133,7 @@ static int cc_mode(int argc, char **argv) {
 int main(int argc, char **argv) {
   int c;
 
-  while ((c = getopt(argc, argv, "ht::T::dci:o:")) != -1)
+  while ((c = getopt(argc, argv, "ht::T::dCci:o:")) != -1)
     switch (c) {
     case 'h':
       fprintf(stderr, "Usage: %s [OPTION]... [-- [CLANG OPTION]...] [FILE]\n",
@@ -143,6 +143,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "\t-t[help]   run test\n");
       fprintf(stderr, "\t-T[help]   operate toggle\n");
       fprintf(stderr, "\t-d         enable debug\n");
+      fprintf(stderr, "\t-C         treat the input file as the C input\n");
       fprintf(stderr, "\t-c         only dump text\n");
       fprintf(stderr, "\t-i NAME    name the input TU\n");
       fprintf(stderr, "\t-o OUTPUT  specify the output file\n");
@@ -159,6 +160,9 @@ int main(int argc, char **argv) {
       break;
     case 'd':
       debug_flag = 1;
+      break;
+    case 'C':
+      cc_flag = 1;
       break;
     case 'c':
       text_flag = 1;
