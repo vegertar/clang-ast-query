@@ -6,7 +6,7 @@ YACCFLAGS= -Werror
 CC= cc
 CXX= c++
 CFLAGS= -MMD -Werror -std=gnu11
-CXXFLAGS= -Werror -std=c++20 -fno-exceptions -fno-rtti
+CXXFLAGS= -std=c++20 -fno-exceptions -fno-rtti
 LDFLAGS= -lfl -lsqlite3
 
 ifdef RELEASE

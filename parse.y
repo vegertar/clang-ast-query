@@ -330,7 +330,7 @@
     ENUM
     FIELD
   <integer>
-    LEVEL
+    INDENT
   <string>
     HEAD
     PARENT
@@ -403,16 +403,11 @@
 
 start: node EOL
   {
-    if (ast.i) {
-      ast_clear(&ast, 0);
-      src_set_clear(&src_set, 0);
-      var_type_map_clear(&var_type_map, 0);
-    }
     ast_push(&ast, $1);
   }
- | LEVEL node EOL
+ | INDENT node EOL
   {
-    $2.level = $1;
+    $2.level = $1 / 2;
     ast_push(&ast, $2);
   }
  | remark EOL

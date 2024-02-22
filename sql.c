@@ -39,6 +39,10 @@
 
 #define VALUES_I1(n) VALUES_I2(n)
 #define VALUES_I2(n) VALUES##n()
+#define VALUES7()                                                              \
+  "?,?,?,"                                                                     \
+  "?,?,?,"                                                                     \
+  "?"
 #define VALUES19()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
@@ -197,7 +201,8 @@ static int numeric_class(const char *s) {
 
 static inline _Bool is_internal_file(const char *filename) {
   return strcmp(filename, "<built-in>") == 0 ||
-         strcmp(filename, "<scratch space>") == 0;
+         strcmp(filename, "<scratch space>") == 0 ||
+         strcmp(filename, "<command line>") == 0;
 }
 
 int dump(const char *db_file) {
@@ -281,9 +286,10 @@ static inline IMPL_ARRAY_CLEAR(decl_number_map, NULL);
 
 enum name_kind {
   NAME_KIND_UNKNOWN = 0U,
-  NAME_KIND_DECL = 1U,
-  NAME_KIND_VALUABLE_DECL = 3U,
-  NAME_KIND_FUNCTION_DECL = 7U,
+  NAME_KIND_DECL = 1U,          // b0001
+  NAME_KIND_VALUABLE_MASK = 2U, // b0010
+  NAME_KIND_VALUABLE_DECL = 3U, // b0011
+  NAME_KIND_FUNCTION_DECL = 7U, // b0111
 };
 
 static enum name_kind name_kind(const char *name) {
@@ -304,30 +310,32 @@ static enum name_kind name_kind(const char *name) {
 
 enum symbol_kind {
   SYMBOL_KIND_UNKNOWN = 0U,
-  SYMBOL_KIND_IDENTIFIER = 1U,
-  SYMBOL_KIND_BUILTIN_TYPE = 2U,
-  SYMBOL_KIND_CUSTOM_TYPE = 6U,
-
+  SYMBOL_KIND_IDENTIFIER = 1U,  // b0001
+  SYMBOL_KIND_TYPE = 2U,        // b0010
+  SYMBOL_KIND_CUSTOM_MASK = 4U, // b0100
 };
 
 static enum symbol_kind symbol_kind(int symbol) {
   // See also
-  // https://raw.githubusercontent.com/tree-sitter/tree-sitter-c/master/src/parser.c
+  // https://raw.githubusercontent.com/vegertar/tree-sitter-c/master/src/parser.c
   switch (symbol) {
-  case 1:   // identifier
   case 155: // true
   case 156: // false
-  case 157: // NULL
   case 158: // nullptr
-  case 351: // field
+#if __STDC_VERSION__ >= 202311L
     return SYMBOL_KIND_IDENTIFIER;
+#endif      // c23
+  case 157: // NULL
+  case 1:   // identifier
+  case 351: // field
+    return SYMBOL_KIND_CUSTOM_MASK | SYMBOL_KIND_IDENTIFIER;
   case 91: // void type
   case 92: // boolean type
   case 93: // complex type
   case 94: // primitive type
-    return SYMBOL_KIND_BUILTIN_TYPE;
+    return SYMBOL_KIND_TYPE;
   case 353: // custom type
-    return SYMBOL_KIND_CUSTOM_TYPE;
+    return SYMBOL_KIND_CUSTOM_MASK | SYMBOL_KIND_TYPE;
   default:
     return SYMBOL_KIND_UNKNOWN;
   }
@@ -336,17 +344,10 @@ static enum symbol_kind symbol_kind(int symbol) {
 static void set_cst_decl(struct cst_node *cst_node,
                          struct decl_number_value decl) {
   if (cst_node) {
-    switch (cst_node->kind) {
-    case SYMBOL_KIND_IDENTIFIER:
+    if (cst_node->kind & SYMBOL_KIND_IDENTIFIER)
       cst_node->decl = decl.var;
-      break;
-    case SYMBOL_KIND_BUILTIN_TYPE:
-    case SYMBOL_KIND_CUSTOM_TYPE:
+    else if (cst_node->kind & SYMBOL_KIND_TYPE)
       cst_node->decl = decl.type;
-      break;
-    default:
-      break;
-    }
   }
 }
 
@@ -476,6 +477,7 @@ static struct cst_node *find_cst(const struct cst_set *cst_set, int src,
 static void dump_cst(const struct cst_set *cst_set) {
   exec_sql("CREATE TABLE cst ("
            " src INTEGER,"
+           " kind INTEGER,"
            " decl INTEGER,"
            " begin_row INTEGER,"
            " begin_col INTEGER,"
@@ -493,7 +495,7 @@ static void dump_cst(const struct cst_set *cst_set) {
       struct cst_node *cst_node = &cst.data[j];
       if (!cst_node->decl) {
         TOGGLE(print_cst_node_missing_decl, {
-          if (cst_node->kind != SYMBOL_KIND_BUILTIN_TYPE)
+          if (cst_node->kind & SYMBOL_KIND_CUSTOM_MASK)
             fprintf(stderr, "<%d:%u>[%d:%d - %d:%d]\n", cst_node->symbol,
                     cst_node->kind, cst_node->begin.row, cst_node->begin.col,
                     cst_node->end.row, cst_node->end.col);
@@ -501,17 +503,17 @@ static void dump_cst(const struct cst_set *cst_set) {
         continue;
       }
 
-      if_prepared_stmt(
-          "INSERT INTO cst (src, decl, begin_row, begin_col, end_row, end_col)"
-          " VALUES (?, ?, ?, ?, ?, ?)") {
-        FILL_INT(1, src);
-        FILL_INT(2, cst_node->decl);
-        FILL_INT(3, cst_node->begin.row);
-        FILL_INT(4, cst_node->begin.col);
-        FILL_INT(5, cst_node->end.row);
-        FILL_INT(6, cst_node->end.col);
+      INSERT_INTO(cst, SRC, KIND, DECL, BEGIN_ROW, BEGIN_COL, END_ROW,
+                  END_COL) {
+        FILL_INT(SRC, src);
+        FILL_INT(KIND, cst_node->kind);
+        FILL_INT(DECL, cst_node->decl);
+        FILL_INT(BEGIN_ROW, cst_node->begin.row);
+        FILL_INT(BEGIN_COL, cst_node->begin.col);
+        FILL_INT(END_ROW, cst_node->end.row);
+        FILL_INT(END_COL, cst_node->end.col);
       }
-      end_if_prepared_stmt();
+      END_INSERT_INTO();
     }
   }
 }
@@ -584,6 +586,9 @@ static void dump_ast(const struct ast *ast)
                 NAME, QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_PTR) {
 
       switch (decl->kind) {
+      case DECL_KIND_V2:
+        FILL_TEXT(NAME, decl->variants.v2.name);
+        break;
       case DECL_KIND_V3:
         FILL_INT(CLASS, numeric_class(decl->variants.v3.class));
         FILL_TEXT(NAME, decl->variants.v3.name);
@@ -619,7 +624,7 @@ static void dump_ast(const struct ast *ast)
         kind = name_kind(node->name);
         if (kind & NAME_KIND_DECL) {
           struct decl_number_pair entry = {node->pointer};
-          if ((kind & NAME_KIND_VALUABLE_DECL) == NAME_KIND_VALUABLE_DECL)
+          if (kind & NAME_KIND_VALUABLE_MASK)
             entry.number.var = i;
           else
             entry.number.type = i;

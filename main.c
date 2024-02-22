@@ -46,7 +46,11 @@ static int parse_line(char *line, size_t n, size_t cap, void *data) {
     return 0;
   }
 
+#ifdef NDEBUG
   YY_BUFFER_STATE buffer = yy_scan_buffer(line, n + 2);
+#else
+  YY_BUFFER_STATE buffer = yy_scan_bytes(line, n);
+#endif // NDEBUG
 
   struct parser_context *ctx = (struct parser_context *)data;
   ctx->uctx.line = line;

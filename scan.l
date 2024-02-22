@@ -128,8 +128,8 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
 }
 
 {INDENT}/[^ \n] {
-  yylval->TOK_LEVEL = yyleng / 2;
-  return TOK_LEVEL;
+  yylval->TOK_INDENT = yyleng;
+  return TOK_INDENT;
 }
 
 [A-Z][a-zA-Z]+" "{POINTER}/[ \n] {
@@ -172,6 +172,7 @@ col/:[0-9]+ {
 
 [^ <:]+/:[0-9]+:[0-9]+ |
 "<scratch space>" |
+"<command line>" |
 "<built-in>" {
   yylval->TOK_SRC = (char *)add_src(yytext);
   return TOK_SRC;
@@ -196,7 +197,7 @@ field/" "Field[ \n] {
   return TOK_BQNAME;
 }
 
-'[^\n']*'/[: \n] {
+'((?:[^'\\]|\\.)*)'/[: \n] {
   BEGIN TYPE;
   yylval->TOK_SQNAME = qname();
   return TOK_SQNAME;
