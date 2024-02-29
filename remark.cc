@@ -37,18 +37,18 @@ public:
 
   void write_impl(const char *ptr, size_t size) override {
     if (!escaped)
-      return write_private(ptr, size, 0);
+      return write_private(ptr, size);
 
     size_t i = 0, j = 0;
     do {
       while (j < size && ptr[j] != escaped)
         ++j;
 
-      write_private(ptr + i, j - i, 0);
+      write_private(ptr + i, j - i);
       if (j == size)
         break;
 
-      write_private("\\", 1, 0);
+      write_private("\\", 1);
       i = j++;
     } while (i < size);
   }
@@ -56,13 +56,12 @@ public:
   uint64_t current_pos() const override { return pos; }
 
 private:
-  void write_private(const char *ptr, size_t size, int escaped_char) {
+  void write_private(const char *ptr, size_t size) {
     pos += size;
 
     size_t i = 0;
     while (i < size) {
-      int c = ptr[i++];
-      if (c == '\n' && c != escaped_char) {
+      if (ptr[i++] == '\n') {
         // with 2 more slots to work with parse_line()
         size_t cap = line.size() + i + 2;
         if (line.capacity() < cap)
@@ -168,7 +167,7 @@ protected:
 
   void HandleTranslationUnit(ASTContext &ctx) override {
     auto &sm = ctx.getSourceManager();
-    const auto file = sm.getFileEntryForID(sm.getMainFileID());
+    const auto file = sm.getFileEntryRefForID(sm.getMainFileID());
     const auto &filename = file->getName();
     char cwd[PATH_MAX];
 
@@ -187,50 +186,60 @@ private:
     explicit pp_callback(ast_consumer &ast) : ast(ast) {}
 
     void MacroDefined(const Token &token, const MacroDirective *md) override {
-      ast.dump_kind(md->getKind());
-      ast.out << "Decl";
-      ast.dumper->dumpPointer(md);
       auto mi = md->getMacroInfo();
-      ast.dumper->dumpSourceRange(
+      auto &out = ast.out;
+      auto &dumper = ast.dumper;
+
+      ast.dump_kind(md->getKind());
+      out << "Decl";
+      dumper->dumpPointer(md);
+      dumper->dumpSourceRange(
           {mi->getDefinitionLoc(), mi->getDefinitionEndLoc()});
-      ast.out << ' ';
-      if (mi->isFunctionLike()) {
-        ast.out << "'";
-        ast.out.escape('\'');
-      }
+      out << " '";
+      out.escape('\'');
       ast.dump_name(token, *mi);
-      if (mi->isFunctionLike()) {
-        ast.out.escape(0);
-        ast.out << "'";
-      }
-      ast.out << ' ';
-      ast.dump_macro(mi);
-      ast.out << '\n';
+      out.escape(0);
+      out << "'";
+      dumper->dumpPointer(mi);
+      dumper->AddChild([=, this] { ast.dump_macro(mi); });
     }
 
     void MacroExpands(const Token &token, const MacroDefinition &def,
                       SourceRange range, const MacroArgs *args) override {
-      // The Macro expands in preorder traversal
-      int parent = -1;
-      int n = ast.macros.size();
-      for (int i = n - 1; i >= 0;) {
-        auto &macro = ast.macros[i];
-        if (macro.range.fullyContains(range)) {
-          parent = i;
-          break;
-        }
-        i = macro.parent;
-      }
-      // Nested macro expansion
-      if (parent == -1 && n)
-        parent = n - 1;
-      unsigned remote = n;
+      int parent = ast.expanding_stack.empty() ? -1 : ast.expanding_stack.top();
+      unsigned remote = ast.macros.size();
       ast.macros.emplace_back(token, def, range, parent, remote);
-      for (int p = parent; p != -1; p = ast.macros[p].parent)
-        ast.macros[p].remote = remote;
+      ast.expanding_stack.push(remote);
+
+      // Update remote field up to the root
+      while (parent != -1) {
+        auto &macro = ast.macros[parent];
+        macro.remote = remote;
+        parent = macro.parent;
+      }
+    }
+
+    void MacroExpanded(const MacroInfo *mi, bool fast) override {
+      assert(!ast.expanding_stack.empty() && "Unpaired macro expansion");
+      ast.expanding_stack.pop();
+    }
+
+    void If(SourceLocation loc, SourceRange range,
+            ConditionValueKind value) override {
+      on_if(loc, range, value, {});
+    }
+
+    void Elif(SourceLocation loc, SourceRange range, ConditionValueKind value,
+              SourceLocation if_loc) override {
+      on_if(loc, range, value, if_loc);
     }
 
   private:
+    void on_if(SourceLocation loc, SourceRange range, ConditionValueKind value,
+               SourceLocation if_loc) {
+      ast.dump_macro_expansion();
+    }
+
     ast_consumer &ast;
   };
 
@@ -288,23 +297,10 @@ private:
     }
   }
 
-  void dump_macro(const MacroInfo *mi, unsigned limit = 0) {
-    out << "'";
-    out.escape('\'');
-    SmallString<128> buffer;
-    unsigned i = 0;
+  void dump_macro(const MacroInfo *mi) {
     for (const auto &t : mi->tokens()) {
-      if (++i > 1 && t.hasLeadingSpace())
-        out << ' ';
-
-      out << pp.getSpelling(t, buffer);
-      if (i == limit && i < mi->getNumTokens()) {
-        out << "...";
-        break;
-      }
+      dumper->AddChild([&t, this] { dump_token(t); });
     }
-    out.escape(0);
-    out << "'";
   }
 
   void on_token_lexed(const Token &token) {
@@ -312,17 +308,12 @@ private:
     if (loc.isFileID()) {
       dump_macro_expansion();
     } else {
-      auto expansion_loc = pp.getSourceManager().getExpansionLoc(loc);
-      for (auto &macro : macros) {
-        if (macro.range.getBegin() == expansion_loc) {
-          macro.expansion.push_back(token);
-          break;
-        }
-      }
+      // TODO:
     }
   }
 
   void dump_macro_expansion() {
+    assert(expanding_stack.empty());
     dump_macro_expansion(0, macros.size());
     macros.clear();
   }
@@ -338,49 +329,39 @@ private:
   }
 
   void dump_macro_expansion(const macro_expansion_node &macro) {
-    out << "MacroExpansion";
-    dumper->dumpPointer(&macro.defintion);
-    dumper->dumpSourceRange(macro.range);
-    out << " '";
-    out.escape('\'');
-    dump_macro_expansion(macro.expansion);
-    out.escape(0);
-    out << "' ";
-
-    // Simulate dumpBareDeclRef
-    auto md = macro.defintion.getLocalDirective();
     auto mi = macro.defintion.getMacroInfo();
-    dump_kind(md->getKind());
-    dumper->dumpPointer(md);
-    out << " '";
-    out.escape('\'');
-    dump_name(macro.token, *mi, 3);
-    out.escape(0);
-    out << "' ";
-    dump_macro(mi, 3);
+
+    out << "MacroExpansion";
+    dumper->dumpPointer(mi);
+    dumper->dumpSourceRange(macro.range);
+    out << ' ';
+    out << macro.token.getIdentifierInfo()->getName();
   }
 
   void dump_macro_expansion(const std::vector<Token> &tokens) {
-    char buffer[256];
     for (unsigned i = 0, n = tokens.size(); i < n; ++i) {
       auto &token = tokens[i];
       if (i && token.hasLeadingSpace())
         out << ' ';
-
-      if (IdentifierInfo *ii = token.getIdentifierInfo()) {
-        out << ii->getName();
-      } else if (token.isLiteral() && !token.needsCleaning() &&
-                 token.getLiteralData()) {
-        out.write(token.getLiteralData(), token.getLength());
-      } else if (token.getLength() < sizeof(buffer)) {
-        const char *ptr = buffer;
-        unsigned len = pp.getSpelling(token, ptr);
-        out.write(ptr, len);
-      } else {
-        std::string s = pp.getSpelling(token);
-        out.write(s.data(), s.size());
-      }
+      dump_token(token);
     }
+  }
+
+  void dump_token(const Token &token) {
+    out << "Token ";
+    dumper->dumpLocation(token.getLocation());
+    out << " '";
+    out.escape('\'');
+    if (IdentifierInfo *ii = token.getIdentifierInfo()) {
+      out << ii->getName();
+    } else if (token.isLiteral() && !token.needsCleaning() &&
+               token.getLiteralData()) {
+      out.write(token.getLiteralData(), token.getLength());
+    } else {
+      Lexer::dumpSpelling(token, out, pp.getSourceManager(), pp.getLangOpts());
+    }
+    out.escape(0);
+    out << "'";
   }
 
   raw_line_ostream &out;
@@ -393,7 +374,8 @@ private:
   std::unique_ptr<ASTConsumer> impl;
   std::optional<TextNodeDumper> dumper;
   std::vector<macro_expansion_node> macros;
-};
+  std::stack<unsigned> expanding_stack;
+}; // namespace
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
                                              CompilerInstance &compiler,

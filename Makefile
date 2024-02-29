@@ -42,10 +42,22 @@ SRCS+= ${TREE_SITTER_C_DIR}/src/parser.c
 endif
 
 ifdef USE_CLANG_TOOL
+ifdef LLVM_PROJECT_DIR
+LLVM_PROJECT_BUILD_DIR?= ${LLVM_PROJECT_DIR}/build
+CXXFLAGS+= \
+	-I${LLVM_PROJECT_DIR}/llvm/include \
+	-I${LLVM_PROJECT_DIR}/clang/include \
+	-I${LLVM_PROJECT_BUILD_DIR}/include \
+	-I${LLVM_PROJECT_BUILD_DIR}/tools/clang/include
+LDFLAGS+= -L${LLVM_PROJECT_BUILD_DIR}/lib
+else
 LLVM_DIR?= /usr/lib/llvm-17
-CPPFLAGS+= -DUSE_CLANG_TOOL
 CXXFLAGS+= -I${LLVM_DIR}/include
-LDFLAGS+= -L${LLVM_DIR}/lib -lclang-cpp -lLLVM -lstdc++
+LDFLAGS+= -L${LLVM_DIR}/lib
+endif
+
+CPPFLAGS+= -DUSE_CLANG_TOOL
+LDFLAGS+= -lclang-cpp -lstdc++
 SRCS+= remark.cc
 endif
 
