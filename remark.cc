@@ -191,15 +191,12 @@ private:
       auto &dumper = ast.dumper;
 
       ast.dump_kind(md->getKind());
-      out << "Decl";
+      out << "Directive";
       dumper->dumpPointer(md);
       dumper->dumpSourceRange(
           {mi->getDefinitionLoc(), mi->getDefinitionEndLoc()});
-      out << " '";
-      out.escape('\'');
-      ast.dump_name(token, *mi);
-      out.escape(0);
-      out << "'";
+      out << ' ';
+      out << token.getIdentifierInfo()->getName();
       dumper->dumpPointer(mi);
       dumper->AddChild([=, this] { ast.dump_macro(mi); });
     }
@@ -252,37 +249,6 @@ private:
     std::vector<Token> expansion;
   };
 
-  void dump_name(const Token &token, const MacroInfo &mi, unsigned limit = 0) {
-    out << token.getIdentifierInfo()->getName();
-    if (mi.isFunctionLike()) {
-      bool too_long = false;
-      out << '(';
-      if (!mi.param_empty()) {
-        MacroInfo::param_iterator ai = mi.param_begin(), e = mi.param_end();
-        for (unsigned i = 0; ai + 1 != e; ++ai) {
-          out << (*ai)->getName();
-          if (++i == limit) {
-            too_long = true;
-            break;
-          }
-          out << ", ";
-        }
-
-        // Last argument.
-        if (too_long || (*ai)->getName() == "__VA_ARGS__")
-          out << "...";
-        else
-          out << (*ai)->getName();
-      }
-
-      if (!too_long) {
-        if (mi.isGNUVarargs())
-          out << "..."; // foo(x...)
-        out << ')';
-      }
-    }
-  }
-
   void dump_kind(MacroDirective::Kind kind) const {
     switch (kind) {
     case MacroDirective::MD_Define:
@@ -298,8 +264,40 @@ private:
   }
 
   void dump_macro(const MacroInfo *mi) {
-    for (const auto &t : mi->tokens()) {
-      dumper->AddChild([&t, this] { dump_token(t); });
+    if (mi->isFunctionLike()) {
+      dumper->AddChild([=, this] {
+        auto i = mi->param_begin(), e = mi->param_end();
+        out << "ParameterList";
+        dumper->dumpPointer(i);
+        out << " '";
+
+        if (!mi->param_empty()) {
+          for (; i + 1 != e; ++i) {
+            out << (*i)->getName();
+            out << ' ';
+          }
+
+          // Last argument.
+          if ((*i)->getName() == "__VA_ARGS__")
+            out << "...";
+          else
+            out << (*i)->getName();
+        }
+
+        if (mi->isGNUVarargs())
+          out << "..."; // foo(x...)
+
+        out << "'";
+      });
+    }
+    if (!mi->tokens_empty()) {
+      dumper->AddChild([=, this] {
+        out << "ReplacementTokens";
+        dumper->dumpPointer(mi->tokens_begin());
+        for (const auto &t : mi->tokens()) {
+          dumper->AddChild([&t, this] { dump_token(t); });
+        }
+      });
     }
   }
 
@@ -350,6 +348,10 @@ private:
   void dump_token(const Token &token) {
     out << "Token ";
     dumper->dumpLocation(token.getLocation());
+
+    if (token.hasLeadingSpace())
+      out << " hasLeadingSpace";
+
     out << " '";
     out.escape('\'');
     if (IdentifierInfo *ii = token.getIdentifierInfo()) {
