@@ -31,33 +31,26 @@ SRCS:= test.c
 endif
 
 ifdef USE_TREE_SITTER
+CPPFLAGS+= -DUSE_TREE_SITTER
 TREE_SITTER_DIR?= ${HOME}/tree-sitter
 TREE_SITTER_C_DIR?= ${HOME}/tree-sitter-c
 TREE_SITTER_CFLAGS= -I${TREE_SITTER_DIR}/lib/include
 TREE_SITTER_LDFLAGS= ${TREE_SITTER_DIR}/libtree-sitter.a
-CPPFLAGS+= -DUSE_TREE_SITTER
 CFLAGS+= ${TREE_SITTER_CFLAGS}
 LDFLAGS+= ${TREE_SITTER_LDFLAGS}
 SRCS+= ${TREE_SITTER_C_DIR}/src/parser.c
 endif
 
 ifdef USE_CLANG_TOOL
-ifdef LLVM_PROJECT_DIR
+CPPFLAGS+= -DUSE_CLANG_TOOL
+LLVM_PROJECT_DIR?= ${HOME}/llvm-project
 LLVM_PROJECT_BUILD_DIR?= ${LLVM_PROJECT_DIR}/build
 CXXFLAGS+= \
 	-I${LLVM_PROJECT_DIR}/llvm/include \
 	-I${LLVM_PROJECT_DIR}/clang/include \
 	-I${LLVM_PROJECT_BUILD_DIR}/include \
 	-I${LLVM_PROJECT_BUILD_DIR}/tools/clang/include
-LDFLAGS+= -L${LLVM_PROJECT_BUILD_DIR}/lib
-else
-LLVM_DIR?= /usr/lib/llvm-17
-CXXFLAGS+= -I${LLVM_DIR}/include
-LDFLAGS+= -L${LLVM_DIR}/lib
-endif
-
-CPPFLAGS+= -DUSE_CLANG_TOOL
-LDFLAGS+= -lclang-cpp -lstdc++
+LDFLAGS+= -L${LLVM_PROJECT_BUILD_DIR}/lib -lclang-cpp -lstdc++
 SRCS+= remark.cc
 endif
 

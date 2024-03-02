@@ -203,10 +203,11 @@ private:
 
     void MacroExpands(const Token &token, const MacroDefinition &def,
                       SourceRange range, const MacroArgs *args) override {
-      int parent = ast.expanding_stack.empty() ? -1 : ast.expanding_stack.top();
+      int parent =
+          ast.expanding_stack.empty() ? -1 : ast.expanding_stack.back();
       unsigned remote = ast.macros.size();
-      ast.macros.emplace_back(token, def, range, parent, remote);
-      ast.expanding_stack.push(remote);
+      ast.macros.emplace_back(token, def.getMacroInfo(), range, parent, remote);
+      ast.expanding_stack.push_back(remote);
 
       // Update remote field up to the root
       while (parent != -1) {
@@ -218,7 +219,10 @@ private:
 
     void MacroExpanded(const MacroInfo *mi, bool fast) override {
       assert(!ast.expanding_stack.empty() && "Unpaired macro expansion");
-      ast.expanding_stack.pop();
+      auto top = ast.expanding_stack.back();
+      assert(ast.macros[top].info == mi);
+      ast.macros[top].fast = fast;
+      ast.expanding_stack.pop_back();
     }
 
     void If(SourceLocation loc, SourceRange range,
@@ -242,11 +246,17 @@ private:
 
   struct macro_expansion_node {
     Token token;
-    MacroDefinition defintion;
+    MacroInfo *info;
     SourceRange range;
     int parent;
     unsigned remote;
-    std::vector<Token> expansion;
+    bool fast;
+  };
+
+  struct macro_full_expansion_node {
+    unsigned i;
+    bool token;
+    std::vector<macro_full_expansion_node *> children;
   };
 
   void dump_kind(MacroDirective::Kind kind) const {
@@ -306,54 +316,119 @@ private:
     if (loc.isFileID()) {
       dump_macro_expansion();
     } else {
-      // TODO:
+      // The fast-expanded token is expanded at the parent macro, in this case
+      // the expanding_stack will be empty in advance.
+      expansions.emplace_back(expanding_stack.empty() ? macros.size() - 1
+                                                      : expanding_stack.back(),
+                              token);
     }
   }
 
   void dump_macro_expansion() {
     assert(expanding_stack.empty());
-    dump_macro_expansion(0, macros.size());
+
+    unsigned k = 0;
+    macro_full_expansion_node root;
+    std::vector<macro_full_expansion_node> pool;
+    pool.reserve(expansions.size() + macros.size());
+
+    make_macro_full_expansion(0, macros.size(), k, root, pool);
+    assert(pool.size() == expansions.size() + macros.size());
+    for (auto &item : root.children) {
+      dump_macro_expansion(*item);
+    }
+
+    expansions.clear();
     macros.clear();
   }
 
-  void dump_macro_expansion(unsigned begin, unsigned end) {
+  void make_macro_full_expansion(unsigned begin, unsigned end, unsigned &k,
+                                 macro_full_expansion_node &host,
+                                 std::vector<macro_full_expansion_node> &pool) {
+    int parent = begin - 1;
+
     for (auto i = begin; i < end; ++i) {
-      dumper->AddChild([=, this] {
-        dump_macro_expansion(macros[i]);
-        dump_macro_expansion(i + 1, macros[i].remote + 1);
-      });
+      make_macro_full_expansion_token(parent, k, host, pool);
+      auto &node = pool.emplace_back(i, false);
+      host.children.emplace_back(&node);
+      make_macro_full_expansion(i + 1, macros[i].remote + 1, k, node, pool);
       i = macros[i].remote;
+    }
+
+    make_macro_full_expansion_token(parent, k, host, pool);
+  }
+
+  void make_macro_full_expansion_token(
+      int at, unsigned &k, macro_full_expansion_node &host,
+      std::vector<macro_full_expansion_node> &pool) {
+    unsigned n = expansions.size();
+    while (k < n && expansions[k].first == at) {
+      host.children.emplace_back(&pool.emplace_back(k, true));
+      ++k;
     }
   }
 
-  void dump_macro_expansion(const macro_expansion_node &macro) {
-    auto mi = macro.defintion.getMacroInfo();
+  void dump_macro_expansion(const macro_full_expansion_node &node) {
+    dumper->AddChild([&, this] {
+      if (node.token)
+        dump_token(expansions[node.i].second, macros[expansions[node.i].first]
+                                                  .token.getIdentifierInfo()
+                                                  ->getName());
+      else
+        dump_macro_expansion(macros[node.i]);
 
+      for (auto &item : node.children) {
+        dump_macro_expansion(*item);
+      }
+    });
+  }
+
+  void dump_macro_expansion(const macro_expansion_node &macro) {
     out << "MacroExpansion";
-    dumper->dumpPointer(mi);
+    dumper->dumpPointer(macro.info);
     dumper->dumpSourceRange(macro.range);
+    if (macro.fast)
+      out << " fast";
     out << ' ';
     out << macro.token.getIdentifierInfo()->getName();
   }
 
-  void dump_macro_expansion(const std::vector<Token> &tokens) {
-    for (unsigned i = 0, n = tokens.size(); i < n; ++i) {
-      auto &token = tokens[i];
-      if (i && token.hasLeadingSpace())
-        out << ' ';
-      dump_token(token);
-    }
+  bool is_in_scratch_space(SourceLocation loc) {
+    auto &sm = pp.getSourceManager();
+    auto fid = sm.getFileID(loc);
+    return sm.getBufferOrFake(fid).getBufferIdentifier() == "<scratch space>";
   }
 
-  void dump_token(const Token &token) {
+  SourceLocation skip_scratch_space(SourceLocation loc) {
+    auto &sm = pp.getSourceManager();
+    while (is_in_scratch_space(sm.getSpellingLoc(loc)))
+      loc = sm.getImmediateMacroCallerLoc(loc);
+    return loc;
+  }
+
+  void dump_token(const Token &token, StringRef provider = "") {
+    auto loc = skip_scratch_space(token.getLocation());
+
     out << "Token ";
-    dumper->dumpLocation(token.getLocation());
+    dumper->dumpLocation(loc);
 
     if (token.hasLeadingSpace())
       out << " hasLeadingSpace";
 
+    if (!provider.empty() && loc.isMacroID()) {
+      auto name = pp.getImmediateMacroName(loc);
+      if (name != provider)
+        out << " macro " << name;
+    }
+
     out << " '";
     out.escape('\'');
+    dump_token_content(token);
+    out.escape(0);
+    out << "'";
+  }
+
+  void dump_token_content(const Token &token) {
     if (IdentifierInfo *ii = token.getIdentifierInfo()) {
       out << ii->getName();
     } else if (token.isLiteral() && !token.needsCleaning() &&
@@ -362,8 +437,6 @@ private:
     } else {
       Lexer::dumpSpelling(token, out, pp.getSourceManager(), pp.getLangOpts());
     }
-    out.escape(0);
-    out << "'";
   }
 
   raw_line_ostream &out;
@@ -375,8 +448,9 @@ private:
   ast_matchers::MatchFinder finder;
   std::unique_ptr<ASTConsumer> impl;
   std::optional<TextNodeDumper> dumper;
-  std::vector<macro_expansion_node> macros;
-  std::stack<unsigned> expanding_stack;
+  llvm::SmallVector<unsigned, 8> expanding_stack;
+  llvm::SmallVector<macro_expansion_node, 8> macros;
+  llvm::SmallVector<std::pair<unsigned, Token>, 32> expansions;
 }; // namespace
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
