@@ -195,8 +195,9 @@ private:
       dumper->dumpPointer(md);
       dumper->dumpSourceRange(
           {mi->getDefinitionLoc(), mi->getDefinitionEndLoc()});
-      out << ' ';
+      out << " '";
       out << token.getIdentifierInfo()->getName();
+      out << "'";
       dumper->dumpPointer(mi);
       dumper->AddChild([=, this] { ast.dump_macro(mi); });
     }
@@ -332,7 +333,7 @@ private:
     std::vector<macro_full_expansion_node> pool;
     pool.reserve(expansions.size() + macros.size());
 
-    index_macros();
+    index_macro();
     make_macro_full_expansion(0, macros.size(), k, root, pool);
     assert(pool.size() == expansions.size() + macros.size());
     for (auto &item : root.children) {
@@ -373,7 +374,7 @@ private:
     dumper->AddChild([&, this] {
       if (node.token)
         dump_token(expansions[node.i].second,
-                   macros[expansions[node.i].first].token.getIdentifierInfo());
+                   macros[expansions[node.i].first].info);
       else
         dump_macro_expansion(macros[node.i]);
 
@@ -406,7 +407,7 @@ private:
     return loc;
   }
 
-  void index_macros() {
+  void index_macro() {
     auto &sm = pp.getSourceManager();
     for (auto &macro : macros) {
       auto loc = macro.info->getDefinitionEndLoc();
@@ -414,18 +415,15 @@ private:
       unsigned offset;
       std::tie(fid, offset) = sm.getDecomposedLoc(loc);
       if (fid.isValid())
-        macro_indices[fid][offset] = macro.token.getIdentifierInfo();
+        macro_indices[fid][offset] = macro.info;
     }
   }
 
-  IdentifierInfo *
-  find(const llvm::DenseMap<FileID, std::map<unsigned, IdentifierInfo *>>
-           &indices,
-       SourceLocation loc) const {
+  MacroInfo *find_macro(SourceLocation loc) const {
     FileID fid;
     unsigned offset;
     std::tie(fid, offset) = pp.getSourceManager().getDecomposedLoc(loc);
-    if (auto i = indices.find(fid); i != indices.end()) {
+    if (auto i = macro_indices.find(fid); i != macro_indices.end()) {
       auto j = i->second.lower_bound(offset);
       if (j != i->second.end())
         return j->second;
@@ -434,63 +432,67 @@ private:
     return nullptr;
   }
 
-  void dump_token(const Token &token, IdentifierInfo *provider = nullptr) {
+  void dump_token(const Token &token, MacroInfo *provider = nullptr) {
     auto &sm = pp.getSourceManager();
-    auto loc = skip_scratch_space(token.getLocation());
+    auto raw_loc = token.getLocation();
+    auto loc = skip_scratch_space(raw_loc);
+    bool is_arg = false;
+    MacroInfo *macro = nullptr;
 
-    out << "Token ";
-    dumper->dumpLocation(loc);
+    if (provider && loc.isMacroID()) {
+      auto spelling_loc = sm.getSpellingLoc(loc);
+      macro = find_macro(spelling_loc);
+      if (macro) {
+        assert(
+            SourceRange(macro->getDefinitionLoc(), macro->getDefinitionEndLoc())
+                .fullyContains({spelling_loc, spelling_loc}));
+      } else {
+        assert(spelling_loc.isFileID() && sm.isMacroArgExpansion(loc));
+        is_arg = true;
+      }
+    }
+
+    out << "'";
+    out.escape('\'');
+    dump_token_content(token);
+    out.escape(0);
+    out << "'";
+
+    dumper->dumpSourceRange({loc});
+    if (loc != raw_loc) {
+      out << ' ';
+      dumper->dumpLocation(raw_loc);
+    }
 
     if (token.hasLeadingSpace())
       out << " hasLeadingSpace";
 
     if (token.stringifiedInMacro())
       out << " stringified";
-    else if (loc != token.getLocation())
+    else if (loc != raw_loc)
       out << " paste";
 
-    if (provider && loc.isMacroID()) {
-      auto spelling_loc = sm.getSpellingLoc(loc);
-      auto found = find(macro_indices, spelling_loc);
-      if (found) {
-#ifndef NDEBUG
-        auto macro = pp.getMacroInfo(found);
-        if (!macro) {
-          assert(found->hadMacroDefinition() &&
-                 "This macro should be #undef(ed)");
-          macro =
-              pp.getMacroDefinitionAtLoc(found, spelling_loc).getMacroInfo();
-          assert(macro);
-        }
-        auto macro_range = SourceRange(macro->getDefinitionLoc(),
-                                       macro->getDefinitionEndLoc());
-        auto range = SourceRange(spelling_loc, spelling_loc);
-        assert(macro_range.fullyContains(range));
-#endif // !NDEBUG
-        if (found != provider)
-          out << " macro " << found->getName();
-      } else {
-        assert(spelling_loc.isFileID() && sm.isMacroArgExpansion(loc));
-        out << " arg";
-      }
-    }
+    if (is_arg)
+      out << " arg";
 
-    out << " '";
-    out.escape('\'');
-    dump_token_content(token);
-    out.escape(0);
-    out << "'";
+    if (macro != provider)
+      out << " macro " << macro;
   }
 
-  void dump_token_content(const Token &token) {
+  unsigned dump_token_content(const Token &token) {
     if (IdentifierInfo *ii = token.getIdentifierInfo()) {
-      out << ii->getName();
-    } else if (token.isLiteral() && !token.needsCleaning() &&
-               token.getLiteralData()) {
-      out.write(token.getLiteralData(), token.getLength());
-    } else {
-      Lexer::dumpSpelling(token, out, pp.getSourceManager(), pp.getLangOpts());
+      auto name = ii->getName();
+      out << name;
+      return name.size();
     }
+
+    if (token.isLiteral() && !token.needsCleaning() && token.getLiteralData()) {
+      out.write(token.getLiteralData(), token.getLength());
+      return token.getLength();
+    }
+
+    return Lexer::dumpSpelling(token, out, pp.getSourceManager(),
+                               pp.getLangOpts());
   }
 
   raw_line_ostream &out;
@@ -505,7 +507,7 @@ private:
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<macro_expansion_node, 8> macros;
   llvm::SmallVector<std::pair<unsigned, Token>, 32> expansions;
-  llvm::DenseMap<FileID, std::map<unsigned, IdentifierInfo *>> macro_indices;
+  llvm::DenseMap<FileID, std::map<unsigned, MacroInfo *>> macro_indices;
 }; // namespace
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,

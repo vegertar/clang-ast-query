@@ -263,6 +263,7 @@ int dump(const char *db_file) {
 struct decl_number_value {
   unsigned var;
   unsigned type;
+  unsigned macro;
 };
 
 /// Represents a pair consisting of a pointer to a declaration node in
@@ -676,6 +677,8 @@ static void dump_ast(const struct ast *ast)
       case NODE_KIND_ENUM:
         break;
       case NODE_KIND_NULL:
+        break;
+      case NODE_KIND_TOKEN:
         break;
       }
     }

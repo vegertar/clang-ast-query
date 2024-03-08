@@ -35,7 +35,7 @@ NUMBER (-?([0-9]*\.[0-9]+|[0-9]+)([Ee][+-]?[0-9]+)?)
 
 POINTER (0x[0-9a-f]+)
 
-ATTR (sugar|imported|implicit|used|referenced|prefix|postfix|Inherited|Implicit|warn_unused_result|"<undeserialized declarations>")
+ATTR (sugar|imported|implicit|used|referenced|prefix|postfix|Inherited|Implicit|warn_unused_result|"<undeserialized declarations>"|hasLeadingSpace|stringified|paste|arg|fast)
 
 SPEC ({ATTR}|extern|static|inline|lvalue|bitfield|cinit|const|volatile|cdecl)
 
@@ -62,7 +62,7 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return yytext[0];
 }
 
-{OPERATOR}/[ \n] {
+{OPERATOR}/(\n|" "[^\<]) {
   yylval->TOK_OPERATOR = qname();
   return TOK_OPERATOR;
 }
@@ -143,8 +143,13 @@ parent" "{POINTER}/[ \n] {
 }
 
 prev" "{POINTER}/[ \n] {
-  yylval->TOK_PREV = strdup(yytext + 6);
+  yylval->TOK_PREV = strdup(yytext + 5);
   return TOK_PREV;
+}
+
+macro" "{POINTER}/[ \n] {
+  yylval->TOK_MACRO = strdup(yytext + 6);
+  return TOK_MACRO;
 }
 
 ("->"|"."){NAME}?" "{POINTER}/[ \n] {

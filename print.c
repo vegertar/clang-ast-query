@@ -70,7 +70,7 @@ void print_def(FILE *fp, const struct def *def) {
   fprintf(fp, ")");
 
   fprintf(fp, " value(%s)", def->value ? def->value : "");
-  
+
   fprintf(fp, " op(");
   print_op(fp, &def->op);
   fprintf(fp, ")");
@@ -106,16 +106,20 @@ void print_decl(FILE *fp, const struct decl *decl) {
     fprintf(fp, " name(%s)", decl->variants.v2.name);
     break;
   case DECL_KIND_V3:
-    fprintf(fp, " class(%s) name(%s)", decl->variants.v3.class, decl->variants.v3.name);
+    fprintf(fp, " class(%s) name(%s)", decl->variants.v3.class,
+            decl->variants.v3.name);
     break;
   case DECL_KIND_V4:
-    fprintf(fp, " sqname(%s) pointer(%s)", decl->variants.v4.sqname, decl->variants.v4.pointer);
+    fprintf(fp, " sqname(%s) pointer(%s)", decl->variants.v4.sqname,
+            decl->variants.v4.pointer);
     break;
   case DECL_KIND_V5:
-    fprintf(fp, " sqname(%s) trait(%s)", decl->variants.v5.sqname, decl->variants.v5.trait);
+    fprintf(fp, " sqname(%s) trait(%s)", decl->variants.v5.sqname,
+            decl->variants.v5.trait);
     break;
   case DECL_KIND_V6:
-    fprintf(fp, " sqname(%s) trait(%s) def(", decl->variants.v6.sqname, decl->variants.v6.trait);
+    fprintf(fp, " sqname(%s) trait(%s) def(", decl->variants.v6.sqname,
+            decl->variants.v6.trait);
     print_def(fp, &decl->variants.v6.def);
     fprintf(fp, ")");
     break;
@@ -156,8 +160,8 @@ void print_node(FILE *fp, const struct node *node) {
   fprintf(fp, "<%d>", node->kind);
   switch (node->kind) {
   case NODE_KIND_HEAD:
-    fprintf(fp, "name(%s) pointer(%s) parent(%s) prev(%s)",
-            node->name, node->pointer, node->parent, node->prev);
+    fprintf(fp, "name(%s) pointer(%s) parent(%s) prev(%s)", node->name,
+            node->pointer, node->parent, node->prev);
     fprintf(fp, " range(");
     print_srange(fp, &node->range);
     fprintf(fp, ") loc(");
@@ -176,6 +180,16 @@ void print_node(FILE *fp, const struct node *node) {
     fprintf(fp, " name(%s)", node->name);
     break;
   case NODE_KIND_NULL:
+    break;
+  case NODE_KIND_TOKEN:
+    fprintf(fp, " name(%s)", node->name);
+    fprintf(fp, " range(");
+    print_srange(fp, &node->range);
+    fprintf(fp, ") loc(");
+    print_sloc(fp, &node->loc);
+    fprintf(fp, ") attrs(");
+    print_array(fp, &node->attrs);
+    fprintf(fp, ")");
     break;
   }
 }

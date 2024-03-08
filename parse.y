@@ -150,6 +150,7 @@
     NODE_KIND_HEAD,
     NODE_KIND_ENUM,
     NODE_KIND_NULL,
+    NODE_KIND_TOKEN,
   };
 
   struct node {
@@ -159,6 +160,7 @@
     const char *pointer;
     const char *parent;
     const char *prev;
+    const char *macro;
     struct srange range;
     struct sloc loc;
     struct array attrs;
@@ -335,6 +337,7 @@
     HEAD
     PARENT
     PREV
+    MACRO
     POINTER
     MEMBER
     NAME
@@ -363,6 +366,7 @@
   <string>
     parent
     prev
+    macro
     value
     cast
   <struct array>
@@ -441,6 +445,17 @@ node: HEAD parent prev range loc attrs labels decl opts
       .kind = NODE_KIND_NULL,
     };
   }
+ | SQNAME range loc attrs macro
+  {
+    $$ = (struct node){
+      .kind = NODE_KIND_TOKEN,
+      .name = $1,
+      .range = $2,
+      .loc = $3,
+      .attrs = $4,
+      .macro = $5,
+    };
+  }
 
 remark: REMARK_TU | REMARK_CWD | REMARK_VAR_TYPE
 
@@ -449,6 +464,9 @@ parent: { $$ = NULL; }
 
 prev: { $$ = NULL; }
  | PREV
+
+macro: { $$ = NULL; }
+ | MACRO
 
 range: { $$ = (struct srange){}; }
  | '<' srange '>' { $$ = $2; }
@@ -963,7 +981,8 @@ static void decl_destroy(struct decl *decl) {
     comment_destroy(&decl->variants.v12.comment);
     break;
   default:
-    fprintf(stderr, "Invalid decl kind: %d\n", decl->kind);
+    fprintf(stderr, "%s:%s:%d: Invalid decl kind: %d\n",
+            __FILE__, __func__, __LINE__, decl->kind);
     abort();
   }
 }
@@ -988,8 +1007,15 @@ static void node_destroy(void *p) {
     break;
   case NODE_KIND_NULL:
     break;
+  case NODE_KIND_TOKEN:
+    free((void *)node->macro);
+    srange_destroy(&node->range);
+    sloc_destroy(&node->loc);
+    array_clear(&node->attrs, 1);
+    break;
   default:
-    fprintf(stderr, "Invalid node kind: %d\n", node->kind);
+    fprintf(stderr, "%s:%s:%d: Invalid node kind: %d\n",
+            __FILE__, __func__, __LINE__, node->kind);
     abort();
   }
 }
