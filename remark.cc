@@ -19,6 +19,89 @@ namespace {
 using namespace clang;
 using namespace clang::ast_matchers;
 
+class expanded_decl {
+public:
+  expanded_decl(SourceLocation loc, Decl *decl) : loc(loc), decl(decl) {
+    assert(loc.isMacroID());
+  }
+
+  SourceLocation get_location() const { return loc; }
+
+  Decl *get_decl() const { return decl; }
+
+  expanded_decl *get_previous() const { return prev; }
+
+  void set_previous(expanded_decl *prev) { this->prev = prev; }
+
+private:
+  SourceLocation loc;
+  Decl *decl;
+  expanded_decl *prev;
+};
+
+class index_value_t {
+public:
+  explicit index_value_t(MacroInfo *p) : p(p) {
+    static_assert(alignof(MacroInfo) >= 4 && alignof(MacroInfo) % 4 == 0);
+    assert(is_macro());
+  }
+
+  explicit index_value_t(Decl *p) : p((char *)p + 1) {
+    static_assert(alignof(Decl) >= 4 && alignof(Decl) % 4 == 0);
+    assert(is_decl());
+  }
+
+  explicit index_value_t(expanded_decl *p) : p((char *)p + 2) {
+    static_assert(alignof(expanded_decl) >= 4 &&
+                  alignof(expanded_decl) % 4 == 0);
+    assert(is_expanded_decl());
+  }
+
+  int kind() const { return ((std::uintptr_t)p & 3U); }
+
+  bool is_macro() const { return kind() == 0; }
+
+  bool is_decl() const { return kind() == 1; }
+
+  bool is_expanded_decl() const { return kind() == 2; }
+
+  MacroInfo *get_macro() const {
+    assert(is_macro());
+    return (MacroInfo *)p;
+  }
+
+  Decl *get_decl() const {
+    assert(is_decl());
+    return (Decl *)((char *)p - 1);
+  }
+
+  expanded_decl *get_expanded_decl() const {
+    assert(is_expanded_decl());
+    return (expanded_decl *)((char *)p - 2);
+  }
+
+  void *get_raw() const {
+    switch (kind()) {
+    case 0:
+      return p;
+    case 1:
+      return (char *)p - 1;
+    case 2:
+      return (char *)p - 2;
+    default:
+      assert("Never reach here");
+      return nullptr;
+    }
+  }
+
+  bool operator==(index_value_t other) const {
+    return get_raw() == other.get_raw();
+  }
+
+private:
+  void *p;
+};
+
 auto var = varDecl(anything()).bind("var");
 auto field = fieldDecl(anything()).bind("field");
 auto func = functionDecl(anything()).bind("func");
@@ -93,52 +176,11 @@ template <size_t N> struct literal {
   char value[N];
 };
 
-Decl *decl(const Type *p) {
-  Decl *type = nullptr;
-  if (auto t = p->getAs<TypedefType>()) {
-    type = t->getDecl();
-  } else if (auto t = p->getAs<TagType>()) {
-    type = t->getDecl();
-  } else if (auto t = p->getAs<PointerType>()) {
-    type = decl(t->getPointeeType().getTypePtr());
-  } else if (auto t = p->getArrayElementTypeNoTypeQual()) {
-    type = decl(t);
-  }
-  return type;
-}
-
-template <typename T, literal S>
-class match_callback : public MatchFinder::MatchCallback {
-public:
-  explicit match_callback(raw_ostream &out) : out(out) {}
-
-  void run(const MatchFinder::MatchResult &result) override {
-    const void *obj = nullptr;
-    const Type *value_type = nullptr;
-    if (auto p = result.Nodes.getNodeAs<T>(S.value)) {
-      obj = p;
-      if constexpr (std::is_same_v<T, FunctionDecl>) {
-        value_type = p->getReturnType().getTypePtr();
-      } else {
-        value_type = p->getType().getTypePtr();
-      }
-    }
-
-    auto type = decl(value_type);
-    if (type && !type->isImplicit()) {
-      out << "#VAR-TYPE:" << obj << ' ' << type << '\n';
-    }
-  }
-
-private:
-  raw_ostream &out;
-};
-
 class ast_consumer final : public ASTConsumer {
 public:
   ast_consumer(std::unique_ptr<raw_line_ostream> os, Preprocessor &pp)
-      : out(*os), pp(pp), os(std::move(os)), var_cb(out), field_cb(out),
-        func_cb(out) {
+      : out(*os), pp(pp), os(std::move(os)), var_cb(*this), field_cb(*this),
+        func_cb(*this) {
     finder.addMatcher(var, &var_cb);
     finder.addMatcher(field, &field_cb);
     finder.addMatcher(func, &func_cb);
@@ -174,6 +216,7 @@ protected:
     out << "#TU:" << filename << '\n';
     out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
     impl->HandleTranslationUnit(ctx);
+    dump_token_expansion();
   }
 
   bool shouldSkipFunctionBody(Decl *d) override {
@@ -181,6 +224,75 @@ protected:
   }
 
 private:
+  template <typename T, literal S>
+  class match_callback : public MatchFinder::MatchCallback {
+  public:
+    explicit match_callback(ast_consumer &ast) : ast(ast) {}
+
+    void run(const MatchFinder::MatchResult &result) override {
+      if (auto p = result.Nodes.getNodeAs<T>(S.value)) {
+        auto d = value(p->getType().getTypePtr());
+        if (d && !d->isImplicit()) {
+          if constexpr (std::is_same_v<T, FunctionDecl>) {
+            auto range = p->getReturnTypeSourceRange();
+            index(range.getBegin(), d);
+          } else if (auto ti = p->getTypeSourceInfo()) {
+            auto type_loc = ti->getTypeLoc();
+            index(type_loc.getBeginLoc(), d);
+          } else {
+            assert(p->getLocation().isInvalid());
+          }
+        }
+
+        bool is_unnamed = false;
+        if constexpr (std::is_same_v<T, FieldDecl>) {
+          is_unnamed = p->isUnnamedBitfield() || p->isAnonymousStructOrUnion();
+        }
+        if (!is_unnamed)
+          index(p->getLocation(),
+                const_cast<Decl *>(static_cast<const Decl *>(p)));
+      }
+    }
+
+  private:
+    ast_consumer &ast;
+
+    Decl *value(const Type *p) {
+      if (auto t = p->getAs<TypedefType>()) {
+        return t->getDecl();
+      }
+
+      if (auto t = p->getAs<TagType>()) {
+        return t->getDecl();
+      }
+
+      if (auto t = p->getAs<FunctionType>()) {
+        // The parameters would be walked via `var` matcher.
+        return value(t->getReturnType().getTypePtr());
+      }
+
+      if (auto t = p->getAs<PointerType>()) {
+        return value(t->getPointeeType().getTypePtr());
+      }
+
+      if (auto t = p->getArrayElementTypeNoTypeQual()) {
+        return value(t);
+      }
+
+      return nullptr;
+    }
+
+    void index(SourceLocation loc, Decl *p) {
+      auto &sm = ast.pp.getSourceManager();
+      if (loc.isMacroID()) {
+        ast.index(sm.getExpansionLoc(loc),
+                  index_value_t(new expanded_decl(loc, p)));
+      } else if (loc.isValid()) {
+        ast.index(loc, index_value_t(p));
+      }
+    }
+  };
+
   class pp_callback : public PPCallbacks {
   public:
     explicit pp_callback(ast_consumer &ast) : ast(ast) {}
@@ -313,6 +425,10 @@ private:
   }
 
   void on_token_lexed(const Token &token) {
+    // Collect all tokens to dump in later.
+    if (!token.isAnnotation())
+      tokens.push_back(syntax::Token(token));
+
     auto loc = token.getLocation();
     if (loc.isFileID()) {
       dump_macro_expansion();
@@ -322,6 +438,61 @@ private:
       expansions.emplace_back(expanding_stack.empty() ? macros.size() - 1
                                                       : expanding_stack.back(),
                               token);
+    }
+  }
+
+  bool indexable(const syntax::Token &token) {
+    switch (token.kind()) {
+    case tok::kw_struct:
+    case tok::kw_union:
+    case tok::identifier:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  void dump_token_expansion() {
+    assert(!tokens.empty());
+    assert(tokens.back().kind() == tok::eof);
+    auto &sm = pp.getSourceManager();
+    SourceLocation last_loc;
+    SourceLocation last_expansion_loc;
+    unsigned index_of_last_expansion_loc = -1;
+    for (unsigned i = 0, e = tokens.size(); i < e; ++i) {
+      auto loc = tokens[i].location();
+      if (loc.isFileID() && indexable(tokens[i])) {
+        // TODO:
+      }
+
+      auto expansion_loc = sm.getExpansionLoc(loc);
+      if (expansion_loc != last_expansion_loc) {
+        if (last_loc.isMacroID()) {
+          auto v = find(last_expansion_loc);
+          auto d = v ? v->get_expanded_decl() : nullptr;
+          while (d) {
+            d->get_location().print(out, sm);
+            out << ' ' << d->get_decl() << '\n';
+            d = d->get_previous();
+          }
+          unsigned j = i - 1;
+          while (j > index_of_last_expansion_loc) {
+            auto &t = tokens[j];
+            if (indexable(t)) {
+              out << t.dumpForTests(sm);
+              out << ' ';
+              t.location().print(out, sm);
+              out << '\n';
+            }
+
+            --j;
+          }
+        }
+
+        last_loc = loc;
+        last_expansion_loc = expansion_loc;
+        index_of_last_expansion_loc = i - 1;
+      }
     }
   }
 
@@ -407,26 +578,53 @@ private:
     return loc;
   }
 
-  void index_macro() {
-    auto &sm = pp.getSourceManager();
-    for (auto &macro : macros) {
-      auto loc = macro.info->getDefinitionEndLoc();
-      FileID fid;
-      unsigned offset;
-      std::tie(fid, offset) = sm.getDecomposedLoc(loc);
-      if (fid.isValid())
-        macro_indices[fid][offset] = macro.info;
-    }
-  }
+  void index(SourceLocation loc, index_value_t value) {
+    assert(loc.isFileID());
 
-  MacroInfo *find_macro(SourceLocation loc) const {
     FileID fid;
     unsigned offset;
     std::tie(fid, offset) = pp.getSourceManager().getDecomposedLoc(loc);
-    if (auto i = macro_indices.find(fid); i != macro_indices.end()) {
+    auto result = indices[fid].try_emplace(offset, value);
+    if (!result.second && result.first->second != value) {
+      if (result.first->second.is_decl()) {
+        assert(result.first->second.get_decl() ==
+               value.get_decl()->getPreviousDecl());
+      } else {
+        value.get_expanded_decl()->set_previous(
+            result.first->second.get_expanded_decl());
+      }
+      result.first->second = value;
+    }
+  }
+
+  const index_value_t *find(SourceLocation loc) const {
+    assert(loc.isFileID());
+
+    FileID fid;
+    unsigned offset;
+    std::tie(fid, offset) = pp.getSourceManager().getDecomposedLoc(loc);
+    if (auto i = indices.find(fid); i != indices.end()) {
       auto j = i->second.lower_bound(offset);
       if (j != i->second.end())
-        return j->second;
+        return &j->second;
+    }
+
+    return nullptr;
+  }
+
+  void index_macro() {
+    for (auto &macro : macros) {
+      auto end_loc = macro.info->getDefinitionEndLoc();
+      if (end_loc.isValid())
+        index(end_loc, index_value_t(macro.info));
+      else
+        assert(macro.info->isBuiltinMacro());
+    }
+  }
+
+  const MacroInfo *find_macro(SourceLocation loc) const {
+    if (auto v = find(loc)) {
+      return v->get_macro();
     }
 
     return nullptr;
@@ -437,7 +635,7 @@ private:
     auto raw_loc = token.getLocation();
     auto loc = skip_scratch_space(raw_loc);
     bool is_arg = false;
-    MacroInfo *macro = nullptr;
+    const MacroInfo *macro = nullptr;
 
     if (provider && loc.isMacroID()) {
       auto spelling_loc = sm.getSpellingLoc(loc);
@@ -474,8 +672,7 @@ private:
 
     if (is_arg)
       out << " arg";
-
-    if (macro != provider)
+    else if (macro != provider)
       out << " macro " << macro;
   }
 
@@ -507,7 +704,8 @@ private:
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<macro_expansion_node, 8> macros;
   llvm::SmallVector<std::pair<unsigned, Token>, 32> expansions;
-  llvm::DenseMap<FileID, std::map<unsigned, MacroInfo *>> macro_indices;
+  llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
+  std::vector<syntax::Token> tokens;
 }; // namespace
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
