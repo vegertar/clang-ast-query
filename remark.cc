@@ -1,9 +1,8 @@
 #include "remark.h"
 
 #include <clang/AST/ASTConsumer.h>
+#include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/TextNodeDumper.h>
-#include <clang/ASTMatchers/ASTMatchFinder.h>
-#include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/Frontend/ASTConsumers.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/MultiplexConsumer.h>
@@ -17,11 +16,11 @@
 namespace {
 
 using namespace clang;
-using namespace clang::ast_matchers;
 
 class expanded_decl {
 public:
-  expanded_decl(SourceLocation loc, Decl *decl) : loc(loc), decl(decl) {
+  expanded_decl(SourceLocation loc, Decl *decl)
+      : loc(loc), decl(decl), prev(nullptr) {
     assert(loc.isMacroID());
   }
 
@@ -41,23 +40,23 @@ private:
 
 class index_value_t {
 public:
-  explicit index_value_t(MacroInfo *p) : p(p) {
+  explicit index_value_t(MacroInfo *p) : data(p) {
     static_assert(alignof(MacroInfo) >= 4 && alignof(MacroInfo) % 4 == 0);
-    assert(is_macro());
+    assert(is_macro() && get_raw() == p);
   }
 
-  explicit index_value_t(Decl *p) : p((char *)p + 1) {
+  explicit index_value_t(Decl *p) : data((char *)p + 1) {
     static_assert(alignof(Decl) >= 4 && alignof(Decl) % 4 == 0);
-    assert(is_decl());
+    assert(is_decl() && get_raw() == p);
   }
 
-  explicit index_value_t(expanded_decl *p) : p((char *)p + 2) {
+  explicit index_value_t(expanded_decl *p) : data((char *)p + 2) {
     static_assert(alignof(expanded_decl) >= 4 &&
                   alignof(expanded_decl) % 4 == 0);
-    assert(is_expanded_decl());
+    assert(is_expanded_decl() && get_raw() == p);
   }
 
-  int kind() const { return ((std::uintptr_t)p & 3U); }
+  int kind() const { return ((std::uintptr_t)data & mask); }
 
   bool is_macro() const { return kind() == 0; }
 
@@ -67,44 +66,29 @@ public:
 
   MacroInfo *get_macro() const {
     assert(is_macro());
-    return (MacroInfo *)p;
+    return (MacroInfo *)get_raw();
   }
 
   Decl *get_decl() const {
     assert(is_decl());
-    return (Decl *)((char *)p - 1);
+    return (Decl *)get_raw();
   }
 
   expanded_decl *get_expanded_decl() const {
     assert(is_expanded_decl());
-    return (expanded_decl *)((char *)p - 2);
+    return (expanded_decl *)get_raw();
   }
 
-  void *get_raw() const {
-    switch (kind()) {
-    case 0:
-      return p;
-    case 1:
-      return (char *)p - 1;
-    case 2:
-      return (char *)p - 2;
-    default:
-      assert("Never reach here");
-      return nullptr;
-    }
-  }
+  void *get_raw() const { return (void *)((std::uintptr_t)data & ~mask); }
 
   bool operator==(index_value_t other) const {
     return get_raw() == other.get_raw();
   }
 
 private:
-  void *p;
+  void *data;
+  static const std::uintptr_t mask = 3;
 };
-
-auto var = varDecl(anything()).bind("var");
-auto field = fieldDecl(anything()).bind("field");
-auto func = functionDecl(anything()).bind("func");
 
 class raw_line_ostream : public raw_ostream {
 public:
@@ -171,40 +155,16 @@ private:
   char escaped;
 };
 
-template <size_t N> struct literal {
-  constexpr literal(const char (&str)[N]) { std::copy_n(str, N, value); }
-  char value[N];
-};
-
 class ast_consumer final : public ASTConsumer {
 public:
   ast_consumer(std::unique_ptr<raw_line_ostream> os, Preprocessor &pp)
-      : out(*os), pp(pp), os(std::move(os)), var_cb(*this), field_cb(*this),
-        func_cb(*this) {
-    finder.addMatcher(var, &var_cb);
-    finder.addMatcher(field, &field_cb);
-    finder.addMatcher(func, &func_cb);
-    impl = finder.newASTConsumer();
-  }
+      : out(*os), pp(pp), os(std::move(os)), visitor(*this) {}
 
 protected:
   void Initialize(ASTContext &context) override {
     dumper.emplace(out, context, false);
     pp.addPPCallbacks(std::make_unique<pp_callback>(*this));
     pp.setTokenWatcher([this](auto &token) { on_token_lexed(token); });
-    impl->Initialize(context);
-  }
-
-  bool HandleTopLevelDecl(DeclGroupRef dg) override {
-    return impl->HandleTopLevelDecl(dg);
-  }
-
-  void HandleInterestingDecl(DeclGroupRef dg) override {
-    impl->HandleInterestingDecl(dg);
-  }
-
-  void HandleTopLevelDeclInObjCContainer(DeclGroupRef dg) override {
-    impl->HandleTopLevelDeclInObjCContainer(dg);
   }
 
   void HandleTranslationUnit(ASTContext &ctx) override {
@@ -215,24 +175,26 @@ protected:
 
     out << "#TU:" << filename << '\n';
     out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
-    impl->HandleTranslationUnit(ctx);
+
+    visitor.TraverseDecl(ctx.getTranslationUnitDecl());
     dump_token_expansion();
   }
 
-  bool shouldSkipFunctionBody(Decl *d) override {
-    return impl->shouldSkipFunctionBody(d);
-  }
-
 private:
-  template <typename T, literal S>
-  class match_callback : public MatchFinder::MatchCallback {
+  class ast_visitor : public RecursiveASTVisitor<ast_visitor> {
   public:
-    explicit match_callback(ast_consumer &ast) : ast(ast) {}
+    explicit ast_visitor(ast_consumer &ast) : ast(ast) {}
 
-    void run(const MatchFinder::MatchResult &result) override {
-      if (auto p = result.Nodes.getNodeAs<T>(S.value)) {
-        auto d = value(p->getType().getTypePtr());
-        if (d && !d->isImplicit()) {
+    bool VisitFunctionDecl(const FunctionDecl *d) { return visit_impl(d); }
+
+    bool VisitFieldDecl(const FieldDecl *d) { return visit_impl(d); }
+
+    bool VisitVarDecl(const VarDecl *d) { return visit_impl(d); }
+
+  private:
+    template <typename T> bool visit_impl(const T *p) {
+      if (auto d = value(p->getType().getTypePtr()); d && !d->isImplicit()) {
+        if (!d->getDeclName().isEmpty()) {
           if constexpr (std::is_same_v<T, FunctionDecl>) {
             auto range = p->getReturnTypeSourceRange();
             index(range.getBegin(), d);
@@ -244,20 +206,21 @@ private:
           }
         }
 
-        bool is_unnamed = false;
-        if constexpr (std::is_same_v<T, FieldDecl>) {
-          is_unnamed = p->isUnnamedBitfield() || p->isAnonymousStructOrUnion();
-        }
-        if (!is_unnamed)
-          index(p->getLocation(),
-                const_cast<Decl *>(static_cast<const Decl *>(p)));
+        ast.out << "#VAR-TYPE:" << p << ' ' << d << '\n';
       }
+
+      bool is_unnamed = false;
+      if constexpr (std::is_same_v<T, FieldDecl>) {
+        is_unnamed = p->isUnnamedBitfield() || p->isAnonymousStructOrUnion();
+      }
+      if (!is_unnamed)
+        index(p->getLocation(),
+              const_cast<Decl *>(static_cast<const Decl *>(p)));
+
+      return true;
     }
 
-  private:
-    ast_consumer &ast;
-
-    Decl *value(const Type *p) {
+    NamedDecl *value(const Type *p) {
       if (auto t = p->getAs<TypedefType>()) {
         return t->getDecl();
       }
@@ -291,6 +254,8 @@ private:
         ast.index(loc, index_value_t(p));
       }
     }
+
+    ast_consumer &ast;
   };
 
   class pp_callback : public PPCallbacks {
@@ -443,8 +408,6 @@ private:
 
   bool indexable(const syntax::Token &token) {
     switch (token.kind()) {
-    case tok::kw_struct:
-    case tok::kw_union:
     case tok::identifier:
       return true;
     default:
@@ -455,38 +418,47 @@ private:
   void dump_token_expansion() {
     assert(!tokens.empty());
     assert(tokens.back().kind() == tok::eof);
+
     auto &sm = pp.getSourceManager();
     SourceLocation last_loc;
     SourceLocation last_expansion_loc;
     unsigned index_of_last_expansion_loc = -1;
+
     for (unsigned i = 0, e = tokens.size(); i < e; ++i) {
       auto loc = tokens[i].location();
       if (loc.isFileID() && indexable(tokens[i])) {
-        // TODO:
+        auto v = find(loc, true);
+        auto d = v ? v->get_decl() : nullptr;
+        if (d) {
+          out << "#TOK-DECL:";
+          dumper->dumpLocation(tokens[i].location());
+          out << ' ' << d << '\n';
+        }
       }
 
       auto expansion_loc = sm.getExpansionLoc(loc);
       if (expansion_loc != last_expansion_loc) {
         if (last_loc.isMacroID()) {
-          auto v = find(last_expansion_loc);
+          auto v = find(last_expansion_loc, true);
           auto d = v ? v->get_expanded_decl() : nullptr;
-          while (d) {
-            d->get_location().print(out, sm);
-            out << ' ' << d->get_decl() << '\n';
-            d = d->get_previous();
-          }
           unsigned j = i - 1;
-          while (j > index_of_last_expansion_loc) {
-            auto &t = tokens[j];
-            if (indexable(t)) {
-              out << t.dumpForTests(sm);
-              out << ' ';
-              t.location().print(out, sm);
-              out << '\n';
-            }
 
+          while (d && j > index_of_last_expansion_loc) {
+            auto &t = tokens[j];
+            if (indexable(t) && t.location() == d->get_location()) {
+              out << "#TOK-DECL:";
+              dumper->dumpLocation(last_expansion_loc);
+              out << ' ' << j - index_of_last_expansion_loc << ' '
+                  << d->get_decl() << '\n';
+
+              auto prev = d->get_previous();
+              delete d;
+              d = prev;
+            }
             --j;
           }
+
+          assert(!d && "All expanded_decl are visited");
         }
 
         last_loc = loc;
@@ -597,14 +569,14 @@ private:
     }
   }
 
-  const index_value_t *find(SourceLocation loc) const {
+  const index_value_t *find(SourceLocation loc, bool exactly = false) const {
     assert(loc.isFileID());
 
     FileID fid;
     unsigned offset;
     std::tie(fid, offset) = pp.getSourceManager().getDecomposedLoc(loc);
     if (auto i = indices.find(fid); i != indices.end()) {
-      auto j = i->second.lower_bound(offset);
+      auto j = exactly ? i->second.find(offset) : i->second.lower_bound(offset);
       if (j != i->second.end())
         return &j->second;
     }
@@ -695,11 +667,7 @@ private:
   raw_line_ostream &out;
   Preprocessor &pp;
   std::unique_ptr<raw_line_ostream> os;
-  match_callback<VarDecl, "var"> var_cb;
-  match_callback<FieldDecl, "field"> field_cb;
-  match_callback<FunctionDecl, "func"> func_cb;
-  ast_matchers::MatchFinder finder;
-  std::unique_ptr<ASTConsumer> impl;
+  ast_visitor visitor;
   std::optional<TextNodeDumper> dumper;
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<macro_expansion_node, 8> macros;
