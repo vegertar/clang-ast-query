@@ -185,6 +185,18 @@
 
   DECL_ARRAY(src_set, struct src);
 
+  struct tok {
+    struct sloc loc;
+    unsigned offset;
+  };
+
+  struct tok_decl_pair {
+    struct tok tok;
+    const char *decl;
+  };
+
+  DECL_ARRAY(tok_decl_set, struct tok_decl_pair);
+
   // Exchanging information with the parser.
   typedef struct {
     // Whether to not emit error messages.
@@ -207,6 +219,7 @@
 
   extern struct ast ast;
   extern struct src_set src_set;
+  extern struct tok_decl_set tok_decl_set;
 
   #ifndef PATH_MAX
   # define PATH_MAX 4096
@@ -236,9 +249,11 @@
   #include "print.h"
   #include <assert.h>
   #include <stdio.h>
+  #include <errno.h>
 
   struct ast ast;
   struct src_set src_set;
+  struct tok_decl_set tok_decl_set;
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
 
@@ -263,6 +278,9 @@
   static DECL_METHOD(src_set, clear, int);
 
   static DECL_METHOD(var_type_map, clear, int);
+
+  static DECL_METHOD(tok_decl_set, push, struct tok_decl_pair);
+  static DECL_METHOD(tok_decl_set, clear, int);
 }
 
 // Include the header in the implementation rather than duplicating it.
@@ -331,6 +349,7 @@
     COL
     ENUM
     FIELD
+    REMARK_TOK_DECL
   <integer>
     INDENT
   <string>
@@ -344,6 +363,7 @@
     SQNAME
     DQNAME
     BQNAME
+    FQNAME
     SRC
     OPERATOR
     OPTION
@@ -402,6 +422,8 @@
     decl
   <struct node>
     node
+  <struct tok>
+    tok
 
 %%
 
@@ -445,19 +467,41 @@ node: HEAD parent prev range loc attrs labels decl opts
       .kind = NODE_KIND_NULL,
     };
   }
- | SQNAME range loc attrs macro
+ | FQNAME macro range loc attrs
   {
     $$ = (struct node){
       .kind = NODE_KIND_TOKEN,
       .name = $1,
-      .range = $2,
-      .loc = $3,
-      .attrs = $4,
-      .macro = $5,
+      .macro = $2,
+      .range = $3,
+      .loc = $4,
+      .attrs = $5,
     };
   }
 
-remark: REMARK_TU | REMARK_CWD | REMARK_VAR_TYPE
+remark: REMARK_TU | REMARK_CWD | REMARK_VAR_TYPE | remark_tok_decl
+
+remark_tok_decl: REMARK_TOK_DECL tok POINTER
+  {
+    tok_decl_set_push(&tok_decl_set, (struct tok_decl_pair){$2, strdup($3)});
+  }
+
+tok: sloc { $$ = (struct tok){$1}; }
+ | sloc INTEGER
+  {
+    char *end;
+    errno = 0;
+    long long offset = strtoll($2, &end, 10);
+    if (errno || *end) {
+      yyerror(&@$, uctx, "strtoll(%s) failed: %s", $2, (errno ? strerror(errno) : ""));
+      YYERROR;
+    }
+    if (offset < 0) {
+      yyerror(&@$, uctx, "expected an non-negative offset: %s", $2);
+      YYERROR;
+    }
+    $$ = (struct tok){$1, offset};
+  }
 
 parent: { $$ = NULL; }
  | PARENT
@@ -852,10 +896,19 @@ const char *find_var_type_map(const char *var) {
   return found ? var_type_map.data[i].type : NULL;
 }
 
+static void free_tok_decl(void *p) {
+  struct tok_decl_pair *pair = (struct tok_decl_pair *)p;
+  free((void *)pair->decl);
+}
+
+static IMPL_ARRAY_PUSH(tok_decl_set, struct tok_decl_pair);
+static IMPL_ARRAY_CLEAR(tok_decl_set, free_tok_decl);
+
 void destroy() {
   ast_clear(&ast, 1);
   src_set_clear(&src_set, 1);
   var_type_map_clear(&var_type_map, 1);
+  tok_decl_set_clear(&tok_decl_set, 1);
 }
 
 static char *get_pointer(char *s) {
@@ -1008,6 +1061,7 @@ static void node_destroy(void *p) {
   case NODE_KIND_NULL:
     break;
   case NODE_KIND_TOKEN:
+    free((void *)node->name);
     free((void *)node->macro);
     srange_destroy(&node->range);
     sloc_destroy(&node->loc);

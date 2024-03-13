@@ -62,7 +62,7 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return yytext[0];
 }
 
-{OPERATOR}/(\n|" "[^\<]) {
+{OPERATOR}/[ \n] {
   yylval->TOK_OPERATOR = qname();
   return TOK_OPERATOR;
 }
@@ -100,6 +100,10 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   if (n != 2) return TOK_YYUNDEF;
   yylval->TOK_REMARK_VAR_TYPE = add_var_type_map(strdup(var), strdup(type));
   return TOK_REMARK_VAR_TYPE;
+}
+
+^"#TOK-DECL:" {
+  return TOK_REMARK_TOK_DECL;
 }
 
 {ATTR}/[ \n] {
@@ -192,14 +196,19 @@ field/" "Field[ \n] {
   return TOK_INTEGER;
 }
 
-\"[^\"]*\"/[ \n] {
-  yylval->TOK_DQNAME = qname();
-  return TOK_DQNAME;
-}
-
 \<[A-Z][^\>]+\>/[ \n] {
   yylval->TOK_BQNAME = qname();
   return TOK_BQNAME;
+}
+
+\/((?:[^/\\]|\\.)*)\//[ \n] {
+  yylval->TOK_FQNAME = qname();
+  return TOK_FQNAME;
+}
+
+\"((?:[^"\\]|\\.)*)\"/[ \n] {
+  yylval->TOK_DQNAME = qname();
+  return TOK_DQNAME;
 }
 
 '((?:[^'\\]|\\.)*)'/[: \n] {

@@ -19,14 +19,14 @@ using namespace clang;
 
 class expanded_decl {
 public:
-  expanded_decl(SourceLocation loc, Decl *decl)
+  expanded_decl(SourceLocation loc, const Decl *decl)
       : loc(loc), decl(decl), prev(nullptr) {
     assert(loc.isMacroID());
   }
 
   SourceLocation get_location() const { return loc; }
 
-  Decl *get_decl() const { return decl; }
+  const Decl *get_decl() const { return decl; }
 
   expanded_decl *get_previous() const { return prev; }
 
@@ -34,18 +34,18 @@ public:
 
 private:
   SourceLocation loc;
-  Decl *decl;
+  const Decl *decl;
   expanded_decl *prev;
 };
 
 class index_value_t {
 public:
-  explicit index_value_t(MacroInfo *p) : data(p) {
+  explicit index_value_t(const MacroInfo *p) : data((void *)p) {
     static_assert(alignof(MacroInfo) >= 4 && alignof(MacroInfo) % 4 == 0);
     assert(is_macro() && get_raw() == p);
   }
 
-  explicit index_value_t(Decl *p) : data((char *)p + 1) {
+  explicit index_value_t(const Decl *p) : data((char *)p + 1) {
     static_assert(alignof(Decl) >= 4 && alignof(Decl) % 4 == 0);
     assert(is_decl() && get_raw() == p);
   }
@@ -64,14 +64,14 @@ public:
 
   bool is_expanded_decl() const { return kind() == 2; }
 
-  MacroInfo *get_macro() const {
+  const MacroInfo *get_macro() const {
     assert(is_macro());
-    return (MacroInfo *)get_raw();
+    return (const MacroInfo *)get_raw();
   }
 
-  Decl *get_decl() const {
+  const Decl *get_decl() const {
     assert(is_decl());
-    return (Decl *)get_raw();
+    return (const Decl *)get_raw();
   }
 
   expanded_decl *get_expanded_decl() const {
@@ -185,14 +185,19 @@ private:
   public:
     explicit ast_visitor(ast_consumer &ast) : ast(ast) {}
 
-    bool VisitFunctionDecl(const FunctionDecl *d) { return visit_impl(d); }
+    bool VisitFunctionDecl(const FunctionDecl *d) { return visit_valuable(d); }
 
-    bool VisitFieldDecl(const FieldDecl *d) { return visit_impl(d); }
+    bool VisitFieldDecl(const FieldDecl *d) { return visit_valuable(d); }
 
-    bool VisitVarDecl(const VarDecl *d) { return visit_impl(d); }
+    bool VisitVarDecl(const VarDecl *d) { return visit_valuable(d); }
+
+    bool VisitTypedefDecl(const TypedefDecl *d) {
+      index(d->getLocation(), d);
+      return true;
+    }
 
   private:
-    template <typename T> bool visit_impl(const T *p) {
+    template <typename T> bool visit_valuable(const T *p) {
       if (auto d = value(p->getType().getTypePtr()); d && !d->isImplicit()) {
         if (!d->getDeclName().isEmpty()) {
           if constexpr (std::is_same_v<T, FunctionDecl>) {
@@ -214,8 +219,7 @@ private:
         is_unnamed = p->isUnnamedBitfield() || p->isAnonymousStructOrUnion();
       }
       if (!is_unnamed)
-        index(p->getLocation(),
-              const_cast<Decl *>(static_cast<const Decl *>(p)));
+        index(p->getLocation(), p);
 
       return true;
     }
@@ -245,7 +249,7 @@ private:
       return nullptr;
     }
 
-    void index(SourceLocation loc, Decl *p) {
+    void index(SourceLocation loc, const Decl *p) {
       auto &sm = ast.pp.getSourceManager();
       if (loc.isMacroID()) {
         ast.index(sm.getExpansionLoc(loc),
@@ -622,16 +626,34 @@ private:
       }
     }
 
-    out << "'";
-    out.escape('\'');
+    out << '/';
+    out.escape('/');
     dump_token_content(token);
     out.escape(0);
-    out << "'";
+    out << '/';
 
-    dumper->dumpSourceRange({loc});
-    if (loc != raw_loc) {
+    SourceLocation origin_loc;
+    if (macro && macro != provider) {
+      out << " macro " << macro;
+
+      SourceRange range(macro->getDefinitionLoc(),
+                        macro->getDefinitionEndLoc());
+
+      auto caller_loc = loc;
+      do {
+        caller_loc = sm.getImmediateMacroCallerLoc(caller_loc);
+        auto spelling_loc = sm.getSpellingLoc(caller_loc);
+        if (!range.fullyContains({spelling_loc, spelling_loc})) {
+          origin_loc = caller_loc;
+          break;
+        }
+      } while (caller_loc.isMacroID());
+    }
+
+    dumper->dumpSourceRange({loc, raw_loc});
+    if (origin_loc.isValid()) {
       out << ' ';
-      dumper->dumpLocation(raw_loc);
+      dumper->dumpLocation(origin_loc);
     }
 
     if (token.hasLeadingSpace())
@@ -644,8 +666,6 @@ private:
 
     if (is_arg)
       out << " arg";
-    else if (macro != provider)
-      out << " macro " << macro;
   }
 
   unsigned dump_token_content(const Token &token) {

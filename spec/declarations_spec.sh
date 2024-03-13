@@ -8,9 +8,7 @@ Context
   AfterAll 'cleanup'
 
   query_decl_number() {
-    echo SELECT 'decl' FROM cst WHERE \
-      '(begin_row =' $1 'AND begin_col <=' $2 'OR begin_row <' $1 ') AND' \
-      '(end_row =' $1 'AND end_col >' $2 'OR end_row >' $1 ')'
+    echo SELECT decl FROM tok WHERE begin_row = $1 AND begin_col = $2
   }
 
   Describe 'VarDecl with built-in types'

@@ -2,10 +2,6 @@
 #include "test.h"
 #include <sqlite3.h>
 
-#ifdef USE_TREE_SITTER
-#include <tree_sitter/api.h>
-#endif // USE_TREE_SITTER
-
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
@@ -39,18 +35,6 @@
 
 #define VALUES_I1(n) VALUES_I2(n)
 #define VALUES_I2(n) VALUES##n()
-#define VALUES7()                                                              \
-  "?,?,?,"                                                                     \
-  "?,?,?,"                                                                     \
-  "?"
-#define VALUES19()                                                             \
-  "?,?,?,"                                                                     \
-  "?,?,?,"                                                                     \
-  "?,?,?,"                                                                     \
-  "?,?,?,"                                                                     \
-  "?,?,?,"                                                                     \
-  "?,?,?,"                                                                     \
-  "?"
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
@@ -101,51 +85,9 @@ static sqlite3_stmt *stmts[MAX_STMT_SIZE];
 static char *errmsg;
 static int err;
 
-#ifdef USE_TREE_SITTER
-
-struct position {
-  int row;
-  int col;
-};
-
-static int compare_position(struct position a, struct position b) {
-  return (a.row < b.row) ? -1 : (a.row == b.row) ? (a.col - b.col) : 1;
-}
-
-struct cst_node {
-  int symbol;
-  int kind;
-  int decl;
-  struct position begin;
-  struct position end;
-};
-
-DECL_ARRAY(cst, struct cst_node);
-static inline IMPL_ARRAY_PUSH(cst, struct cst_node);
-static inline IMPL_ARRAY_CLEAR(cst, NULL);
-
-struct cst_wrapper {
-  struct cst cst;
-  ARRAY_size_t i; // Zero-based index at which to start searching
-};
-
-static void destroy_cst(void *p) { cst_clear((struct cst *)p, 2); }
-
-DECL_ARRAY(cst_set, struct cst_wrapper);
-static inline IMPL_ARRAY_RESERVE(cst_set, struct cst_wrapper);
-static inline IMPL_ARRAY_SET(cst_set, struct cst_wrapper);
-static inline IMPL_ARRAY_CLEAR(cst_set, destroy_cst);
-
-static void dump_src(struct cst_set *cst_set);
-static void dump_ast(const struct cst_set *cst_set, const struct ast *ast);
-static void dump_cst(const struct cst_set *cst_set);
-
-#else
-
 static void dump_src();
-static void dump_ast(const struct ast *ast);
-
-#endif // USE_TREE_SITTER
+static void dump_ast();
+static void dump_tok();
 
 static void exec_sql(const char *s) {
   if (!db || err) {
@@ -205,6 +147,41 @@ static inline _Bool is_internal_file(const char *filename) {
          strcmp(filename, "<command line>") == 0;
 }
 
+static inline _Bool is_decl(const struct node *node) {
+  size_t n = strlen(node->name);
+  return n > 4 && strcmp(node->name + n - 4, "Decl") == 0;
+}
+
+/// Represents a pair consisting of a pointer to a declaration node in
+/// an AST and its corresponding index number.
+struct decl_number_pair {
+  const char *decl;
+  unsigned number;
+};
+
+static int compare_decl_number(const void *a, const void *b, size_t n) {
+  struct decl_number_pair *x = (struct decl_number_pair *)a;
+  struct decl_number_pair *y = (struct decl_number_pair *)b;
+  return strcmp(x->decl, y->decl);
+}
+
+DECL_ARRAY(decl_number_map, struct decl_number_pair);
+static inline IMPL_ARRAY_PUSH(decl_number_map, struct decl_number_pair);
+static inline IMPL_ARRAY_BSEARCH(decl_number_map, compare_decl_number);
+static inline IMPL_ARRAY_BADD(decl_number_map, NULL);
+static inline IMPL_ARRAY_CLEAR(decl_number_map, NULL);
+
+static struct decl_number_map decl_number_map;
+
+static int decl_number(const char *decl) {
+  unsigned i;
+  _Bool found = decl_number_map_bsearch(&decl_number_map, &decl, &i);
+  assert(found);
+  unsigned number = decl_number_map.data[i].number;
+  assert(number < INT_MAX);
+  return number;
+}
+
 int dump(const char *db_file) {
   sqlite3_open(db_file, &db);
 
@@ -212,15 +189,9 @@ int dump(const char *db_file) {
   exec_sql("PRAGMA journal_mode = MEMORY");
   exec_sql("BEGIN TRANSACTION");
 
-#ifdef USE_TREE_SITTER
-  struct cst_set cst_set = {};
-  dump_src(&cst_set);
-  dump_ast(&cst_set, &ast);
-  dump_cst(&cst_set);
-#else
   dump_src();
-  dump_ast(&ast);
-#endif // USE_TREE_SITTER
+  dump_ast();
+  dump_tok();
 
   exec_sql("END TRANSACTION");
 
@@ -232,10 +203,7 @@ int dump(const char *db_file) {
   if (err && !errmsg)
     fprintf(stderr, "sqlite3 error(%d): %s\n", err, sqlite3_errstr(err));
 
-#ifdef USE_TREE_SITTER
-  cst_set_clear(&cst_set, 1);
-#endif // USE_TREE_SITTER
-
+  decl_number_map_clear(&decl_number_map, 2);
   sqlite3_close(db);
   return err;
 }
@@ -258,290 +226,7 @@ int dump(const char *db_file) {
     FILL_REF(&def->ref);                                                       \
   } while (0)
 
-#ifdef USE_TREE_SITTER
-
-struct decl_number_value {
-  unsigned var;
-  unsigned type;
-  unsigned macro;
-};
-
-/// Represents a pair consisting of a pointer to a declaration node in
-/// an AST and its corresponding index number for variable or type.
-struct decl_number_pair {
-  const char *decl;
-  struct decl_number_value number;
-};
-
-static int compare_decl_number(const void *a, const void *b, size_t n) {
-  struct decl_number_pair *x = (struct decl_number_pair *)a;
-  struct decl_number_pair *y = (struct decl_number_pair *)b;
-  return strcmp(x->decl, y->decl);
-}
-
-DECL_ARRAY(decl_number_map, struct decl_number_pair);
-static inline IMPL_ARRAY_PUSH(decl_number_map, struct decl_number_pair);
-static inline IMPL_ARRAY_BSEARCH(decl_number_map, compare_decl_number);
-static inline IMPL_ARRAY_BADD(decl_number_map, NULL);
-static inline IMPL_ARRAY_CLEAR(decl_number_map, NULL);
-
-enum name_kind {
-  NAME_KIND_UNKNOWN = 0U,
-  NAME_KIND_DECL = 1U,          // b0001
-  NAME_KIND_VALUABLE_MASK = 2U, // b0010
-  NAME_KIND_VALUABLE_DECL = 3U, // b0011
-  NAME_KIND_FUNCTION_DECL = 7U, // b0111
-};
-
-static enum name_kind name_kind(const char *name) {
-  unsigned kind = NAME_KIND_UNKNOWN;
-  if (!name)
-    return kind;
-  size_t n = strlen(name);
-  if (n > 4 && strcmp(name + n - 4, "Decl") == 0) {
-    kind = NAME_KIND_DECL;
-    if (n == 12 && strncmp("Function", name, 8) == 0)
-      kind = NAME_KIND_FUNCTION_DECL;
-    else if (n == 9 && strncmp("Field", name, 5) == 0 ||
-             n >= 7 && strncmp("Var", name + n - 7, 3) == 0)
-      kind = NAME_KIND_VALUABLE_DECL;
-  }
-  return kind;
-}
-
-enum symbol_kind {
-  SYMBOL_KIND_UNKNOWN = 0U,
-  SYMBOL_KIND_IDENTIFIER = 1U,  // b0001
-  SYMBOL_KIND_TYPE = 2U,        // b0010
-  SYMBOL_KIND_CUSTOM_MASK = 4U, // b0100
-};
-
-static enum symbol_kind symbol_kind(int symbol) {
-  // See also
-  // https://raw.githubusercontent.com/vegertar/tree-sitter-c/master/src/parser.c
-  switch (symbol) {
-  case 155: // true
-  case 156: // false
-  case 158: // nullptr
-#if __STDC_VERSION__ >= 202311L
-    return SYMBOL_KIND_IDENTIFIER;
-#endif      // c23
-  case 157: // NULL
-  case 1:   // identifier
-  case 351: // field
-    return SYMBOL_KIND_CUSTOM_MASK | SYMBOL_KIND_IDENTIFIER;
-  case 91: // void type
-  case 92: // boolean type
-  case 93: // complex type
-  case 94: // primitive type
-    return SYMBOL_KIND_TYPE;
-  case 353: // custom type
-    return SYMBOL_KIND_CUSTOM_MASK | SYMBOL_KIND_TYPE;
-  default:
-    return SYMBOL_KIND_UNKNOWN;
-  }
-}
-
-static void set_cst_decl(struct cst_node *cst_node,
-                         struct decl_number_value decl) {
-  if (cst_node) {
-    if (cst_node->kind & SYMBOL_KIND_IDENTIFIER)
-      cst_node->decl = decl.var;
-    else if (cst_node->kind & SYMBOL_KIND_TYPE)
-      cst_node->decl = decl.type;
-  }
-}
-
-struct ts_file_input {
-  FILE *fp;
-  char buffer[BUFSIZ];
-  size_t n;
-  size_t total;
-};
-
-typedef struct {
-  unsigned indent;
-  TSNode node;
-} ts_node_wrapper;
-
-DECL_ARRAY(ts_node_list, ts_node_wrapper);
-static inline IMPL_ARRAY_PUSH(ts_node_list, ts_node_wrapper);
-static inline IMPL_ARRAY_CLEAR(ts_node_list, NULL);
-
-static const char *ts_file_input_read(void *payload, uint32_t byte_index,
-                                      TSPoint position, uint32_t *bytes_read) {
-  struct ts_file_input *self = (struct ts_file_input *)payload;
-  if (byte_index < self->total) {
-    size_t rest = self->total - byte_index;
-    size_t offset = self->n - rest;
-    *bytes_read = rest;
-    return self->buffer + offset;
-  }
-
-  size_t n = fread(self->buffer, 1, sizeof(self->buffer), self->fp);
-  *bytes_read = self->n = n;
-  self->total += n;
-  return self->buffer;
-}
-
-static void clear_ts_file_input(struct ts_file_input *self) {
-  if (self->fp) {
-    fclose(self->fp);
-    self->fp = NULL;
-    self->n = self->total = 0;
-  }
-}
-
-static struct cst create_cst(const char *filename, const char *code,
-                             size_t size, struct TSParser *parser) {
-  struct ts_file_input input = {};
-  if (!code && !(input.fp = fopen(filename, "ro"))) {
-    fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
-            strerror(errno));
-    return (struct cst){};
-  }
-
-  struct cst cst = {};
-  TSTree *tree = code ? ts_parser_parse_string(parser, NULL, code, size)
-                      : ts_parser_parse(parser, NULL,
-                                        (TSInput){
-                                            &input,
-                                            ts_file_input_read,
-                                        });
-  struct ts_node_list stack = {};
-  ts_node_list_push(&stack, (ts_node_wrapper){0, ts_tree_root_node(tree)});
-
-  TOGGLE(print_cst, fprintf(stderr, "=== %s ===\n", filename));
-
-  // A preorder traversal
-  while (stack.i) {
-    ts_node_wrapper top = stack.data[--stack.i];
-    uint32_t n = ts_node_child_count(top.node);
-    int symbol = ts_node_symbol(top.node);
-    unsigned kind = symbol_kind(symbol);
-
-    // Note that TSPoint uses a zero-based index.
-    const TSPoint start = ts_node_start_point(top.node);
-    const TSPoint end = ts_node_end_point(top.node);
-
-    TOGGLE(print_cst, fprintf(stderr, "%*s<%d:%u>[%u:%u - %u:%u]\n",
-                              top.indent * 2, "", symbol, kind, start.row + 1,
-                              start.column + 1, end.row + 1, end.column + 1));
-
-    // Only insert leaf nodes so that all ranges are disjoint.
-    // Also ignore zero-length tokens.
-    if (n == 0 && kind && memcmp(&start, &end, sizeof(TSPoint))) {
-      cst_push(&cst,
-               (struct cst_node){
-                   .symbol = symbol,
-                   .kind = kind,
-                   .begin = (struct position){start.row + 1, start.column + 1},
-                   .end = (struct position){end.row + 1, end.column + 1},
-               });
-    }
-
-    for (uint32_t i = 0; i < n; ++i) {
-      // Push children in reverse order so that the leftmost child is on top of
-      // the stack
-      ts_node_list_push(&stack, (ts_node_wrapper){
-                                    top.indent + 1,
-                                    ts_node_child(top.node, n - 1 - i),
-                                });
-    }
-  }
-
-  ts_node_list_clear(&stack, 2);
-  ts_tree_delete(tree);
-  clear_ts_file_input(&input);
-
-  return cst;
-}
-
-static struct cst_node *find_cst(const struct cst_set *cst_set, int src,
-                                 struct position pos) {
-  if (src < 0 || src >= cst_set->i)
-    return NULL;
-
-  struct cst_wrapper *cst_wrapper = &cst_set->data[src];
-
-  // Find the next closest cst token.
-  while (cst_wrapper->i < cst_wrapper->cst.i) {
-    struct cst_node *v = &cst_wrapper->cst.data[cst_wrapper->i];
-    if (compare_position(pos, v->begin) <= 0)
-      return v;
-
-    cst_wrapper->i += 1;
-  }
-  return NULL;
-}
-
-static void dump_cst(const struct cst_set *cst_set) {
-  exec_sql("CREATE TABLE cst ("
-           " src INTEGER,"
-           " kind INTEGER,"
-           " decl INTEGER,"
-           " begin_row INTEGER,"
-           " begin_col INTEGER,"
-           " end_row INTEGER,"
-           " end_col INTEGER)");
-
-  for (unsigned i = 0; i < src_set.i; ++i) {
-    unsigned src = src_set.data[i].number;
-    struct cst cst = cst_set->data[src].cst;
-
-    TOGGLE(print_cst_node_missing_decl,
-           fprintf(stderr, "=== %s ===\n", src_set.data[i].filename));
-
-    for (unsigned j = 0; j < cst.i; ++j) {
-      struct cst_node *cst_node = &cst.data[j];
-      if (!cst_node->decl) {
-        TOGGLE(print_cst_node_missing_decl, {
-          if (cst_node->kind & SYMBOL_KIND_CUSTOM_MASK)
-            fprintf(stderr, "<%d:%u>[%d:%d - %d:%d]\n", cst_node->symbol,
-                    cst_node->kind, cst_node->begin.row, cst_node->begin.col,
-                    cst_node->end.row, cst_node->end.col);
-        });
-        continue;
-      }
-
-      INSERT_INTO(cst, SRC, KIND, DECL, BEGIN_ROW, BEGIN_COL, END_ROW,
-                  END_COL) {
-        FILL_INT(SRC, src);
-        FILL_INT(KIND, cst_node->kind);
-        FILL_INT(DECL, cst_node->decl);
-        FILL_INT(BEGIN_ROW, cst_node->begin.row);
-        FILL_INT(BEGIN_COL, cst_node->begin.col);
-        FILL_INT(END_ROW, cst_node->end.row);
-        FILL_INT(END_COL, cst_node->end.col);
-      }
-      END_INSERT_INTO();
-    }
-  }
-}
-
-struct positional_node {
-  int src;
-  struct position pos;
-  unsigned i;       // The index of current node.
-  const char *decl; // The pointer of the declaration node.
-};
-
-static int compare_positional_node(const void *a, const void *b) {
-  const struct positional_node *x = (const struct positional_node *)a;
-  const struct positional_node *y = (const struct positional_node *)b;
-  const int d = x->src - y->src;
-  return d == 0 ? compare_position(x->pos, y->pos) : d;
-}
-
-DECL_ARRAY(positional_node_set, struct positional_node);
-static inline IMPL_ARRAY_PUSH(positional_node_set, struct positional_node);
-static inline IMPL_ARRAY_CLEAR(positional_node_set, NULL);
-
-static void dump_ast(const struct cst_set *cst_set, const struct ast *ast)
-#else
-static void dump_ast(const struct ast *ast)
-#endif // USE_TREE_SITTER
-{
+static void dump_ast() {
   exec_sql("CREATE TABLE ast ("
            " number INTEGER PRIMARY KEY,"
            " parent_number INTEGER,"
@@ -563,24 +248,23 @@ static void dump_ast(const struct ast *ast)
            " specs INTEGER,"
            " ref_ptr TEXT)");
 
-#ifdef USE_TREE_SITTER
-  struct positional_node_set positional_node_set = {};
-  struct decl_number_map decl_number_map = {};
-  _Bool found = 0, added = 0;
-  unsigned j = -1;
-  unsigned kind = 0;
-  const char *decl_ptr = NULL;
-  struct cst_node *last_cst_node = NULL;
-#endif
-
   unsigned parents[MAX_AST_LEVEL + 1] = {-1};
-  for (unsigned i = 0; i < ast->i; ++i) {
-    const struct node *node = &ast->data[i];
+  for (unsigned i = 0; i < ast.i; ++i) {
+    const struct node *node = &ast.data[i];
     const struct decl *decl = &node->decl;
     const char *ref_ptr = NULL;
     int parent_number = -1;
-    int begin_src = -1, begin_row = 0, begin_col = 0;
-    int src = -1, row = 0, col = 0;
+
+#ifndef VALUES19
+#define VALUES19()                                                             \
+  "?,?,?,"                                                                     \
+  "?,?,?,"                                                                     \
+  "?,?,?,"                                                                     \
+  "?,?,?,"                                                                     \
+  "?,?,?,"                                                                     \
+  "?,?,?,"                                                                     \
+  "?"
+#endif // !VALUES19
 
     INSERT_INTO(ast, NUMBER, PARENT_NUMBER, KIND, PTR, BEGIN_SRC, BEGIN_ROW,
                 BEGIN_COL, END_SRC, END_ROW, END_COL, SRC, ROW, COL, CLASS,
@@ -612,67 +296,25 @@ static void dump_ast(const struct ast *ast)
         if (node->level + 1 < MAX_AST_LEVEL)
           parents[node->level + 1] = i;
 
-        begin_src = src_number(node->range.begin.file);
-        begin_row = node->range.begin.line;
-        begin_col = node->range.begin.col;
-
-        src = src_number(node->loc.file);
-        row = node->loc.line;
-        col = node->loc.col;
-
-#ifdef USE_TREE_SITTER
-
-        kind = name_kind(node->name);
-        if (kind & NAME_KIND_DECL) {
-          struct decl_number_pair entry = {node->pointer};
-          if (kind & NAME_KIND_VALUABLE_MASK)
-            entry.number.var = i;
-          else
-            entry.number.type = i;
-
-          added = decl_number_map_badd(&decl_number_map, &entry, NULL);
+        if (is_decl(node)) {
+          struct decl_number_pair entry = {node->pointer, i};
+          _Bool added = decl_number_map_badd(&decl_number_map, &entry, NULL);
           assert(added);
-          decl_ptr = node->pointer;
-        } else {
-          decl_ptr = ref_ptr;
         }
-
-        if (decl_ptr) {
-          if (begin_src != -1 && begin_row && begin_col)
-            positional_node_set_push(
-                &positional_node_set,
-                (struct positional_node){
-                    .src = begin_src,
-                    .pos = (struct position){begin_row, begin_col},
-                    .i = i,
-                    .decl = decl_ptr,
-                });
-
-          if (src != -1 && row && col)
-            positional_node_set_push(&positional_node_set,
-                                     (struct positional_node){
-                                         .src = src,
-                                         .pos = (struct position){row, col},
-                                         .i = i,
-                                         .decl = decl_ptr,
-                                     });
-        }
-
-#endif // USE_TREE_SITTER
 
         FILL_INT(NUMBER, i);
         FILL_INT(PARENT_NUMBER, parent_number);
         FILL_TEXT(KIND, node->name);
         FILL_TEXT(PTR, node->pointer);
-        FILL_INT(BEGIN_SRC, begin_src);
-        FILL_INT(BEGIN_ROW, begin_row);
-        FILL_INT(BEGIN_COL, begin_col);
+        FILL_INT(BEGIN_SRC, src_number(node->range.begin.file));
+        FILL_INT(BEGIN_ROW, node->range.begin.line);
+        FILL_INT(BEGIN_COL, node->range.begin.col);
         FILL_INT(END_SRC, src_number(node->range.end.file));
         FILL_INT(END_ROW, node->range.end.line);
         FILL_INT(END_COL, node->range.end.col);
-        FILL_INT(SRC, src);
-        FILL_INT(ROW, row);
-        FILL_INT(COL, col);
+        FILL_INT(SRC, src_number(node->loc.file));
+        FILL_INT(ROW, node->loc.line);
+        FILL_INT(COL, node->loc.col);
         break;
       case NODE_KIND_ENUM:
         break;
@@ -684,59 +326,6 @@ static void dump_ast(const struct ast *ast)
     }
     END_INSERT_INTO();
   }
-
-#ifdef USE_TREE_SITTER
-  for (unsigned i = 0; i < decl_number_map.i; ++i) {
-    struct decl_number_pair *entry = &decl_number_map.data[i];
-    if (entry->number.var) {
-      const char *type_ptr = find_var_type_map(entry->decl);
-      if (type_ptr) {
-        found = decl_number_map_bsearch(&decl_number_map, &type_ptr, &j);
-        assert(found);
-        entry->number.type = decl_number_map.data[j].number.type;
-        assert(entry->number.type);
-      }
-    }
-  }
-
-  qsort(positional_node_set.data, positional_node_set.i,
-        sizeof(struct positional_node), compare_positional_node);
-
-  for (unsigned i = 0; i < positional_node_set.i; ++i) {
-    struct positional_node pos_node = positional_node_set.data[i];
-    struct cst_node *cst_node = find_cst(cst_set, pos_node.src, pos_node.pos);
-
-    found = decl_number_map_bsearch(&decl_number_map, &pos_node.decl, &j);
-    assert(found);
-
-    set_cst_decl(cst_node, decl_number_map.data[j].number);
-
-    // Revoke the last setting
-    if (last_cst_node && cst_node &&
-        last_cst_node->symbol != cst_node->symbol &&
-        last_cst_node->decl == cst_node->decl)
-      set_cst_decl(last_cst_node, (struct decl_number_value){});
-
-    last_cst_node = cst_node;
-
-    TOGGLE(print_ast_cst_match, {
-      struct node *node = &ast->data[pos_node.i];
-      fprintf(stderr, "%-16s %s | %*s%s:%d:%d -> ", node->name, node->pointer,
-              node->level * 2, "", node->range.begin.file, pos_node.pos.row,
-              pos_node.pos.col);
-      if (!cst_node)
-        fprintf(stderr, "NULL\n");
-      else
-        fprintf(stderr, "%s <%d>[%d:%d - %d:%d]\n",
-                (cst_node->decl ? ast->data[cst_node->decl].pointer : "NULL"),
-                cst_node->symbol, cst_node->begin.row, cst_node->begin.col,
-                cst_node->end.row, cst_node->end.col);
-    });
-  }
-
-  decl_number_map_clear(&decl_number_map, 2);
-  positional_node_set_clear(&positional_node_set, 2);
-#endif // USE_TREE_SITTER
 }
 
 static const char *expand_path(const char *cwd, size_t n, const char *in,
@@ -791,23 +380,10 @@ TEST(expand_path, {
          0);
 })
 
-#ifdef USE_TREE_SITTER
-static void dump_src(struct cst_set *cst_set)
-#else
-static void dump_src()
-#endif
-{
+static void dump_src() {
   exec_sql("CREATE TABLE src ("
            " filename TEXT PRIMARY KEY,"
            " number INTEGER)");
-
-#ifdef USE_TREE_SITTER
-  TSLanguage *tree_sitter_c();
-  TSLanguage *lang = tree_sitter_c();
-  TSParser *parser = ts_parser_new();
-  ts_parser_set_language(parser, lang);
-  cst_set_reserve(cst_set, src_set.i);
-#endif
 
   char buffer[PATH_MAX];
   size_t cwd_len = strlen(cwd);
@@ -826,19 +402,33 @@ static void dump_src()
       FILL_INT(2, number);
     }
     end_if_prepared_stmt();
-
-#ifdef USE_TREE_SITTER
-    extern const char *tu_code;
-    extern size_t tu_size;
-
-    const char *code = strcmp(filename, tu) == 0 ? tu_code : NULL;
-    size_t size = code ? tu_size : 0;
-    cst_set_set(cst_set, number,
-                (struct cst_wrapper){create_cst(fullpath, code, size, parser)});
-#endif // USE_TREE_SITTER
   }
+}
 
-#ifdef USE_TREE_SITTER
-  ts_parser_delete(parser);
-#endif // USE_TREE_SITTER
+static void dump_tok() {
+  exec_sql("CREATE TABLE tok ("
+           " src INTEGER,"
+           " decl INTEGER,"
+           " begin_row INTEGER,"
+           " begin_col INTEGER,"
+           " offset)");
+
+  for (unsigned i = 0; i < tok_decl_set.i; ++i) {
+    struct tok *tok = &tok_decl_set.data[i].tok;
+    int src = src_number(tok->loc.file);
+    int decl = decl_number(tok_decl_set.data[i].decl);
+
+#ifndef VALUES5
+#define VALUES5() "?,?,?,?,?"
+#endif // !VALUES4
+
+    INSERT_INTO(tok, SRC, DECL, BEGIN_ROW, BEGIN_COL, OFFSET) {
+      FILL_INT(SRC, src);
+      FILL_INT(DECL, decl);
+      FILL_INT(BEGIN_ROW, tok->loc.line);
+      FILL_INT(BEGIN_COL, tok->loc.col);
+      FILL_INT(OFFSET, tok->offset);
+    }
+    END_INSERT_INTO();
+  }
 }
