@@ -79,6 +79,10 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return TOK_ENUM;
 }
 
+^##.+ {
+  return TOK_REMARK;
+}
+
 ^"#TU:".+ {
   int n = sscanf(yytext, "#TU:%s", tu);
   if (n != 1) return TOK_YYUNDEF;

@@ -30,7 +30,14 @@ public:
 
   expanded_decl *get_previous() const { return prev; }
 
-  void set_previous(expanded_decl *prev) { this->prev = prev; }
+  void set_previous(expanded_decl *prev) {
+    if (prev->get_decl() == get_decl()) {
+      this->prev = prev->get_previous();
+      delete prev;
+    } else {
+      this->prev = prev;
+    }
+  }
 
 private:
   SourceLocation loc;
@@ -185,19 +192,39 @@ private:
   public:
     explicit ast_visitor(ast_consumer &ast) : ast(ast) {}
 
-    bool VisitFunctionDecl(const FunctionDecl *d) { return visit_valuable(d); }
+    bool VisitFunctionDecl(const FunctionDecl *d) { return index_valuable(d); }
 
-    bool VisitFieldDecl(const FieldDecl *d) { return visit_valuable(d); }
+    bool VisitFieldDecl(const FieldDecl *d) { return index_valuable(d); }
 
-    bool VisitVarDecl(const VarDecl *d) { return visit_valuable(d); }
+    bool VisitVarDecl(const VarDecl *d) { return index_valuable(d); }
 
-    bool VisitTypedefDecl(const TypedefDecl *d) {
-      index(d->getLocation(), d);
-      return true;
+    bool VisitTypedefDecl(const TypedefDecl *d) { return index_named(d); }
+
+    bool VisitTagDecl(const TagDecl *d) {
+      auto def = d->getDefinition();
+      return index_named(def ? def : d, d->getLocation());
     }
 
   private:
-    template <typename T> bool visit_valuable(const T *p) {
+    bool index_named(const NamedDecl *d, SourceLocation loc = {}) {
+      if (!d->getDeclName().isEmpty())
+        index(loc.isValid() ? loc : d->getLocation(), d);
+
+      return true;
+    }
+
+    SourceLocation get_location(TypeLoc cur) {
+      TypeLoc left_most = cur;
+      while (!cur.isNull()) {
+        if (cur.getLocalSourceRange().getBegin().isValid())
+          left_most = cur;
+        cur = cur.getNextTypeLoc();
+      }
+
+      return left_most.getLocalSourceRange().getBegin();
+    }
+
+    template <typename T> bool index_valuable(const T *p) {
       if (auto d = value(p->getType().getTypePtr()); d && !d->isImplicit()) {
         if (!d->getDeclName().isEmpty()) {
           if constexpr (std::is_same_v<T, FunctionDecl>) {
@@ -205,7 +232,7 @@ private:
             index(range.getBegin(), d);
           } else if (auto ti = p->getTypeSourceInfo()) {
             auto type_loc = ti->getTypeLoc();
-            index(type_loc.getBeginLoc(), d);
+            index(get_location(type_loc), d);
           } else {
             assert(p->getLocation().isInvalid());
           }
@@ -214,37 +241,24 @@ private:
         ast.out << "#VAR-TYPE:" << p << ' ' << d << '\n';
       }
 
-      bool is_unnamed = false;
-      if constexpr (std::is_same_v<T, FieldDecl>) {
-        is_unnamed = p->isUnnamedBitfield() || p->isAnonymousStructOrUnion();
-      }
-      if (!is_unnamed)
-        index(p->getLocation(), p);
-
-      return true;
+      return index_named(p);
     }
 
     NamedDecl *value(const Type *p) {
-      if (auto t = p->getAs<TypedefType>()) {
+      if (auto t = p->getAs<TypedefType>())
         return t->getDecl();
-      }
 
-      if (auto t = p->getAs<TagType>()) {
+      if (auto t = p->getAs<TagType>())
         return t->getDecl();
-      }
 
-      if (auto t = p->getAs<FunctionType>()) {
-        // The parameters would be walked via `var` matcher.
+      if (auto t = p->getAs<FunctionType>())
         return value(t->getReturnType().getTypePtr());
-      }
 
-      if (auto t = p->getAs<PointerType>()) {
+      if (auto t = p->getAs<PointerType>())
         return value(t->getPointeeType().getTypePtr());
-      }
 
-      if (auto t = p->getArrayElementTypeNoTypeQual()) {
+      if (auto t = p->getArrayElementTypeNoTypeQual())
         return value(t);
-      }
 
       return nullptr;
     }
@@ -427,16 +441,24 @@ private:
     SourceLocation last_loc;
     SourceLocation last_expansion_loc;
     unsigned index_of_last_expansion_loc = -1;
+    unsigned indexable_tokens = 0;
+    unsigned indexed_tokens = 0;
 
     for (unsigned i = 0, e = tokens.size(); i < e; ++i) {
       auto loc = tokens[i].location();
-      if (loc.isFileID() && indexable(tokens[i])) {
-        auto v = find(loc, true);
-        auto d = v ? v->get_decl() : nullptr;
-        if (d) {
-          out << "#TOK-DECL:";
-          dumper->dumpLocation(tokens[i].location());
-          out << ' ' << d << '\n';
+      if (indexable(tokens[i])) {
+        ++indexable_tokens;
+
+        if (loc.isFileID()) {
+          auto v = find(loc, true);
+          auto d = v ? v->get_decl() : nullptr;
+          if (d) {
+            ++indexed_tokens;
+
+            out << "#TOK-DECL:";
+            dumper->dumpLocation(tokens[i].location());
+            out << ' ' << d << '\n';
+          }
         }
       }
 
@@ -450,6 +472,8 @@ private:
           while (d && j > index_of_last_expansion_loc) {
             auto &t = tokens[j];
             if (indexable(t) && t.location() == d->get_location()) {
+              ++indexed_tokens;
+
               out << "#TOK-DECL:";
               dumper->dumpLocation(last_expansion_loc);
               out << ' ' << j - index_of_last_expansion_loc << ' '
@@ -462,6 +486,27 @@ private:
             --j;
           }
 
+          // if (d) {
+          //   out << "==========================================\n";
+          //   last_expansion_loc.print(out, sm);
+          //   out << "\n";
+          //   for (auto k = index_of_last_expansion_loc + 1; k < i; ++k) {
+          //     tokens[k].location().print(out, sm);
+          //     out << ' ' << tokens[k].dumpForTests(sm) << '\n';
+          //   }
+          //   out << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
+          //   auto m = 0;
+          //   while (d) {
+          //     ++m;
+          //     dumper->dumpLocation(d->get_location());
+          //     out << ' ' << d->get_decl() << '\n';
+          //     auto prev = d->get_previous();
+          //     delete d;
+          //     d = prev;
+          //   }
+          //   out << "~~~~~~~~~~ " << (i - index_of_last_expansion_loc - 1)
+          //       << " vs " << m << " ~~~~~~~~~~~~~~~\n";
+          // }
           assert(!d && "All expanded_decl are visited");
         }
 
@@ -470,6 +515,11 @@ private:
         index_of_last_expansion_loc = i - 1;
       }
     }
+
+    out << "## tokens(total/indexable/indexed):" << tokens.size() << '/'
+        << indexable_tokens << '(' << (indexed_tokens * 100 / tokens.size())
+        << "%)/" << indexed_tokens << '('
+        << (indexed_tokens * 100 / indexable_tokens) << "%)\n";
   }
 
   void dump_macro_expansion() {

@@ -349,6 +349,7 @@
     COL
     ENUM
     FIELD
+    REMARK
     REMARK_TOK_DECL
   <integer>
     INDENT
@@ -479,7 +480,7 @@ node: HEAD parent prev range loc attrs labels decl opts
     };
   }
 
-remark: REMARK_TU | REMARK_CWD | REMARK_VAR_TYPE | remark_tok_decl
+remark: REMARK | REMARK_TU | REMARK_CWD | REMARK_VAR_TYPE | remark_tok_decl
 
 remark_tok_decl: REMARK_TOK_DECL tok POINTER
   {
