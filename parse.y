@@ -250,6 +250,7 @@
   #include <assert.h>
   #include <stdio.h>
   #include <errno.h>
+  #include <limits.h>
 
   struct ast ast;
   struct src_set src_set;
@@ -484,7 +485,7 @@ remark: REMARK | REMARK_TU | REMARK_CWD | REMARK_VAR_TYPE | remark_tok_decl
 
 remark_tok_decl: REMARK_TOK_DECL tok POINTER
   {
-    tok_decl_set_push(&tok_decl_set, (struct tok_decl_pair){$2, strdup($3)});
+    tok_decl_set_push(&tok_decl_set, (struct tok_decl_pair){$2, $3});
   }
 
 tok: sloc { $$ = (struct tok){$1}; }
@@ -497,8 +498,8 @@ tok: sloc { $$ = (struct tok){$1}; }
       yyerror(&@$, uctx, "strtoll(%s) failed: %s", $2, (errno ? strerror(errno) : ""));
       YYERROR;
     }
-    if (offset < 0) {
-      yyerror(&@$, uctx, "expected an non-negative offset: %s", $2);
+    if (offset < 0 || offset > UINT_MAX) {
+      yyerror(&@$, uctx, "expected a [0, %u] offset: %s", UINT_MAX, $2);
       YYERROR;
     }
     $$ = (struct tok){$1, offset};

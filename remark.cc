@@ -451,13 +451,15 @@ private:
 
         if (loc.isFileID()) {
           auto v = find(loc, true);
-          auto d = v ? v->get_decl() : nullptr;
-          if (d) {
-            ++indexed_tokens;
 
-            out << "#TOK-DECL:";
-            dumper->dumpLocation(tokens[i].location());
+          out << "#TOK-DECL:";
+          dumper->dumpLocation(tokens[i].location());
+
+          if (auto d = v ? v->get_decl() : nullptr) {
+            ++indexed_tokens;
             out << ' ' << d << '\n';
+          } else {
+            out << " 0x0\n";
           }
         }
       }
@@ -468,45 +470,36 @@ private:
           auto v = find(last_expansion_loc, true);
           auto d = v ? v->get_expanded_decl() : nullptr;
           unsigned j = i - 1;
+          bool started = false;
 
           while (d && j > index_of_last_expansion_loc) {
             auto &t = tokens[j];
-            if (indexable(t) && t.location() == d->get_location()) {
-              ++indexed_tokens;
+            if (indexable(t)) {
+              if (!started) {
+                started = true;
+                out << "#TOK-DECL:";
+                dumper->dumpLocation(last_expansion_loc);
+                // Starting with zero-offset and NULL decl.
+                out << " 0 0x0\n";
+              }
 
               out << "#TOK-DECL:";
-              dumper->dumpLocation(last_expansion_loc);
-              out << ' ' << j - index_of_last_expansion_loc << ' '
-                  << d->get_decl() << '\n';
+              dumper->dumpLocation(t.location());
+              out << ' ' << j - index_of_last_expansion_loc << ' ';
 
-              auto prev = d->get_previous();
-              delete d;
-              d = prev;
+              if (t.location() == d->get_location()) {
+                ++indexed_tokens;
+                out << d->get_decl() << '\n';
+                auto prev = d->get_previous();
+                delete d;
+                d = prev;
+              } else {
+                out << "0x0\n";
+              }
             }
             --j;
           }
 
-          // if (d) {
-          //   out << "==========================================\n";
-          //   last_expansion_loc.print(out, sm);
-          //   out << "\n";
-          //   for (auto k = index_of_last_expansion_loc + 1; k < i; ++k) {
-          //     tokens[k].location().print(out, sm);
-          //     out << ' ' << tokens[k].dumpForTests(sm) << '\n';
-          //   }
-          //   out << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
-          //   auto m = 0;
-          //   while (d) {
-          //     ++m;
-          //     dumper->dumpLocation(d->get_location());
-          //     out << ' ' << d->get_decl() << '\n';
-          //     auto prev = d->get_previous();
-          //     delete d;
-          //     d = prev;
-          //   }
-          //   out << "~~~~~~~~~~ " << (i - index_of_last_expansion_loc - 1)
-          //       << " vs " << m << " ~~~~~~~~~~~~~~~\n";
-          // }
           assert(!d && "All expanded_decl are visited");
         }
 

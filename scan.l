@@ -166,7 +166,7 @@ macro" "{POINTER}/[ \n] {
 }
 
 {POINTER}/[ \n] {
-  yylval->TOK_POINTER = strdup(yytext);
+  yylval->TOK_POINTER = strcmp(yytext, "0x0") ? strdup(yytext) : NULL;
   return TOK_POINTER;
 }
 
