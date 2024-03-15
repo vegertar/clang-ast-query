@@ -281,20 +281,23 @@ private:
     explicit pp_callback(ast_consumer &ast) : ast(ast) {}
 
     void MacroDefined(const Token &token, const MacroDirective *md) override {
-      auto mi = md->getMacroInfo();
-      auto &out = ast.out;
-      auto &dumper = ast.dumper;
+      ast.dumper->AddChild([&token, md, this] {
+        auto &out = ast.out;
+        auto &dumper = ast.dumper;
 
-      ast.dump_kind(md->getKind());
-      out << "Directive";
-      dumper->dumpPointer(md);
-      dumper->dumpSourceRange(
-          {mi->getDefinitionLoc(), mi->getDefinitionEndLoc()});
-      out << " '";
-      out << token.getIdentifierInfo()->getName();
-      out << "'";
-      dumper->dumpPointer(mi);
-      dumper->AddChild([=, this] { ast.dump_macro(mi); });
+        ast.dump_kind(md->getKind());
+        out << "Directive";
+        dumper->dumpPointer(md);
+        if (auto prev = md->getPrevious()) {
+          out << " prev";
+          dumper->dumpPointer(prev);
+        }
+        out << ' ';
+        dumper->dumpLocation(md->getLocation());
+        out << ' ';
+        out << token.getIdentifierInfo()->getName();
+        dumper->AddChild([=, this] { ast.dump_macro(md->getMacroInfo()); });
+      });
     }
 
     void MacroExpands(const Token &token, const MacroDefinition &def,
@@ -370,41 +373,53 @@ private:
   }
 
   void dump_macro(const MacroInfo *mi) {
+    out << "MacroInfo";
+    dumper->dumpPointer(mi);
+    dumper->dumpSourceRange(
+        {mi->getDefinitionLoc(), mi->getDefinitionEndLoc()});
+
+    out << " '";
     if (mi->isFunctionLike()) {
-      dumper->AddChild([=, this] {
-        auto i = mi->param_begin(), e = mi->param_end();
-        out << "ParameterList";
-        dumper->dumpPointer(i);
-        out << " '";
+      out << '(';
+      auto i = mi->param_begin(), e = mi->param_end();
 
-        if (!mi->param_empty()) {
-          for (; i + 1 != e; ++i) {
-            out << (*i)->getName();
-            out << ' ';
-          }
-
-          // Last argument.
-          if ((*i)->getName() == "__VA_ARGS__")
-            out << "...";
-          else
-            out << (*i)->getName();
+      if (!mi->param_empty()) {
+        for (; i + 1 != e; ++i) {
+          out << (*i)->getName();
+          out << ',';
         }
 
-        if (mi->isGNUVarargs())
-          out << "..."; // foo(x...)
+        // Last argument.
+        if ((*i)->getName() == "__VA_ARGS__")
+          out << "...";
+        else
+          out << (*i)->getName();
+      }
 
-        out << "'";
-      });
+      if (mi->isGNUVarargs())
+        out << "..."; // foo(x...)
+      out << ')';
     }
+    out << "' '";
+    out.escape('\'');
     if (!mi->tokens_empty()) {
-      dumper->AddChild([=, this] {
-        out << "ReplacementTokens";
-        dumper->dumpPointer(mi->tokens_begin());
-        for (const auto &t : mi->tokens()) {
-          dumper->AddChild([&t, this] { dump_token(t); });
+      auto i = mi->tokens_begin(), e = mi->tokens_end();
+      dump_token_content(*i++);
+
+      if (pp.getSourceManager().isWrittenInBuiltinFile(
+              mi->getDefinitionLoc())) {
+        while (i != e) {
+          if (i->hasLeadingSpace())
+            out << ' ';
+          dump_token_content(*i++);
         }
-      });
+      } else if (i != e) {
+        // Don't dump user defined macro content completely
+        out << "...";
+      }
     }
+    out.escape(0);
+    out << "'";
   }
 
   void on_token_lexed(const Token &token) {
