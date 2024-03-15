@@ -192,17 +192,28 @@ private:
   public:
     explicit ast_visitor(ast_consumer &ast) : ast(ast) {}
 
-    bool VisitFunctionDecl(const FunctionDecl *d) { return index_valuable(d); }
+    bool VisitTypedefDecl(const TypedefDecl *d) { return index_named(d); }
 
     bool VisitFieldDecl(const FieldDecl *d) { return index_valuable(d); }
-
-    bool VisitVarDecl(const VarDecl *d) { return index_valuable(d); }
-
-    bool VisitTypedefDecl(const TypedefDecl *d) { return index_named(d); }
 
     bool VisitTagDecl(const TagDecl *d) {
       auto def = d->getDefinition();
       return index_named(def ? def : d, d->getLocation());
+    }
+
+    bool VisitVarDecl(const VarDecl *d) {
+      if (dyn_cast<ParmVarDecl>(d))
+        return true;
+      return index_valuable(d);
+    }
+
+    bool VisitFunctionDecl(const FunctionDecl *d) {
+      index_valuable(d);
+      if (d->hasBody()) {
+        for (auto param : d->parameters())
+          index_valuable(param);
+      }
+      return true;
     }
 
   private:
@@ -515,7 +526,7 @@ private:
             --j;
           }
 
-          assert(!d && "All expanded_decl are visited");
+          assert(!d && "All expanded_decls are visited");
         }
 
         last_loc = loc;
@@ -525,7 +536,7 @@ private:
     }
 
     out << "## tokens(total/indexable/indexed):" << tokens.size() << '/'
-        << indexable_tokens << '(' << (indexed_tokens * 100 / tokens.size())
+        << indexable_tokens << '(' << (indexable_tokens * 100 / tokens.size())
         << "%)/" << indexed_tokens << '('
         << (indexed_tokens * 100 / indexable_tokens) << "%)\n";
   }

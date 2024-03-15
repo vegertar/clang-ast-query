@@ -174,6 +174,9 @@ static inline IMPL_ARRAY_CLEAR(decl_number_map, NULL);
 static struct decl_number_map decl_number_map;
 
 static int decl_number(const char *decl) {
+  if (!decl)
+    return -1;
+
   unsigned i;
   _Bool found = decl_number_map_bsearch(&decl_number_map, &decl, &i);
   assert(found);
