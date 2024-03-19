@@ -114,4 +114,80 @@ Context
       The output should eq "$4"
     End
   End
+
+  Describe 'TypedefDecl with typedef types'
+    Parameters
+      t35 211 1 "t33|t34"
+    End
+
+    query_typedef_decl() {
+      echo SELECT 'qualified_type,name' FROM ast WHERE 'number =' $1
+    }
+
+    query() {
+      decl_number=$(sqlite3 $db "`query_decl_number $1 $2`")
+      sqlite3 $db "`query_typedef_decl ${decl_number}`"
+    }
+
+    It "queries the typedef $1"
+      When call query "$2" "$3"
+      The output should eq "$4"
+    End
+  End
+
+  Describe 'Consistent decl'
+    Parameters
+      t33 205 1 202 1 # type of var decl
+      t33 210 1 202 1 # underlying type of typedef
+      t34 215 1 211 1 # return type of func typedef
+      t34 221 1 211 1 # return type of func decl
+      t34 227 1 211 1 # return type of func def
+      t32 217 1 199 1 # parameter type of func typedef
+      t32 223 1 199 1 # parameter type of func decl
+      t32 229 1 199 1 # parameter type of func def
+    End
+
+    query() {
+      a=$(sqlite3 $db "`query_decl_number $1 $2`")
+      if [ $3 -eq 0 ]; then
+        b=-1
+      else
+        b=$(sqlite3 $db "`query_decl_number $3 $4`")
+      fi
+      echo $((a-b))
+    }
+
+    It "queries the typedef $1"
+      When call query "$2" "$3" "$4" "$5"
+      The output should eq 0
+    End
+  End
+
+  Describe 'VarDecl with typedef types'
+    Parameters
+      v34 206 1 "t33|v34"
+      v35 218 1 -1          # parameter of func typedef
+      v35 224 1 -1          # parameter of func decl
+      v35 230 1 "t32|v37"   # parameter of func def
+    End
+
+    query_var_decl() {
+      echo SELECT 'qualified_type,name' FROM ast WHERE 'number =' $1
+    }
+
+    query() {
+      decl_number=$(sqlite3 $db "`query_decl_number $1 $2`")
+      if [ $decl_number -ne -1 ]; then
+        sqlite3 $db "`query_var_decl ${decl_number}`"
+      else
+        echo $decl_number
+      fi
+    }
+
+    It "queries the variable $1"
+      When call query "$2" "$3"
+      The output should eq "$4"
+    End
+  End
+
 End

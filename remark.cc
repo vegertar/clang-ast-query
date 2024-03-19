@@ -192,7 +192,16 @@ private:
   public:
     explicit ast_visitor(ast_consumer &ast) : ast(ast) {}
 
-    bool VisitTypedefDecl(const TypedefDecl *d) { return index_named(d); }
+    bool VisitTypedefDecl(const TypedefDecl *d) {
+      auto t = d->getUnderlyingType().getTypePtr();
+      if (!t->getAs<TagType>()) {
+        auto p = named(t);
+        if (p && !p->isImplicit()) {
+          index_named(p, get_location(d->getTypeSourceInfo()->getTypeLoc()));
+        }
+      }
+      return index_named(d);
+    }
 
     bool VisitFieldDecl(const FieldDecl *d) { return index_valuable(d); }
 
@@ -202,17 +211,24 @@ private:
     }
 
     bool VisitVarDecl(const VarDecl *d) {
-      if (dyn_cast<ParmVarDecl>(d))
+      if (auto p = dyn_cast<ParmVarDecl>(d)) {
+        // It still needs to index the parameter type.
+        // e.g. typedef void foo_t(Type parm_var)
+        if (p->getDeclContext()->getDeclKind() != Decl::Function)
+          index_valuable(d, true);
+
         return true;
+      }
       return index_valuable(d);
     }
 
     bool VisitFunctionDecl(const FunctionDecl *d) {
       index_valuable(d);
-      if (d->hasBody()) {
-        for (auto param : d->parameters())
-          index_valuable(param);
-      }
+
+      auto index_type_only = !d->doesThisDeclarationHaveABody();
+      for (auto param : d->parameters())
+        index_valuable(param, index_type_only);
+
       return true;
     }
 
@@ -235,8 +251,9 @@ private:
       return left_most.getLocalSourceRange().getBegin();
     }
 
-    template <typename T> bool index_valuable(const T *p) {
-      if (auto d = value(p->getType().getTypePtr()); d && !d->isImplicit()) {
+    template <typename T>
+    bool index_valuable(const T *p, bool type_only = false) {
+      if (auto d = named(p->getType().getTypePtr()); d && !d->isImplicit()) {
         if (!d->getDeclName().isEmpty()) {
           if constexpr (std::is_same_v<T, FunctionDecl>) {
             auto range = p->getReturnTypeSourceRange();
@@ -252,10 +269,13 @@ private:
         ast.out << "#VAR-TYPE:" << p << ' ' << d << '\n';
       }
 
-      return index_named(p);
+      if (!type_only)
+        index_named(p);
+
+      return true;
     }
 
-    NamedDecl *value(const Type *p) {
+    NamedDecl *named(const Type *p) {
       if (auto t = p->getAs<TypedefType>())
         return t->getDecl();
 
@@ -263,13 +283,13 @@ private:
         return t->getDecl();
 
       if (auto t = p->getAs<FunctionType>())
-        return value(t->getReturnType().getTypePtr());
+        return named(t->getReturnType().getTypePtr());
 
       if (auto t = p->getAs<PointerType>())
-        return value(t->getPointeeType().getTypePtr());
+        return named(t->getPointeeType().getTypePtr());
 
       if (auto t = p->getArrayElementTypeNoTypeQual())
-        return value(t);
+        return named(t);
 
       return nullptr;
     }

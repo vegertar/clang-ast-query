@@ -200,3 +200,31 @@ t32;
 typedef
 _Bool
 t33;
+
+// Index both type and variable
+t33
+v34;
+
+// Index type and its alias
+typedef
+t33
+t34;
+
+// Index all typedef types but parameter variables.
+typedef
+t34
+t35(
+t32
+v35);
+
+// Without function body, index all typedef types.
+t34
+v36(
+t32
+v37);
+
+// With function body, index all typedef types and parameters.
+t34
+v36(
+t32
+v37) { return 0; }

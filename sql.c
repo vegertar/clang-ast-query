@@ -411,10 +411,10 @@ static void dump_src() {
 static void dump_tok() {
   exec_sql("CREATE TABLE tok ("
            " src INTEGER,"
-           " decl INTEGER,"
            " begin_row INTEGER,"
            " begin_col INTEGER,"
-           " offset)");
+           " offset INTEGER,"
+           " decl INTEGER)");
 
   for (unsigned i = 0; i < tok_decl_set.i; ++i) {
     struct tok *tok = &tok_decl_set.data[i].tok;
@@ -425,12 +425,12 @@ static void dump_tok() {
 #define VALUES5() "?,?,?,?,?"
 #endif // !VALUES4
 
-    INSERT_INTO(tok, SRC, DECL, BEGIN_ROW, BEGIN_COL, OFFSET) {
+    INSERT_INTO(tok, SRC, BEGIN_ROW, BEGIN_COL, OFFSET, DECL) {
       FILL_INT(SRC, src);
-      FILL_INT(DECL, decl);
       FILL_INT(BEGIN_ROW, tok->loc.line);
       FILL_INT(BEGIN_COL, tok->loc.col);
       FILL_INT(OFFSET, tok->offset);
+      FILL_INT(DECL, decl);
     }
     END_INSERT_INTO();
   }
