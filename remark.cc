@@ -265,8 +265,6 @@ private:
             assert(p->getLocation().isInvalid());
           }
         }
-
-        ast.out << "#VAR-TYPE:" << p << ' ' << d << '\n';
       }
 
       if (!type_only)

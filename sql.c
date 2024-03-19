@@ -215,7 +215,7 @@ int dump(const char *db_file) {
   do {                                                                         \
     const struct ref *ref = expr;                                              \
     if (ref->pointer) {                                                        \
-      FILL_TEXT(REF_PTR, (ref_ptr = ref->pointer));                            \
+      FILL_TEXT(REF_PTR, ref->pointer);                                        \
       FILL_TEXT(NAME, ref->sqname);                                            \
     }                                                                          \
   } while (0)
@@ -255,7 +255,6 @@ static void dump_ast() {
   for (unsigned i = 0; i < ast.i; ++i) {
     const struct node *node = &ast.data[i];
     const struct decl *decl = &node->decl;
-    const char *ref_ptr = NULL;
     int parent_number = -1;
 
 #ifndef VALUES19

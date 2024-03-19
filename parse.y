@@ -171,13 +171,6 @@
 
   DECL_ARRAY(ast, struct node);
 
-  struct var_type_pair {
-    const char *var;
-    const char *type;
-  };
-
-  DECL_ARRAY(var_type_map, struct var_type_pair);
-
   struct src {
     const char *filename;
     unsigned number;
@@ -236,11 +229,6 @@
   const char *add_src(const char *filename);
   /// The memory of the found filename is owned by the underlying array.
   const char *search_src(const char *filename, unsigned *number);
-
-  /// Memory ownership of the parameters will be transferred to the underlying map.
-  struct var_type_pair add_var_type_map(const char *var, const char *type);
-  /// The memory of the found type is owned by the underlying map.
-  const char *find_var_type_map(const char *var);
 }
 
 // Emitted in the implementation file.
@@ -258,7 +246,6 @@
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
 
-  static struct var_type_map var_type_map;
   static char *last_loc_src;
   static unsigned last_loc_line;
 
@@ -277,8 +264,6 @@
   static DECL_METHOD(ast, clear, int);
 
   static DECL_METHOD(src_set, clear, int);
-
-  static DECL_METHOD(var_type_map, clear, int);
 
   static DECL_METHOD(tok_decl_set, push, struct tok_decl_pair);
   static DECL_METHOD(tok_decl_set, clear, int);
@@ -327,7 +312,6 @@
 %printer { fprintf(yyo, "%s", "col"); } COL;
 %printer { fprintf(yyo, "%s", "value: Int"); } ENUM;
 %printer { fprintf(yyo, "%s", "field"); } FIELD;
-%printer { fprintf(yyo, "var(%s) type(%s)", $$.var, $$.type); } REMARK_VAR_TYPE;
 %printer { fprintf(yyo, "%d", $$); } <integer>;
 %printer { fprintf(yyo, "\"%s\"", $$); } <string>;
 %printer { print_type(yyo, &$$); } <struct type>;
@@ -379,8 +363,6 @@
     INTEGER
     REMARK_TU
     REMARK_CWD
-  <struct var_type_pair>
-    REMARK_VAR_TYPE
 
 %nterm
   <_Bool>
@@ -481,7 +463,7 @@ node: HEAD parent prev range loc attrs labels decl opts
     };
   }
 
-remark: REMARK | REMARK_TU | REMARK_CWD | REMARK_VAR_TYPE | remark_tok_decl
+remark: REMARK | REMARK_TU | REMARK_CWD | remark_tok_decl
 
 remark_tok_decl: REMARK_TOK_DECL tok POINTER
   {
@@ -868,36 +850,6 @@ const char * add_src(const char *filename) {
   return src_set.data[i].filename;
 }
 
-static int compare_var_type(const void *a, const void *b, size_t n) {
-  const char *x = ((const struct var_type_pair *)a)->var;
-  const char *y = ((const struct var_type_pair *)b)->var;
-  return strcmp(x, y);
-}
-
-static void free_var_type(void *p) {
-  struct var_type_pair *pair = (struct var_type_pair *)p;
-  free((void *)pair->var);
-  free((void *)pair->type);
-}
-
-static IMPL_ARRAY_PUSH(var_type_map, struct var_type_pair)
-static IMPL_ARRAY_BSEARCH(var_type_map, compare_var_type)
-static IMPL_ARRAY_BADD(var_type_map, NULL)
-static IMPL_ARRAY_CLEAR(var_type_map, free_var_type)
-
-struct var_type_pair add_var_type_map(const char *var, const char *type) {
-  struct var_type_pair pair = {var, type};
-  _Bool added = var_type_map_badd(&var_type_map, &pair, NULL);
-  assert(added);
-  return pair;
-}
-
-const char *find_var_type_map(const char *var) {
-  unsigned i;
-  _Bool found = var_type_map_bsearch(&var_type_map, &var, &i);
-  return found ? var_type_map.data[i].type : NULL;
-}
-
 static void free_tok_decl(void *p) {
   struct tok_decl_pair *pair = (struct tok_decl_pair *)p;
   free((void *)pair->decl);
@@ -909,7 +861,6 @@ static IMPL_ARRAY_CLEAR(tok_decl_set, free_tok_decl);
 void destroy() {
   ast_clear(&ast, 1);
   src_set_clear(&src_set, 1);
-  var_type_map_clear(&var_type_map, 1);
   tok_decl_set_clear(&tok_decl_set, 1);
 }
 
