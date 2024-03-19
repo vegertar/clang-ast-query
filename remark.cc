@@ -232,6 +232,25 @@ private:
       return true;
     }
 
+    bool VisitDeclRefExpr(const DeclRefExpr *e) {
+      return index_named(e->getDecl(), e->getLocation());
+    }
+
+    bool VisitMemberExpr(const MemberExpr *e) {
+      return index_named(e->getMemberDecl(), e->getMemberLoc());
+    }
+
+    bool TraverseMemberExpr(MemberExpr *e) {
+      // The MemberExpr is traversed in post-order, i.e. a.b.c is in c>b>a,
+      // therefore use_post_order temporarily.
+      ++use_post_order;
+      RecursiveASTVisitor::TraverseMemberExpr(e);
+      --use_post_order;
+      return true;
+    }
+
+    bool shouldTraversePostOrder() const { return use_post_order; }
+
   private:
     bool index_named(const NamedDecl *d, SourceLocation loc = {}) {
       if (!d->getDeclName().isEmpty())
@@ -292,17 +311,20 @@ private:
       return nullptr;
     }
 
+    void index(SourceLocation loc, index_value_t val) { ast.index(loc, val); }
+
     void index(SourceLocation loc, const Decl *p) {
       auto &sm = ast.pp.getSourceManager();
       if (loc.isMacroID()) {
-        ast.index(sm.getExpansionLoc(loc),
-                  index_value_t(new expanded_decl(loc, p)));
+        index(sm.getExpansionLoc(loc),
+              index_value_t(new expanded_decl(loc, p)));
       } else if (loc.isValid()) {
-        ast.index(loc, index_value_t(p));
+        index(loc, index_value_t(p));
       }
     }
 
     ast_consumer &ast;
+    unsigned use_post_order = 0;
   };
 
   class pp_callback : public PPCallbacks {
@@ -543,6 +565,15 @@ private:
             }
             --j;
           }
+
+          // if (d) {
+          //   out << "=====================================\n";
+          //   dumper->dumpLocation(last_expansion_loc);
+          //   out << ' ';
+          //   dumper->dumpLocation(d->get_location());
+          //   out << '\n';
+          //   out << '\n';
+          // }
 
           assert(!d && "All expanded_decls are visited");
         }

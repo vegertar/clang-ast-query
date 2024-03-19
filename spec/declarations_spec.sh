@@ -157,7 +157,7 @@ Context
       echo $((a-b))
     }
 
-    It "queries the typedef $1"
+    It "compares the decl $1"
       When call query "$2" "$3" "$4" "$5"
       The output should eq 0
     End
