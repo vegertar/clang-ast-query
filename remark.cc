@@ -165,7 +165,10 @@ private:
 class ast_consumer final : public ASTConsumer {
 public:
   ast_consumer(std::unique_ptr<raw_line_ostream> os, Preprocessor &pp)
-      : out(*os), pp(pp), os(std::move(os)), visitor(*this) {}
+      : out(*os), pp(pp), os(std::move(os)), visitor(*this),
+        last_macro_expansion(0, 0), dir(0) {
+    directive_nodes.emplace_back();
+  }
 
 protected:
   void Initialize(ASTContext &context) override {
@@ -175,6 +178,7 @@ protected:
   }
 
   void HandleTranslationUnit(ASTContext &ctx) override {
+    dump_macro_expansion();
     auto &sm = ctx.getSourceManager();
     const auto file = sm.getFileEntryRefForID(sm.getMainFileID());
     const auto &filename = file->getName();
@@ -332,36 +336,23 @@ private:
     explicit pp_callback(ast_consumer &ast) : ast(ast) {}
 
     void MacroDefined(const Token &token, const MacroDirective *md) override {
-      ast.dumper->AddChild([&token, md, this] {
-        auto &out = ast.out;
-        auto &dumper = ast.dumper;
-
-        ast.dump_kind(md->getKind());
-        out << "Directive";
-        dumper->dumpPointer(md);
-        if (auto prev = md->getPrevious()) {
-          out << " prev";
-          dumper->dumpPointer(prev);
-        }
-        out << ' ';
-        dumper->dumpLocation(md->getLocation());
-        out << ' ';
-        out << token.getIdentifierInfo()->getName();
-        dumper->AddChild([=, this] { ast.dump_macro(md->getMacroInfo()); });
-      });
+      ast.directives.emplace_back(directive_def{token.getIdentifierInfo(), md});
+      ast.add_directive();
     }
 
     void MacroExpands(const Token &token, const MacroDefinition &def,
                       SourceRange range, const MacroArgs *args) override {
-      int parent =
-          ast.expanding_stack.empty() ? -1 : ast.expanding_stack.back();
-      unsigned remote = ast.macros.size();
-      ast.macros.emplace_back(token, def.getMacroInfo(), range, parent, remote);
-      ast.expanding_stack.push_back(remote);
+      auto &expanding_stack = ast.expanding_stack;
+      auto &macros = ast.macros;
+
+      int parent = expanding_stack.empty() ? -1 : expanding_stack.back();
+      unsigned remote = macros.size();
+      macros.emplace_back(token, def.getMacroInfo(), range, parent, remote);
+      expanding_stack.push_back(remote);
 
       // Update remote field up to the root
       while (parent != -1) {
-        auto &macro = ast.macros[parent];
+        auto &macro = macros[parent];
         macro.remote = remote;
         parent = macro.parent;
       }
@@ -377,18 +368,86 @@ private:
 
     void If(SourceLocation loc, SourceRange range,
             ConditionValueKind value) override {
-      on_if(loc, range, value, {});
+      ast.directives.emplace_back(directive_if{loc, range, value});
+      add_if_directive();
     }
 
     void Elif(SourceLocation loc, SourceRange range, ConditionValueKind value,
               SourceLocation if_loc) override {
-      on_if(loc, range, value, if_loc);
+      lift_if_directive(if_loc);
+      ast.directives.emplace_back(directive_elif{loc, range, value, if_loc});
+      add_if_directive();
     }
 
+    void Else(SourceLocation loc, SourceLocation if_loc) override {
+      lift_if_directive(if_loc);
+      ast.directives.emplace_back(directive_else{loc, if_loc});
+      add_if_directive();
+    }
+
+    void Endif(SourceLocation loc, SourceLocation if_loc) override {
+      lift_if_directive(if_loc);
+      ast.directives.emplace_back(directive_endif{loc, if_loc});
+      ast.add_directive();
+    }
+
+    void Ifdef(SourceLocation loc, const Token &token,
+               const MacroDefinition &md) override {}
+
   private:
-    void on_if(SourceLocation loc, SourceRange range, ConditionValueKind value,
-               SourceLocation if_loc) {
-      ast.dump_macro_expansion();
+    void lift_if_directive(SourceLocation if_loc) {
+      std::visit(
+          [if_loc, this](auto &&arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, directive_if>) {
+              // assert(arg.loc == if_loc);
+              if (!(arg.loc == if_loc)) {
+                ast.out << "======== #if ===========\n";
+                ast.dumper->dumpLocation(arg.loc);
+                ast.out << ' ';
+                ast.dumper->dumpLocation(if_loc);
+                ast.out << '\n';
+              }
+            } else if constexpr (std::is_same_v<T, directive_elif>) {
+              // assert(arg.if_loc == if_loc);
+              if (!(arg.if_loc == if_loc)) {
+                ast.out << "========== #elif ==============\n";
+                ast.dumper->dumpLocation(arg.if_loc);
+                ast.out << ' ';
+                ast.dumper->dumpLocation(if_loc);
+                ast.out << '\n';
+              }
+            } else if constexpr (std::is_same_v<T, directive_else>) {
+              // assert(arg.if_loc == if_loc);
+              if (!(arg.if_loc == if_loc)) {
+                ast.out << "========== #else ==============\n";
+                ast.dumper->dumpLocation(arg.if_loc);
+                ast.out << ' ';
+                ast.dumper->dumpLocation(if_loc);
+                ast.out << '\n';
+              }
+            } else if constexpr (std::is_same_v<T, directive_endif>) {
+              // assert(arg.if_loc == if_loc);
+              if (!(arg.if_loc == if_loc)) {
+                ast.out << "========== #endif ==============\n";
+                ast.dumper->dumpLocation(arg.if_loc);
+                ast.out << ' ';
+                ast.dumper->dumpLocation(if_loc);
+                ast.out << '\n';
+              }
+            } else {
+              assert("Never reach here");
+            }
+          },
+          ast.directives[ast.directive_nodes[ast.dir].i]);
+
+      ast.dir = ast.directive_nodes[ast.dir].parent;
+    }
+
+    void add_if_directive() {
+      ast.add_directive();
+      ast.dir = ast.directive_nodes[ast.dir].children.back();
+      ast.make_macro_expansion();
     }
 
     ast_consumer &ast;
@@ -407,6 +466,49 @@ private:
     unsigned i;
     bool token;
     llvm::SmallVector<macro_full_expansion_node *, 4> children;
+  };
+
+  struct directive_def {
+    const IdentifierInfo *id;
+    const MacroDirective *md;
+  };
+
+  struct directive_if {
+    SourceLocation loc;
+    SourceRange range;
+    pp_callback::ConditionValueKind value;
+  };
+
+  struct directive_elif {
+    SourceLocation loc;
+    SourceRange range;
+    pp_callback::ConditionValueKind value;
+    SourceLocation if_loc;
+  };
+
+  struct directive_else {
+    SourceLocation loc;
+    SourceLocation if_loc;
+  };
+
+  struct directive_endif {
+    SourceLocation loc;
+    SourceLocation if_loc;
+  };
+
+  struct directive_macro {
+    macro_full_expansion_node root;
+    std::vector<macro_full_expansion_node> pool;
+
+    directive_macro() = default;
+    directive_macro(directive_macro &&) = default;
+    directive_macro(const directive_macro &) = delete;
+  };
+
+  struct directive_node {
+    unsigned i;      // index of directives
+    unsigned parent; // index of directive_nodes
+    llvm::SmallVector<unsigned, 4> children;
   };
 
   void dump_kind(MacroDirective::Kind kind) const {
@@ -480,7 +582,7 @@ private:
 
     auto loc = token.getLocation();
     if (loc.isFileID()) {
-      dump_macro_expansion();
+      make_macro_expansion();
     } else {
       // The fast-expanded token is expanded at the parent macro, in this case
       // the expanding_stack will be empty in advance.
@@ -497,6 +599,91 @@ private:
     default:
       return false;
     }
+  }
+
+  void dump_macro_expansion() {
+    dumper->AddChild([this] {
+      out << "Preprocessor";
+      dumper->dumpPointer(&pp);
+      for (auto child : directive_nodes.front().children) {
+        dump_macro_expansion(directive_nodes[child]);
+      }
+    });
+  }
+
+  void dump_macro_expansion(const directive_node &node) {
+    dumper->AddChild([=, this] {
+      std::visit(
+          [this](auto &&arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, directive_def>) {
+              auto md = arg.md;
+              dump_kind(md->getKind());
+              out << "Directive";
+              dumper->dumpPointer(md);
+              if (auto prev = md->getPrevious()) {
+                out << " prev";
+                dumper->dumpPointer(prev);
+              }
+              out << ' ';
+              dumper->dumpLocation(md->getLocation());
+              out << ' ';
+              out << arg.id->getName();
+              dumper->AddChild([md, this] { dump_macro(md->getMacroInfo()); });
+            } else if constexpr (std::is_same_v<T, directive_if>) {
+              out << "IfDirective";
+              dumper->dumpSourceRange(arg.range);
+              out << ' ';
+              dumper->dumpLocation(arg.loc);
+              out << ' ';
+              switch (arg.value) {
+              case pp_callback::CVK_NotEvaluated:
+                out << "NotEvaluated";
+                break;
+              case pp_callback::CVK_False:
+                out << "False";
+                break;
+              case pp_callback::CVK_True:
+                out << "True";
+                break;
+              }
+            } else if constexpr (std::is_same_v<T, directive_elif>) {
+              out << "ElifDirective";
+              dumper->dumpSourceRange(arg.range);
+              out << ' ';
+              dumper->dumpLocation(arg.loc);
+              out << ' ';
+              switch (arg.value) {
+              case pp_callback::CVK_NotEvaluated:
+                out << "NotEvaluated";
+                break;
+              case pp_callback::CVK_False:
+                out << "False";
+                break;
+              case pp_callback::CVK_True:
+                out << "True";
+                break;
+              }
+            } else if constexpr (std::is_same_v<T, directive_else>) {
+              out << "ElseDirective";
+              dumper->dumpSourceRange({arg.loc, arg.if_loc});
+            } else if constexpr (std::is_same_v<T, directive_endif>) {
+              out << "EndifDirective";
+              dumper->dumpSourceRange({arg.loc, arg.if_loc});
+            } else if constexpr (std::is_same_v<T, directive_macro>) {
+              for (auto &item : arg.root.children) {
+                dump_macro_expansion(*item);
+              }
+            } else {
+              assert("Never reach here");
+            }
+          },
+          directives[node.i]);
+
+      for (auto child : node.children) {
+        dump_macro_expansion(directive_nodes[child]);
+      }
+    });
   }
 
   void dump_token_expansion() {
@@ -585,40 +772,51 @@ private:
     }
 
     out << "## tokens(total/indexable/indexed):" << tokens.size() << '/'
-        << indexable_tokens << '(' << (indexable_tokens * 100 / tokens.size())
-        << "%)/" << indexed_tokens << '('
-        << (indexed_tokens * 100 / indexable_tokens) << "%)\n";
+        << indexable_tokens;
+    if (indexable_tokens)
+      out << '(' << (indexable_tokens * 100 / tokens.size()) << "%)";
+    out << '/' << indexed_tokens;
+    if (indexed_tokens)
+      out << '(' << (indexed_tokens * 100 / indexable_tokens) << "%)";
+    out << '\n';
   }
 
-  void dump_macro_expansion() {
+  void add_directive() {
+    directive_nodes.emplace_back(directives.size() - 1, dir);
+    directive_nodes[dir].children.emplace_back(directive_nodes.size() - 1);
+  }
+
+  void make_macro_expansion() {
     assert(expanding_stack.empty());
 
-    unsigned k = 0;
-    macro_full_expansion_node root;
-    std::vector<macro_full_expansion_node> pool;
-    pool.reserve(expansions.size() + macros.size());
+    unsigned k = last_macro_expansion.second;
+    directive_macro m;
+    m.pool.reserve(macros.size() - last_macro_expansion.first +
+                   expansions.size() - last_macro_expansion.second);
 
-    index_macro();
-    make_macro_full_expansion(0, macros.size(), k, root, pool);
-    assert(pool.size() == expansions.size() + macros.size());
-    for (auto &item : root.children) {
-      dump_macro_expansion(*item);
+    index_macro(last_macro_expansion.first, macros.size());
+    make_macro_full_expansion(-1, last_macro_expansion.first, macros.size(), k,
+                              m.root, m.pool);
+    assert(m.pool.size() == macros.size() - last_macro_expansion.first +
+                                expansions.size() -
+                                last_macro_expansion.second);
+
+    if (!m.pool.empty()) {
+      directives.emplace_back(std::move(m));
+      last_macro_expansion.first = macros.size();
+      last_macro_expansion.second = expansions.size();
+      add_directive();
     }
-
-    expansions.clear();
-    macros.clear();
   }
 
-  void make_macro_full_expansion(unsigned begin, unsigned end, unsigned &k,
-                                 macro_full_expansion_node &host,
+  void make_macro_full_expansion(int parent, unsigned begin, unsigned end,
+                                 unsigned &k, macro_full_expansion_node &host,
                                  std::vector<macro_full_expansion_node> &pool) {
-    int parent = begin - 1;
-
     for (auto i = begin; i < end; ++i) {
       make_macro_full_expansion_token(parent, k, host, pool);
       auto &node = pool.emplace_back(i, false);
       host.children.emplace_back(&node);
-      make_macro_full_expansion(i + 1, macros[i].remote + 1, k, node, pool);
+      make_macro_full_expansion(i, i + 1, macros[i].remote + 1, k, node, pool);
       i = macros[i].remote;
     }
 
@@ -636,17 +834,15 @@ private:
   }
 
   void dump_macro_expansion(const macro_full_expansion_node &node) {
-    dumper->AddChild([&, this] {
-      if (node.token)
-        dump_token(expansions[node.i].second,
-                   macros[expansions[node.i].first].info);
-      else
-        dump_macro_expansion(macros[node.i]);
+    if (node.token)
+      dump_token(expansions[node.i].second,
+                 macros[expansions[node.i].first].info);
+    else
+      dump_macro_expansion(macros[node.i]);
 
-      for (auto &item : node.children) {
-        dump_macro_expansion(*item);
-      }
-    });
+    for (auto &item : node.children) {
+      dumper->AddChild([&, this] { dump_macro_expansion(*item); });
+    }
   }
 
   void dump_macro_expansion(const macro_expansion_node &macro) {
@@ -706,8 +902,9 @@ private:
     return nullptr;
   }
 
-  void index_macro() {
-    for (auto &macro : macros) {
+  void index_macro(unsigned begin, unsigned end) {
+    while (begin < end) {
+      auto &macro = macros[begin++];
       auto end_loc = macro.info->getDefinitionEndLoc();
       if (end_loc.isValid())
         index(end_loc, index_value_t(macro.info));
@@ -808,8 +1005,14 @@ private:
   ast_visitor visitor;
   std::optional<TextNodeDumper> dumper;
   llvm::SmallVector<unsigned, 8> expanding_stack;
-  llvm::SmallVector<macro_expansion_node, 8> macros;
-  llvm::SmallVector<std::pair<unsigned, Token>, 32> expansions;
+  std::vector<macro_expansion_node> macros;
+  std::vector<std::pair<unsigned, Token>> expansions;
+  std::pair<unsigned, unsigned> last_macro_expansion;
+  std::vector<std::variant<directive_def, directive_if, directive_elif,
+                           directive_else, directive_endif, directive_macro>>
+      directives;
+  unsigned dir;
+  std::vector<directive_node> directive_nodes;
   llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
   std::vector<syntax::Token> tokens;
 }; // namespace
