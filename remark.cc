@@ -187,6 +187,20 @@ protected:
     out << "#TU:" << filename << '\n';
     out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
 
+    // Dump all root macro expansion ranges to make their locations indexable.
+    for (auto &macro : macros) {
+      if (macro.parent == -1) {
+        SourceLocation loc = sm.getExpansionLoc(macro.token.getLocation());
+        SourceLocation end =
+            macro.range.getBegin() == macro.range.getEnd()
+                ? loc.getLocWithOffset(macro.token.getLength())
+                : sm.getExpansionLoc(macro.range.getEnd()).getLocWithOffset(1);
+        out << "#LOC-EXP:";
+        dumper->dumpSourceRange({loc, end});
+        out << '\n';
+      }
+    }
+
     visitor.TraverseDecl(ctx.getTranslationUnitDecl());
     dump_token_expansion();
   }
@@ -464,7 +478,7 @@ private:
     void add_if_directive() {
       ast.add_directive();
       ast.dir = ast.directive_nodes[ast.dir].children.back();
-      ast.make_macro_expansion();
+      ast.add_macro_directive();
     }
 
     ast_consumer &ast;
@@ -635,7 +649,7 @@ private:
 
     auto loc = token.getLocation();
     if (loc.isFileID()) {
-      make_macro_expansion();
+      add_macro_directive();
     } else {
       // The fast-expanded token is expanded at the parent macro, in this case
       // the expanding_stack will be empty in advance.
@@ -756,7 +770,7 @@ private:
             } else if constexpr (std::is_same_v<T, pseudo_directive_macro>) {
               out << "PseudoMacroDirective 0x0";
               for (auto child : arg.root.children) {
-                dump_full_macro_expansion(*child);
+                dump_macro_full_expansion(*child);
               }
             } else {
               assert("Never reach here");
@@ -872,7 +886,7 @@ private:
     directive_nodes[dir].children.emplace_back(directive_nodes.size() - 1);
   }
 
-  void make_macro_expansion() {
+  void add_macro_directive() {
     assert(expanding_stack.empty());
 
     unsigned k = last_macro_expansion.second;
@@ -919,7 +933,7 @@ private:
     }
   }
 
-  void dump_full_macro_expansion(const macro_full_expansion_node &node) {
+  void dump_macro_full_expansion(const macro_full_expansion_node &node) {
     dumper->AddChild([&, this] {
       if (node.token)
         dump_token(expansions[node.i].second,
@@ -928,7 +942,7 @@ private:
         dump_macro_expansion(macros[node.i]);
 
       for (auto child : node.children) {
-        dump_full_macro_expansion(*child);
+        dump_macro_full_expansion(*child);
       }
     });
   }

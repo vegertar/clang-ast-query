@@ -87,6 +87,7 @@ static int err;
 
 static void dump_src();
 static void dump_ast();
+static void dump_loc();
 static void dump_tok();
 
 static void exec_sql(const char *s) {
@@ -194,6 +195,7 @@ int dump(const char *db_file) {
 
   dump_src();
   dump_ast();
+  dump_loc();
   dump_tok();
 
   exec_sql("END TRANSACTION");
@@ -407,6 +409,37 @@ static void dump_src() {
   }
 }
 
+static void dump_loc() {
+  exec_sql("CREATE TABLE loc ("
+           " begin_src INTEGER,"
+           " begin_row INTEGER,"
+           " begin_col INTEGER,"
+           " end_src INTEGER,"
+           " end_row INTEGER,"
+           " end_col INTEGER)");
+
+  for (unsigned i = 0; i < loc_exp_set.i; ++i) {
+    struct srange *srange = &loc_exp_set.data[i];
+    int begin_src = src_number(srange->begin.file);
+    int end_src = src_number(srange->end.file);
+
+#ifndef VALUES6
+#define VALUES6() "?,?,?,?,?,?"
+#endif // !VALUES6
+
+    INSERT_INTO(loc, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
+                END_COL) {
+      FILL_INT(BEGIN_SRC, begin_src);
+      FILL_INT(BEGIN_ROW, srange->begin.line);
+      FILL_INT(BEGIN_COL, srange->begin.col);
+      FILL_INT(END_SRC, end_src);
+      FILL_INT(END_ROW, srange->end.line);
+      FILL_INT(END_COL, srange->end.col);
+    }
+    END_INSERT_INTO();
+  }
+}
+
 static void dump_tok() {
   exec_sql("CREATE TABLE tok ("
            " src INTEGER,"
@@ -422,7 +455,7 @@ static void dump_tok() {
 
 #ifndef VALUES5
 #define VALUES5() "?,?,?,?,?"
-#endif // !VALUES4
+#endif // !VALUES5
 
     INSERT_INTO(tok, SRC, BEGIN_ROW, BEGIN_COL, OFFSET, DECL) {
       FILL_INT(SRC, src);

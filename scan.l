@@ -97,6 +97,10 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return TOK_REMARK_CWD;
 }
 
+^"#LOC-EXP:" {
+  return TOK_REMARK_LOC_EXP;
+}
+
 ^"#TOK-DECL:" {
   return TOK_REMARK_TOK_DECL;
 }

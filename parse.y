@@ -178,6 +178,8 @@
 
   DECL_ARRAY(src_set, struct src);
 
+  DECL_ARRAY(loc_exp_set, struct srange);
+
   struct tok {
     struct sloc loc;
     unsigned offset;
@@ -212,6 +214,7 @@
 
   extern struct ast ast;
   extern struct src_set src_set;
+  extern struct loc_exp_set loc_exp_set;
   extern struct tok_decl_set tok_decl_set;
 
   #ifndef PATH_MAX
@@ -242,6 +245,7 @@
 
   struct ast ast;
   struct src_set src_set;
+  struct loc_exp_set loc_exp_set;
   struct tok_decl_set tok_decl_set;
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
@@ -264,6 +268,9 @@
   static DECL_METHOD(ast, clear, int);
 
   static DECL_METHOD(src_set, clear, int);
+
+  static DECL_METHOD(loc_exp_set, push, struct srange);
+  static DECL_METHOD(loc_exp_set, clear, int);
 
   static DECL_METHOD(tok_decl_set, push, struct tok_decl_pair);
   static DECL_METHOD(tok_decl_set, clear, int);
@@ -336,6 +343,7 @@
     FIELD
     REMARK
     REMARK_TOK_DECL
+    REMARK_LOC_EXP
   <integer>
     INDENT
   <string>
@@ -463,7 +471,12 @@ node: HEAD parent prev range loc attrs labels decl opts
     };
   }
 
-remark: REMARK | REMARK_TU | REMARK_CWD | remark_tok_decl
+remark: REMARK | REMARK_TU | REMARK_CWD | remark_loc_exp | remark_tok_decl
+
+remark_loc_exp: REMARK_LOC_EXP '<' srange '>'
+  {
+    loc_exp_set_push(&loc_exp_set, $3);
+  }
 
 remark_tok_decl: REMARK_TOK_DECL tok POINTER
   {
@@ -850,6 +863,22 @@ const char * add_src(const char *filename) {
   return src_set.data[i].filename;
 }
 
+static void sloc_destroy(struct sloc *sloc) {
+  // the sloc->file is owned by the global src_set
+}
+
+static void srange_destroy(struct srange *srange) {
+  sloc_destroy(&srange->begin);
+  sloc_destroy(&srange->end);
+}
+
+static void free_loc_exp(void *p) {
+  srange_destroy((struct srange *)p);
+}
+
+static IMPL_ARRAY_PUSH(loc_exp_set, struct srange);
+static IMPL_ARRAY_CLEAR(loc_exp_set, free_loc_exp);
+
 static void free_tok_decl(void *p) {
   struct tok_decl_pair *pair = (struct tok_decl_pair *)p;
   free((void *)pair->decl);
@@ -861,6 +890,7 @@ static IMPL_ARRAY_CLEAR(tok_decl_set, free_tok_decl);
 void destroy() {
   ast_clear(&ast, 1);
   src_set_clear(&src_set, 1);
+  loc_exp_set_clear(&loc_exp_set, 1);
   tok_decl_set_clear(&tok_decl_set, 1);
 }
 
@@ -872,15 +902,6 @@ static char *get_pointer(char *s) {
   assert(delim);
   *delim = 0;
   return delim + 1;
-}
-
-static void sloc_destroy(struct sloc *sloc) {
-  // the sloc->file is owned by the global src_set
-}
-
-static void srange_destroy(struct srange *srange) {
-  sloc_destroy(&srange->begin);
-  sloc_destroy(&srange->end);
 }
 
 static void type_destroy(struct type *type) {
