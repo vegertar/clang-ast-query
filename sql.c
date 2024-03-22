@@ -393,12 +393,10 @@ static void dump_src() {
   size_t cwd_len = strlen(cwd);
   for (unsigned i = 0; i < src_set.i; ++i) {
     const char *filename = src_set.data[i].filename;
-    if (is_internal_file(filename)) {
-      continue;
-    }
-
     const int number = src_set.data[i].number;
-    const char *fullpath = expand_path(cwd, cwd_len, filename, buffer);
+    const char *fullpath = is_internal_file(filename)
+                               ? filename
+                               : expand_path(cwd, cwd_len, filename, buffer);
     if_prepared_stmt("INSERT INTO src (filename, number)"
                      " VALUES (?, ?)") {
       BIND_TEXT(1, fullpath,
