@@ -178,7 +178,7 @@ protected:
   }
 
   void HandleTranslationUnit(ASTContext &ctx) override {
-    dump_macro_expansion();
+    dump_preprocessor_directives();
     auto &sm = ctx.getSourceManager();
     const auto file = sm.getFileEntryRefForID(sm.getMainFileID());
     const auto &filename = file->getName();
@@ -392,7 +392,49 @@ private:
     }
 
     void Ifdef(SourceLocation loc, const Token &token,
-               const MacroDefinition &md) override {}
+               const MacroDefinition &md) override {
+      ast.directives.emplace_back(
+          directive_ifdef{loc, token.getIdentifierInfo(), md.getMacroInfo()});
+      add_if_directive();
+    }
+
+    void Ifndef(SourceLocation loc, const Token &token,
+                const MacroDefinition &md) override {
+      ast.directives.emplace_back(
+          directive_ifndef{loc, token.getIdentifierInfo(), md.getMacroInfo()});
+      add_if_directive();
+    }
+
+    void Elifdef(SourceLocation loc, const Token &token,
+                 const MacroDefinition &md) override {
+      ast.lift_directive();
+      ast.directives.emplace_back(directive_elifdef_taken{
+          loc, token.getIdentifierInfo(), md.getMacroInfo()});
+      add_if_directive();
+    }
+
+    void Elifdef(SourceLocation loc, SourceRange range,
+                 SourceLocation if_loc) override {
+      lift_if_directive(if_loc);
+      ast.directives.emplace_back(directive_elifdef_skiped{loc, range, if_loc});
+      add_if_directive();
+    }
+
+    void Elifndef(SourceLocation loc, const Token &token,
+                  const MacroDefinition &md) override {
+      ast.lift_directive();
+      ast.directives.emplace_back(directive_elifndef_taken{
+          loc, token.getIdentifierInfo(), md.getMacroInfo()});
+      add_if_directive();
+    }
+
+    void Elifndef(SourceLocation loc, SourceRange range,
+                  SourceLocation if_loc) override {
+      lift_if_directive(if_loc);
+      ast.directives.emplace_back(
+          directive_elifndef_skiped{loc, range, if_loc});
+      add_if_directive();
+    }
 
   private:
     void lift_if_directive(SourceLocation if_loc) {
@@ -400,48 +442,23 @@ private:
           [if_loc, this](auto &&arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, directive_if>) {
-              // assert(arg.loc == if_loc);
-              if (!(arg.loc == if_loc)) {
-                ast.out << "======== #if ===========\n";
-                ast.dumper->dumpLocation(arg.loc);
-                ast.out << ' ';
-                ast.dumper->dumpLocation(if_loc);
-                ast.out << '\n';
-              }
+              assert(arg.loc == if_loc);
             } else if constexpr (std::is_same_v<T, directive_elif>) {
-              // assert(arg.if_loc == if_loc);
-              if (!(arg.if_loc == if_loc)) {
-                ast.out << "========== #elif ==============\n";
-                ast.dumper->dumpLocation(arg.if_loc);
-                ast.out << ' ';
-                ast.dumper->dumpLocation(if_loc);
-                ast.out << '\n';
-              }
+              assert(arg.if_loc == if_loc);
             } else if constexpr (std::is_same_v<T, directive_else>) {
-              // assert(arg.if_loc == if_loc);
-              if (!(arg.if_loc == if_loc)) {
-                ast.out << "========== #else ==============\n";
-                ast.dumper->dumpLocation(arg.if_loc);
-                ast.out << ' ';
-                ast.dumper->dumpLocation(if_loc);
-                ast.out << '\n';
-              }
+              assert(arg.if_loc == if_loc);
             } else if constexpr (std::is_same_v<T, directive_endif>) {
-              // assert(arg.if_loc == if_loc);
-              if (!(arg.if_loc == if_loc)) {
-                ast.out << "========== #endif ==============\n";
-                ast.dumper->dumpLocation(arg.if_loc);
-                ast.out << ' ';
-                ast.dumper->dumpLocation(if_loc);
-                ast.out << '\n';
-              }
+              assert(arg.if_loc == if_loc);
+            } else if constexpr (std::is_same_v<T, directive_elifdef_skiped>) {
+              assert(arg.if_loc == if_loc);
+            } else if constexpr (std::is_same_v<T, directive_elifndef_skiped>) {
+              assert(arg.if_loc == if_loc);
             } else {
               assert("Never reach here");
             }
           },
           ast.directives[ast.directive_nodes[ast.dir].i]);
-
-      ast.dir = ast.directive_nodes[ast.dir].parent;
+      ast.lift_directive();
     }
 
     void add_if_directive() {
@@ -496,13 +513,49 @@ private:
     SourceLocation if_loc;
   };
 
-  struct directive_macro {
+  struct directive_ifdef {
+    SourceLocation loc;
+    const IdentifierInfo *id;
+    const MacroInfo *mi;
+  };
+
+  struct directive_ifndef {
+    SourceLocation loc;
+    const IdentifierInfo *id;
+    const MacroInfo *mi;
+  };
+
+  struct directive_elifdef_taken {
+    SourceLocation loc;
+    const IdentifierInfo *id;
+    const MacroInfo *mi;
+  };
+
+  struct directive_elifdef_skiped {
+    SourceLocation loc;
+    SourceRange range;
+    SourceLocation if_loc;
+  };
+
+  struct directive_elifndef_taken {
+    SourceLocation loc;
+    const IdentifierInfo *id;
+    const MacroInfo *mi;
+  };
+
+  struct directive_elifndef_skiped {
+    SourceLocation loc;
+    SourceRange range;
+    SourceLocation if_loc;
+  };
+
+  struct pseudo_directive_macro {
     macro_full_expansion_node root;
     std::vector<macro_full_expansion_node> pool;
 
-    directive_macro() = default;
-    directive_macro(directive_macro &&) = default;
-    directive_macro(const directive_macro &) = delete;
+    pseudo_directive_macro() = default;
+    pseudo_directive_macro(pseudo_directive_macro &&) = default;
+    pseudo_directive_macro(const pseudo_directive_macro &) = delete;
   };
 
   struct directive_node {
@@ -601,17 +654,17 @@ private:
     }
   }
 
-  void dump_macro_expansion() {
+  void dump_preprocessor_directives() {
     dumper->AddChild([this] {
       out << "Preprocessor";
       dumper->dumpPointer(&pp);
       for (auto child : directive_nodes.front().children) {
-        dump_macro_expansion(directive_nodes[child]);
+        dump_directive(directive_nodes[child]);
       }
     });
   }
 
-  void dump_macro_expansion(const directive_node &node) {
+  void dump_directive(const directive_node &node) {
     dumper->AddChild([=, this] {
       std::visit(
           [this](auto &&arg) {
@@ -630,25 +683,17 @@ private:
               out << ' ';
               out << arg.id->getName();
               dumper->AddChild([md, this] { dump_macro(md->getMacroInfo()); });
-            } else if constexpr (std::is_same_v<T, directive_if>) {
-              out << "IfDirective";
-              dumper->dumpSourceRange(arg.range);
-              out << ' ';
-              dumper->dumpLocation(arg.loc);
-              out << ' ';
-              switch (arg.value) {
-              case pp_callback::CVK_NotEvaluated:
-                out << "NotEvaluated";
-                break;
-              case pp_callback::CVK_False:
-                out << "False";
-                break;
-              case pp_callback::CVK_True:
-                out << "True";
-                break;
-              }
-            } else if constexpr (std::is_same_v<T, directive_elif>) {
-              out << "ElifDirective";
+            } else if constexpr (std::is_same_v<T, directive_if> ||
+                                 std::is_same_v<T, directive_elif>) {
+              if constexpr (std::is_same_v<T, directive_if>)
+                out << "IfDirective";
+              else if constexpr (std::is_same_v<T, directive_elif>)
+                out << "ElifDirective";
+              else
+                assert("Never reach here");
+
+              // Use a null pointer to compatible with the scanner.
+              out << " 0x0";
               dumper->dumpSourceRange(arg.range);
               out << ' ';
               dumper->dumpLocation(arg.loc);
@@ -665,14 +710,53 @@ private:
                 break;
               }
             } else if constexpr (std::is_same_v<T, directive_else>) {
-              out << "ElseDirective";
+              out << "ElseDirective 0x0";
               dumper->dumpSourceRange({arg.loc, arg.if_loc});
             } else if constexpr (std::is_same_v<T, directive_endif>) {
-              out << "EndifDirective";
+              out << "EndifDirective 0x0";
               dumper->dumpSourceRange({arg.loc, arg.if_loc});
-            } else if constexpr (std::is_same_v<T, directive_macro>) {
-              for (auto &item : arg.root.children) {
-                dump_macro_expansion(*item);
+            } else if constexpr (std::is_same_v<T, directive_ifdef> ||
+                                 std::is_same_v<T, directive_elifdef_taken> ||
+                                 std::is_same_v<T, directive_ifndef> ||
+                                 std::is_same_v<T, directive_elifndef_taken>) {
+              if constexpr (std::is_same_v<T, directive_ifdef>)
+                out << "IfdefDirective";
+              else if constexpr (std::is_same_v<T, directive_elifdef_taken>)
+                out << "ElifdefDirective";
+              else if constexpr (std::is_same_v<T, directive_ifndef>)
+                out << "IfndefDirective";
+              else if constexpr (std::is_same_v<T, directive_elifndef_taken>)
+                out << "ElifndefDirective";
+              else
+                assert("Never reach here");
+
+              // Use a null pointer to compatible with the scanner.
+              out << " 0x0 ";
+              dumper->dumpLocation(arg.loc);
+              out << ' ' << arg.id->getName();
+              auto mi = arg.mi;
+              dumper->AddChild([mi, this] {
+                out << "MacroInfo";
+                dumper->dumpPointer(mi);
+              });
+            } else if constexpr (std::is_same_v<T, directive_elifdef_skiped> ||
+                                 std::is_same_v<T, directive_elifndef_skiped>) {
+              if constexpr (std::is_same_v<T, directive_elifdef_skiped>)
+                out << "ElifdefDirective";
+              else if constexpr (std::is_same_v<T, directive_elifndef_skiped>)
+                out << "ElifndefDirective";
+              else
+                assert("Never reach here");
+
+              // Use a null pointer to compatible with the scanner.
+              out << " 0x0";
+              dumper->dumpSourceRange(arg.range);
+              out << ' ';
+              dumper->dumpLocation(arg.loc);
+            } else if constexpr (std::is_same_v<T, pseudo_directive_macro>) {
+              out << "PseudoMacroDirective 0x0";
+              for (auto child : arg.root.children) {
+                dump_full_macro_expansion(*child);
               }
             } else {
               assert("Never reach here");
@@ -681,7 +765,7 @@ private:
           directives[node.i]);
 
       for (auto child : node.children) {
-        dump_macro_expansion(directive_nodes[child]);
+        dump_directive(directive_nodes[child]);
       }
     });
   }
@@ -781,6 +865,8 @@ private:
     out << '\n';
   }
 
+  void lift_directive() { dir = directive_nodes[dir].parent; }
+
   void add_directive() {
     directive_nodes.emplace_back(directives.size() - 1, dir);
     directive_nodes[dir].children.emplace_back(directive_nodes.size() - 1);
@@ -790,7 +876,7 @@ private:
     assert(expanding_stack.empty());
 
     unsigned k = last_macro_expansion.second;
-    directive_macro m;
+    pseudo_directive_macro m;
     m.pool.reserve(macros.size() - last_macro_expansion.first +
                    expansions.size() - last_macro_expansion.second);
 
@@ -833,16 +919,18 @@ private:
     }
   }
 
-  void dump_macro_expansion(const macro_full_expansion_node &node) {
-    if (node.token)
-      dump_token(expansions[node.i].second,
-                 macros[expansions[node.i].first].info);
-    else
-      dump_macro_expansion(macros[node.i]);
+  void dump_full_macro_expansion(const macro_full_expansion_node &node) {
+    dumper->AddChild([&, this] {
+      if (node.token)
+        dump_token(expansions[node.i].second,
+                   macros[expansions[node.i].first].info);
+      else
+        dump_macro_expansion(macros[node.i]);
 
-    for (auto &item : node.children) {
-      dumper->AddChild([&, this] { dump_macro_expansion(*item); });
-    }
+      for (auto child : node.children) {
+        dump_full_macro_expansion(*child);
+      }
+    });
   }
 
   void dump_macro_expansion(const macro_expansion_node &macro) {
@@ -914,8 +1002,11 @@ private:
   }
 
   const MacroInfo *find_macro(SourceLocation loc) const {
-    if (auto v = find(loc)) {
-      return v->get_macro();
+    if (auto v = find(loc); v && v->is_macro()) {
+      auto macro = v->get_macro();
+      if (SourceRange(macro->getDefinitionLoc(), macro->getDefinitionEndLoc())
+              .fullyContains({loc, loc}))
+        return macro;
     }
 
     return nullptr;
@@ -931,12 +1022,8 @@ private:
     if (provider && loc.isMacroID()) {
       auto spelling_loc = sm.getSpellingLoc(loc);
       macro = find_macro(spelling_loc);
-      if (macro) {
-        assert(
-            SourceRange(macro->getDefinitionLoc(), macro->getDefinitionEndLoc())
-                .fullyContains({spelling_loc, spelling_loc}));
-      } else {
-        assert(spelling_loc.isFileID() && sm.isMacroArgExpansion(loc));
+      if (!macro) {
+        assert(sm.isMacroArgExpansion(loc));
         is_arg = true;
       }
     }
@@ -1009,9 +1096,12 @@ private:
   std::vector<std::pair<unsigned, Token>> expansions;
   std::pair<unsigned, unsigned> last_macro_expansion;
   std::vector<std::variant<directive_def, directive_if, directive_elif,
-                           directive_else, directive_endif, directive_macro>>
+                           directive_else, directive_endif, directive_ifdef,
+                           directive_ifndef, directive_elifdef_taken,
+                           directive_elifdef_skiped, directive_elifndef_taken,
+                           directive_elifndef_skiped, pseudo_directive_macro>>
       directives;
-  unsigned dir;
+  unsigned dir; // index of the present directive_node
   std::vector<directive_node> directive_nodes;
   llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
   std::vector<syntax::Token> tokens;
