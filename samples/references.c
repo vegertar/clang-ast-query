@@ -24,7 +24,8 @@ bar[
 n].
 n;
 
-#define N \
+#define \
+ N \
  foo.\
  bar[\
  n-1 + \

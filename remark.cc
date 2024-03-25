@@ -45,6 +45,15 @@ private:
   expanded_decl *prev;
 };
 
+struct macro_expansion {
+  Token token;
+  MacroInfo *info;
+  SourceRange range;
+  int parent;
+  unsigned remote;
+  bool fast;
+};
+
 class index_value_t {
 public:
   explicit index_value_t(const MacroInfo *p) : data((void *)p) {
@@ -63,6 +72,12 @@ public:
     assert(is_expanded_decl() && get_raw() == p);
   }
 
+  explicit index_value_t(const macro_expansion *p) : data((char *)p + 3) {
+    static_assert(alignof(macro_expansion) >= 4 &&
+                  alignof(macro_expansion) % 4 == 0);
+    assert(is_expansion() && get_raw() == p);
+  }
+
   int kind() const { return ((std::uintptr_t)data & mask); }
 
   bool is_macro() const { return kind() == 0; }
@@ -70,6 +85,8 @@ public:
   bool is_decl() const { return kind() == 1; }
 
   bool is_expanded_decl() const { return kind() == 2; }
+
+  bool is_expansion() const { return kind() == 3; }
 
   const MacroInfo *get_macro() const {
     assert(is_macro());
@@ -84,6 +101,11 @@ public:
   expanded_decl *get_expanded_decl() const {
     assert(is_expanded_decl());
     return (expanded_decl *)get_raw();
+  }
+
+  const macro_expansion *get_expansion() const {
+    assert(is_expansion());
+    return (const macro_expansion *)get_raw();
   }
 
   void *get_raw() const { return (void *)((std::uintptr_t)data & ~mask); }
@@ -198,6 +220,10 @@ protected:
         out << "#LOC-EXP:";
         dumper->dumpSourceRange({loc, end});
         out << '\n';
+
+        // Index the macro to be used by #TOK-DECL in
+        // dump_token_expansion().
+        index(end, index_value_t(&macro), true);
       }
     }
 
@@ -485,18 +511,9 @@ private:
   };
 
   struct macro_expansion_node {
-    Token token;
-    MacroInfo *info;
-    SourceRange range;
-    int parent;
-    unsigned remote;
-    bool fast;
-  };
-
-  struct macro_full_expansion_node {
-    unsigned i;
+    unsigned i; // index of macros
     bool token;
-    llvm::SmallVector<macro_full_expansion_node *, 4> children;
+    llvm::SmallVector<macro_expansion_node *, 4> children;
   };
 
   struct directive_def {
@@ -563,13 +580,13 @@ private:
     SourceLocation if_loc;
   };
 
-  struct pseudo_directive_macro {
-    macro_full_expansion_node root;
-    std::vector<macro_full_expansion_node> pool;
+  struct directive_expansion {
+    macro_expansion_node root;
+    std::vector<macro_expansion_node> pool;
 
-    pseudo_directive_macro() = default;
-    pseudo_directive_macro(pseudo_directive_macro &&) = default;
-    pseudo_directive_macro(const pseudo_directive_macro &) = delete;
+    directive_expansion() = default;
+    directive_expansion(directive_expansion &&) = default;
+    directive_expansion(const directive_expansion &) = delete;
   };
 
   struct directive_node {
@@ -592,12 +609,18 @@ private:
     }
   }
 
-  void dump_macro(const MacroInfo *mi) {
-    out << "MacroInfo";
-    dumper->dumpPointer(mi);
-    dumper->dumpSourceRange(
-        {mi->getDefinitionLoc(), mi->getDefinitionEndLoc()});
+  void dump_macro_ref(const MacroInfo *mi, StringRef name) {
+    if (!mi)
+      return;
 
+    dump_macro_parameters(mi);
+    out << " Macro";
+    dumper->dumpPointer(mi);
+    out << " '" << name << "'";
+    dump_macro_replacement(mi);
+  }
+
+  void dump_macro_parameters(const MacroInfo *mi) {
     out << " '";
     if (mi->isFunctionLike()) {
       out << '(';
@@ -620,7 +643,11 @@ private:
         out << "..."; // foo(x...)
       out << ')';
     }
-    out << "' '";
+    out << "'";
+  }
+
+  void dump_macro_replacement(const MacroInfo *mi) {
+    out << " '";
     out.escape('\'');
     if (!mi->tokens_empty()) {
       auto i = mi->tokens_begin(), e = mi->tokens_end();
@@ -640,6 +667,16 @@ private:
     }
     out.escape(0);
     out << "'";
+  }
+
+  void dump_macro(const MacroInfo *mi) {
+    out << "MacroDecl";
+    dumper->dumpPointer(mi);
+    dumper->dumpSourceRange(
+        {mi->getDefinitionLoc(), mi->getDefinitionEndLoc()});
+
+    dump_macro_parameters(mi);
+    dump_macro_replacement(mi);
   }
 
   void on_token_lexed(const Token &token) {
@@ -706,8 +743,7 @@ private:
               else
                 assert("Never reach here");
 
-              // Use a null pointer to compatible with the scanner.
-              out << " 0x0";
+              dumper->dumpPointer(&arg);
               dumper->dumpSourceRange(arg.range);
               out << ' ';
               dumper->dumpLocation(arg.loc);
@@ -724,10 +760,12 @@ private:
                 break;
               }
             } else if constexpr (std::is_same_v<T, directive_else>) {
-              out << "ElseDirective 0x0";
+              out << "ElseDirective";
+              dumper->dumpPointer(&arg);
               dumper->dumpSourceRange({arg.loc, arg.if_loc});
             } else if constexpr (std::is_same_v<T, directive_endif>) {
-              out << "EndifDirective 0x0";
+              out << "EndifDirective";
+              dumper->dumpPointer(&arg);
               dumper->dumpSourceRange({arg.loc, arg.if_loc});
             } else if constexpr (std::is_same_v<T, directive_ifdef> ||
                                  std::is_same_v<T, directive_elifdef_taken> ||
@@ -744,15 +782,13 @@ private:
               else
                 assert("Never reach here");
 
-              // Use a null pointer to compatible with the scanner.
-              out << " 0x0 ";
+              dumper->dumpPointer(&arg);
+              out << ' ';
               dumper->dumpLocation(arg.loc);
-              out << ' ' << arg.id->getName();
-              auto mi = arg.mi;
-              dumper->AddChild([mi, this] {
-                out << "MacroInfo";
-                dumper->dumpPointer(mi);
-              });
+              if (arg.mi)
+                dump_macro_ref(arg.mi, arg.id->getName());
+              else
+                out << ' ' << arg.id->getName();
             } else if constexpr (std::is_same_v<T, directive_elifdef_skiped> ||
                                  std::is_same_v<T, directive_elifndef_skiped>) {
               if constexpr (std::is_same_v<T, directive_elifdef_skiped>)
@@ -762,15 +798,15 @@ private:
               else
                 assert("Never reach here");
 
-              // Use a null pointer to compatible with the scanner.
-              out << " 0x0";
+              dumper->dumpPointer(&arg);
               dumper->dumpSourceRange(arg.range);
               out << ' ';
               dumper->dumpLocation(arg.loc);
-            } else if constexpr (std::is_same_v<T, pseudo_directive_macro>) {
-              out << "PseudoMacroDirective 0x0";
+            } else if constexpr (std::is_same_v<T, directive_expansion>) {
+              out << "ExpansionDirective";
+              dumper->dumpPointer(&arg);
               for (auto child : arg.root.children) {
-                dump_macro_full_expansion(*child);
+                dump_macro_expansion(*child);
               }
             } else {
               assert("Never reach here");
@@ -801,55 +837,57 @@ private:
         ++indexable_tokens;
 
         if (loc.isFileID()) {
-          auto v = find(loc, true);
+          auto v = find(loc, FIND_OPTION_EQUAL);
 
           out << "#TOK-DECL:";
           dumper->dumpLocation(tokens[i].location());
 
-          if (auto d = v ? v->get_decl() : nullptr) {
+          auto d = v ? v->get_decl() : nullptr;
+          if (d)
             ++indexed_tokens;
-            out << ' ' << d << '\n';
-          } else {
-            out << " 0x0\n";
-          }
+          dumper->dumpPointer(d);
+          out << '\n';
         }
       }
 
       auto expansion_loc = sm.getExpansionLoc(loc);
       if (expansion_loc != last_expansion_loc) {
         if (last_loc.isMacroID()) {
-          auto v = find(last_expansion_loc, true);
+          auto v = find(last_expansion_loc, FIND_OPTION_EQUAL);
           auto d = v ? v->get_expanded_decl() : nullptr;
           unsigned j = i - 1;
-          bool started = false;
 
           while (d && j > index_of_last_expansion_loc) {
             auto &t = tokens[j];
             if (indexable(t)) {
-              if (!started) {
-                started = true;
-                out << "#TOK-DECL:";
-                dumper->dumpLocation(last_expansion_loc);
-                // Starting with zero-offset and NULL decl.
-                out << " 0 0x0\n";
-              }
-
               out << "#TOK-DECL:";
               dumper->dumpLocation(t.location());
-              out << ' ' << j - index_of_last_expansion_loc << ' ';
+              out << ' ' << j - index_of_last_expansion_loc;
 
+              const Decl *p = nullptr;
               if (t.location() == d->get_location()) {
                 ++indexed_tokens;
-                out << d->get_decl() << '\n';
+                p = d->get_decl();
                 auto prev = d->get_previous();
                 delete d;
                 d = prev;
-              } else {
-                out << "0x0\n";
               }
+              dumper->dumpPointer(p);
+              out << '\n';
             }
             --j;
           }
+
+          // Ending with an explicit zero-offset and the macro.
+          out << "#TOK-DECL:";
+          dumper->dumpLocation(last_expansion_loc);
+          out << " 0";
+          // MACRO_FOO(a, b, c, e, f, g);
+          // ^~~expanded_decl           ^~~macro_expansion
+          v = find(last_expansion_loc, FIND_OPTION_UPPER_BOUND);
+          assert(v && v->is_expansion());
+          dumper->dumpPointer(v->get_expansion()->info);
+          out << '\n';
 
           // if (d) {
           //   out << "=====================================\n";
@@ -890,42 +928,42 @@ private:
     assert(expanding_stack.empty());
 
     unsigned k = last_macro_expansion.second;
-    pseudo_directive_macro m;
-    m.pool.reserve(macros.size() - last_macro_expansion.first +
-                   expansions.size() - last_macro_expansion.second);
+    directive_expansion exp;
+    exp.pool.reserve(macros.size() - last_macro_expansion.first +
+                     expansions.size() - last_macro_expansion.second);
 
     index_macro(last_macro_expansion.first, macros.size());
-    make_macro_full_expansion(-1, last_macro_expansion.first, macros.size(), k,
-                              m.root, m.pool);
-    assert(m.pool.size() == macros.size() - last_macro_expansion.first +
-                                expansions.size() -
-                                last_macro_expansion.second);
+    make_macro_expansion(-1, last_macro_expansion.first, macros.size(), k,
+                         exp.root, exp.pool);
+    assert(exp.pool.size() == macros.size() - last_macro_expansion.first +
+                                  expansions.size() -
+                                  last_macro_expansion.second);
 
-    if (!m.pool.empty()) {
-      directives.emplace_back(std::move(m));
+    if (!exp.pool.empty()) {
+      directives.emplace_back(std::move(exp));
       last_macro_expansion.first = macros.size();
       last_macro_expansion.second = expansions.size();
       add_directive();
     }
   }
 
-  void make_macro_full_expansion(int parent, unsigned begin, unsigned end,
-                                 unsigned &k, macro_full_expansion_node &host,
-                                 std::vector<macro_full_expansion_node> &pool) {
+  void make_macro_expansion(int parent, unsigned begin, unsigned end,
+                            unsigned &k, macro_expansion_node &host,
+                            std::vector<macro_expansion_node> &pool) {
     for (auto i = begin; i < end; ++i) {
-      make_macro_full_expansion_token(parent, k, host, pool);
+      make_macro_expansion_token(parent, k, host, pool);
       auto &node = pool.emplace_back(i, false);
       host.children.emplace_back(&node);
-      make_macro_full_expansion(i, i + 1, macros[i].remote + 1, k, node, pool);
+      make_macro_expansion(i, i + 1, macros[i].remote + 1, k, node, pool);
       i = macros[i].remote;
     }
 
-    make_macro_full_expansion_token(parent, k, host, pool);
+    make_macro_expansion_token(parent, k, host, pool);
   }
 
-  void make_macro_full_expansion_token(
-      int at, unsigned &k, macro_full_expansion_node &host,
-      std::vector<macro_full_expansion_node> &pool) {
+  void make_macro_expansion_token(int at, unsigned &k,
+                                  macro_expansion_node &host,
+                                  std::vector<macro_expansion_node> &pool) {
     unsigned n = expansions.size();
     while (k < n && expansions[k].first == at) {
       host.children.emplace_back(&pool.emplace_back(k, true));
@@ -933,7 +971,7 @@ private:
     }
   }
 
-  void dump_macro_full_expansion(const macro_full_expansion_node &node) {
+  void dump_macro_expansion(const macro_expansion_node &node) {
     dumper->AddChild([&, this] {
       if (node.token)
         dump_token(expansions[node.i].second,
@@ -942,19 +980,18 @@ private:
         dump_macro_expansion(macros[node.i]);
 
       for (auto child : node.children) {
-        dump_macro_full_expansion(*child);
+        dump_macro_expansion(*child);
       }
     });
   }
 
-  void dump_macro_expansion(const macro_expansion_node &macro) {
-    out << "MacroExpansion";
-    dumper->dumpPointer(macro.info);
+  void dump_macro_expansion(const macro_expansion &macro) {
+    out << "Expansion";
+    dumper->dumpPointer(&macro);
     dumper->dumpSourceRange(macro.range);
     if (macro.fast)
       out << " fast";
-    out << ' ';
-    out << macro.token.getIdentifierInfo()->getName();
+    dump_macro_ref(macro.info, macro.token.getIdentifierInfo()->getName());
   }
 
   bool is_in_scratch_space(SourceLocation loc) {
@@ -970,7 +1007,8 @@ private:
     return loc;
   }
 
-  void index(SourceLocation loc, index_value_t value) {
+  void index(SourceLocation loc, index_value_t value,
+             bool ensure_newly = false) {
     assert(loc.isFileID());
 
     FileID fid;
@@ -978,6 +1016,7 @@ private:
     std::tie(fid, offset) = pp.getSourceManager().getDecomposedLoc(loc);
     auto result = indices[fid].try_emplace(offset, value);
     if (!result.second && result.first->second != value) {
+      assert(!ensure_newly && "Not allowed to insert by the same key.");
       if (result.first->second.is_decl()) {
         assert(result.first->second.get_decl() ==
                value.get_decl()->getPreviousDecl());
@@ -989,14 +1028,27 @@ private:
     }
   }
 
-  const index_value_t *find(SourceLocation loc, bool exactly = false) const {
+  enum find_option {
+    FIND_OPTION_LOWER_BOUND,
+    FIND_OPTION_EQUAL,
+    FIND_OPTION_UPPER_BOUND,
+  };
+
+  const index_value_t *find(SourceLocation loc,
+                            find_option opt = FIND_OPTION_LOWER_BOUND) const {
     assert(loc.isFileID());
 
     FileID fid;
     unsigned offset;
     std::tie(fid, offset) = pp.getSourceManager().getDecomposedLoc(loc);
     if (auto i = indices.find(fid); i != indices.end()) {
-      auto j = exactly ? i->second.find(offset) : i->second.lower_bound(offset);
+      auto j = opt == FIND_OPTION_EQUAL
+                   ? i->second.find(offset)
+                   : opt == FIND_OPTION_LOWER_BOUND
+                         ? i->second.lower_bound(offset)
+                         : opt == FIND_OPTION_UPPER_BOUND
+                               ? i->second.upper_bound(offset)
+                               : i->second.end();
       if (j != i->second.end())
         return &j->second;
     }
@@ -1106,14 +1158,14 @@ private:
   ast_visitor visitor;
   std::optional<TextNodeDumper> dumper;
   llvm::SmallVector<unsigned, 8> expanding_stack;
-  std::vector<macro_expansion_node> macros;
+  std::vector<macro_expansion> macros;
   std::vector<std::pair<unsigned, Token>> expansions;
   std::pair<unsigned, unsigned> last_macro_expansion;
   std::vector<std::variant<directive_def, directive_if, directive_elif,
                            directive_else, directive_endif, directive_ifdef,
                            directive_ifndef, directive_elifdef_taken,
                            directive_elifdef_skiped, directive_elifndef_taken,
-                           directive_elifndef_skiped, pseudo_directive_macro>>
+                           directive_elifndef_skiped, directive_expansion>>
       directives;
   unsigned dir; // index of the present directive_node
   std::vector<directive_node> directive_nodes;

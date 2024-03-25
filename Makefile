@@ -55,11 +55,11 @@ OBJS:= $(addsuffix .o,$(basename ${SRCS}))
 test: test-parse test-mem test-query test-fun
 
 test-parse: build
-	@for i in samples/*.gz; do printf "\r%-30s" $$i; zcat $$i | ./caq || exit 1; done
+	@for i in samples/nginx/*.gz; do printf "\r%-30s" $$i; zcat $$i | ./caq || exit 1; done
 	@printf "\r"
 
 test-mem: build
-	@zcat samples/00000001.gz | valgrind ./caq
+	@zcat samples/nginx/00000001.gz | valgrind ./caq
 
 test-query: build
 	@shellspec

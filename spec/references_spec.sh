@@ -11,6 +11,10 @@ Context
     echo SELECT decl FROM tok WHERE begin_row = $1 AND begin_col = $2 AND offset = ${3:-0}
   }
 
+  query_decl_number_from_ast() {
+    echo SELECT number FROM ast WHERE begin_row = $1 AND begin_col = $2
+  }
+
   Describe 'Consistent decl'
     Parameters
       n 3 1 2 1 # reference parameters
@@ -22,11 +26,7 @@ Context
 
     query() {
       a=$(sqlite3 $db "`query_decl_number $1 $2`")
-      if [ $3 -eq 0 ]; then
-        b=-1
-      else
-        b=$(sqlite3 $db "`query_decl_number $3 $4`")
-      fi
+      b=$(sqlite3 $db "`query_decl_number $3 $4`")
       echo $((a-b))
     }
 
@@ -38,19 +38,19 @@ Context
 
   Describe 'Consistent decl in macro expansion'
     Parameters
-      N 35 1 0 # the macro expansion point
-      foo 28 2 1 19 1 # the 1st token after the expansion point
-      bar 29 2 3 15 1 # the 3ed
-      n 30 2 5 2 1    # the 5th
-      y 31 2 9 6 1    # the 9th
-      x 32 2 11 5 1   # the 11th
-      n 33 2 16 10 1  # the 16th
+      N 36 1 0 28 2   # the macro expansion point
+      foo 29 2 1 19 1 # the 1st token after the expansion point
+      bar 30 2 3 15 1 # the 3ed
+      n 31 2 5 2 1    # the 5th
+      y 32 2 9 6 1    # the 9th
+      x 33 2 11 5 1   # the 11th
+      n 34 2 16 10 1  # the 16th
     End
 
     query() {
       a=$(sqlite3 $db "`query_decl_number $1 $2 $3`")
       if [ $3 -eq 0 ]; then
-        b=-1
+        b=$(sqlite3 $db "`query_decl_number_from_ast $4 $5`")
       else
         b=$(sqlite3 $db "`query_decl_number $4 $5`")
       fi
