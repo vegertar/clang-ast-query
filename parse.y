@@ -357,7 +357,7 @@
     SQNAME
     DQNAME
     BQNAME
-    FQNAME
+    TOKEN
     SRC
     OPERATOR
     OPTION
@@ -459,7 +459,7 @@ node: HEAD parent prev range loc attrs labels decl opts
       .kind = NODE_KIND_NULL,
     };
   }
- | FQNAME macro range loc attrs
+ | TOKEN macro range loc attrs
   {
     $$ = (struct node){
       .kind = NODE_KIND_TOKEN,
@@ -501,13 +501,13 @@ tok: sloc { $$ = (struct tok){$1}; }
   }
 
 parent: { $$ = NULL; }
- | PARENT
+ | PARENT { $$ = $1; }
 
 prev: { $$ = NULL; }
- | PREV
+ | PREV { $$ = $1; }
 
 macro: { $$ = NULL; }
- | MACRO
+ | MACRO { $$ = $1; }
 
 range: { $$ = (struct srange){}; }
  | '<' srange '>' { $$ = $2; }

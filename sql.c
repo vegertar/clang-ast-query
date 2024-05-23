@@ -78,6 +78,11 @@ enum spec {
   SPEC_INLINE = 1U << 2,
   SPEC_CONST = 1U << 3,
   SPEC_VOLATILE = 1U << 4,
+  SPEC_HAS_LEADING_SPACE = 1U << 5,
+  SPEC_STRINGIFIED = 1U << 6,
+  SPEC_PASTE = 1U << 7,
+  SPEC_ARG = 1U << 8,
+  SPEC_FAST = 1U << 9,
 };
 
 static sqlite3 *db;
@@ -110,10 +115,10 @@ static int src_number(const char *filename) {
   return i;
 }
 
-static unsigned mark_specs(const struct def *def) {
+static unsigned mark_specs(const struct array array) {
   unsigned specs = 0;
-  for (unsigned i = 0; i < def->specs.i; ++i) {
-    const char *spec = (const char *)(def->specs.data[i]);
+  for (unsigned i = 0; i < array.i; ++i) {
+    const char *spec = (const char *)(array.data[i]);
     if (strcmp(spec, "extern") == 0) {
       specs |= SPEC_EXTERN;
     } else if (strcmp(spec, "static") == 0) {
@@ -124,6 +129,16 @@ static unsigned mark_specs(const struct def *def) {
       specs |= SPEC_CONST;
     } else if (strcmp(spec, "volatile") == 0) {
       specs |= SPEC_VOLATILE;
+    } else if (strcmp(spec, "hasLeadingSpace") == 0) {
+      specs |= SPEC_HAS_LEADING_SPACE;
+    } else if (strcmp(spec, "stringified") == 0) {
+      specs |= SPEC_STRINGIFIED;
+    } else if (strcmp(spec, "paste") == 0) {
+      specs |= SPEC_PASTE;
+    } else if (strcmp(spec, "arg") == 0) {
+      specs |= SPEC_ARG;
+    } else if (strcmp(spec, "fast") == 0) {
+      specs |= SPEC_FAST;
     }
   }
   assert(specs <= INT_MAX);
@@ -186,8 +201,20 @@ static int decl_number(const char *decl) {
   return number;
 }
 
+struct hierarchy {
+  int parent_number;
+  unsigned final_number; // the furthest descendants
+};
+
+DECL_ARRAY(hierarchies, struct hierarchy);
+static inline IMPL_ARRAY_RESERVE(hierarchies, struct hierarchy);
+static inline IMPL_ARRAY_CLEAR(hierarchies, NULL);
+
+static struct hierarchies hierarchies;
+
 int dump(const char *db_file) {
   sqlite3_open(db_file, &db);
+  hierarchies_reserve(&hierarchies, ast.i);
 
   exec_sql("PRAGMA synchronous = OFF");
   exec_sql("PRAGMA journal_mode = MEMORY");
@@ -209,6 +236,7 @@ int dump(const char *db_file) {
     fprintf(stderr, "sqlite3 error(%d): %s\n", err, sqlite3_errstr(err));
 
   decl_number_map_clear(&decl_number_map, 2);
+  hierarchies_clear(&hierarchies, 2);
   sqlite3_close(db);
   return err;
 }
@@ -227,7 +255,7 @@ int dump(const char *db_file) {
     const struct def *def = expr;                                              \
     FILL_TEXT(QUALIFIED_TYPE, def->type.qualified);                            \
     FILL_TEXT(DESUGARED_TYPE, def->type.desugared);                            \
-    FILL_INT(SPECS, mark_specs(def));                                          \
+    FILL_INT(SPECS, mark_specs(def->specs));                                   \
     FILL_REF(&def->ref);                                                       \
   } while (0)
 
@@ -235,8 +263,10 @@ static void dump_ast() {
   exec_sql("CREATE TABLE ast ("
            " number INTEGER PRIMARY KEY,"
            " parent_number INTEGER,"
+           " final_number INTEGER,"
            " kind TEXT,"
            " ptr TEXT,"
+           " macro TEXT,"
            " begin_src INTEGER,"
            " begin_row INTEGER,"
            " begin_col INTEGER,"
@@ -256,23 +286,40 @@ static void dump_ast() {
   unsigned parents[MAX_AST_LEVEL + 1] = {-1};
   for (unsigned i = 0; i < ast.i; ++i) {
     const struct node *node = &ast.data[i];
+    int parent_number = -1;
+    assert(node->level < MAX_AST_LEVEL);
+    parent_number = parents[node->level];
+    if (node->level + 1 < MAX_AST_LEVEL)
+      parents[node->level + 1] = i;
+
+    hierarchies.data[i].parent_number = parent_number;
+    hierarchies.data[i].final_number = i;
+    while (parent_number != -1) {
+      hierarchies.data[parent_number].final_number = i;
+      parent_number = hierarchies.data[parent_number].parent_number;
+    }
+  }
+
+  for (unsigned i = 0; i < ast.i; ++i) {
+    const struct node *node = &ast.data[i];
     const struct decl *decl = &node->decl;
     int parent_number = -1;
 
-#ifndef VALUES19
-#define VALUES19()                                                             \
+#ifndef VALUES21
+#define VALUES21()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
-  "?"
-#endif // !VALUES19
+  "?,?,?"
+#endif // !VALUES21
 
-    INSERT_INTO(ast, NUMBER, PARENT_NUMBER, KIND, PTR, BEGIN_SRC, BEGIN_ROW,
-                BEGIN_COL, END_SRC, END_ROW, END_COL, SRC, ROW, COL, CLASS,
-                NAME, QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_PTR) {
+    INSERT_INTO(ast, NUMBER, PARENT_NUMBER, FINAL_NUMBER, KIND, PTR, MACRO,
+                BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW, END_COL, SRC,
+                ROW, COL, CLASS, NAME, QUALIFIED_TYPE, DESUGARED_TYPE, SPECS,
+                REF_PTR) {
 
       switch (decl->kind) {
       case DECL_KIND_V2:
@@ -281,6 +328,10 @@ static void dump_ast() {
       case DECL_KIND_V3:
         FILL_INT(CLASS, numeric_class(decl->variants.v3.class));
         FILL_TEXT(NAME, decl->variants.v3.name);
+        break;
+      case DECL_KIND_V7:
+        FILL_TEXT(NAME, decl->variants.v7.sqname);
+        FILL_DEF(&decl->variants.v7.def);
         break;
       case DECL_KIND_V8:
         FILL_DEF(&decl->variants.v8.def);
@@ -295,38 +346,39 @@ static void dump_ast() {
 
       switch (node->kind) {
       case NODE_KIND_HEAD:
-        assert(node->level < MAX_AST_LEVEL);
-        parent_number = parents[node->level];
-        if (node->level + 1 < MAX_AST_LEVEL)
-          parents[node->level + 1] = i;
-
         if (is_decl(node)) {
           struct decl_number_pair entry = {node->pointer, i};
           _Bool added = decl_number_map_badd(&decl_number_map, &entry, NULL);
           assert(added);
         }
 
-        FILL_INT(NUMBER, i);
-        FILL_INT(PARENT_NUMBER, parent_number);
         FILL_TEXT(KIND, node->name);
         FILL_TEXT(PTR, node->pointer);
-        FILL_INT(BEGIN_SRC, src_number(node->range.begin.file));
-        FILL_INT(BEGIN_ROW, node->range.begin.line);
-        FILL_INT(BEGIN_COL, node->range.begin.col);
-        FILL_INT(END_SRC, src_number(node->range.end.file));
-        FILL_INT(END_ROW, node->range.end.line);
-        FILL_INT(END_COL, node->range.end.col);
-        FILL_INT(SRC, src_number(node->loc.file));
-        FILL_INT(ROW, node->loc.line);
-        FILL_INT(COL, node->loc.col);
         break;
       case NODE_KIND_ENUM:
         break;
       case NODE_KIND_NULL:
         break;
       case NODE_KIND_TOKEN:
+        FILL_TEXT(KIND, "Token");
+        FILL_TEXT(NAME, node->name);
+        FILL_TEXT(MACRO, node->macro);
         break;
       }
+
+      FILL_INT(NUMBER, i);
+      FILL_INT(PARENT_NUMBER, hierarchies.data[i].parent_number);
+      FILL_INT(FINAL_NUMBER, hierarchies.data[i].final_number);
+      FILL_INT(BEGIN_SRC, src_number(node->range.begin.file));
+      FILL_INT(BEGIN_ROW, node->range.begin.line);
+      FILL_INT(BEGIN_COL, node->range.begin.col);
+      FILL_INT(END_SRC, src_number(node->range.end.file));
+      FILL_INT(END_ROW, node->range.end.line);
+      FILL_INT(END_COL, node->range.end.col);
+      FILL_INT(SRC, src_number(node->loc.file));
+      FILL_INT(ROW, node->loc.line);
+      FILL_INT(COL, node->loc.col);
+      FILL_INT(SPECS, mark_specs(node->attrs));
     }
     END_INSERT_INTO();
   }

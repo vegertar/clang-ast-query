@@ -201,8 +201,8 @@ field/" "Field[ \n] {
 }
 
 \/((?:[^/\\]|\\.)*)\//[ \n] {
-  yylval->TOK_FQNAME = qname();
-  return TOK_FQNAME;
+  yylval->TOK_TOKEN = qname();
+  return TOK_TOKEN;
 }
 
 \"((?:[^"\\]|\\.)*)\"/[ \n] {

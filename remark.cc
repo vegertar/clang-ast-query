@@ -45,7 +45,7 @@ private:
   expanded_decl *prev;
 };
 
-struct macro_expansion {
+struct expansion_decl {
   Token token;
   MacroInfo *info;
   SourceRange range;
@@ -72,9 +72,9 @@ public:
     assert(is_expanded_decl() && get_raw() == p);
   }
 
-  explicit index_value_t(const macro_expansion *p) : data((char *)p + 3) {
-    static_assert(alignof(macro_expansion) >= 4 &&
-                  alignof(macro_expansion) % 4 == 0);
+  explicit index_value_t(const expansion_decl *p) : data((char *)p + 3) {
+    static_assert(alignof(expansion_decl) >= 4 &&
+                  alignof(expansion_decl) % 4 == 0);
     assert(is_expansion() && get_raw() == p);
   }
 
@@ -103,9 +103,9 @@ public:
     return (expanded_decl *)get_raw();
   }
 
-  const macro_expansion *get_expansion() const {
+  const expansion_decl *get_expansion() const {
     assert(is_expansion());
-    return (const macro_expansion *)get_raw();
+    return (const expansion_decl *)get_raw();
   }
 
   void *get_raw() const { return (void *)((std::uintptr_t)data & ~mask); }
@@ -883,10 +883,10 @@ private:
           dumper->dumpLocation(last_expansion_loc);
           out << " 0";
           // MACRO_FOO(a, b, c, e, f, g);
-          // ^~~expanded_decl           ^~~macro_expansion
+          // ^~~expanded_decl           ^~~expansion_decl
           v = find(last_expansion_loc, FIND_OPTION_UPPER_BOUND);
           assert(v && v->is_expansion());
-          dumper->dumpPointer(v->get_expansion()->info);
+          dumper->dumpPointer(v->get_expansion());
           out << '\n';
 
           // if (d) {
@@ -985,8 +985,8 @@ private:
     });
   }
 
-  void dump_macro_expansion(const macro_expansion &macro) {
-    out << "Expansion";
+  void dump_macro_expansion(const expansion_decl &macro) {
+    out << "ExpansionDecl";
     dumper->dumpPointer(&macro);
     dumper->dumpSourceRange(macro.range);
     if (macro.fast)
@@ -1158,7 +1158,7 @@ private:
   ast_visitor visitor;
   std::optional<TextNodeDumper> dumper;
   llvm::SmallVector<unsigned, 8> expanding_stack;
-  std::vector<macro_expansion> macros;
+  std::vector<expansion_decl> macros;
   std::vector<std::pair<unsigned, Token>> expansions;
   std::pair<unsigned, unsigned> last_macro_expansion;
   std::vector<std::variant<directive_def, directive_if, directive_elif,

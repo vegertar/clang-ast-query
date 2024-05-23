@@ -15,6 +15,10 @@ Context
     echo SELECT number FROM ast WHERE begin_row = $1 AND begin_col = $2
   }
 
+  query_decl_number_from_ref() {
+    echo SELECT number from ast WHERE ptr = '('SELECT ref_ptr FROM ast WHERE begin_row = $1 AND begin_col = $2')'
+  }
+
   Describe 'Consistent decl'
     Parameters
       n 3 1 2 1 # reference parameters
@@ -48,12 +52,14 @@ Context
     End
 
     query() {
-      a=$(sqlite3 $db "`query_decl_number $1 $2 $3`")
       if [ $3 -eq 0 ]; then
+        a=$(sqlite3 $db "`query_decl_number_from_ref $1 $2`")
         b=$(sqlite3 $db "`query_decl_number_from_ast $4 $5`")
       else
+        a=$(sqlite3 $db "`query_decl_number $1 $2 $3`")
         b=$(sqlite3 $db "`query_decl_number $4 $5`")
       fi
+
       echo $((a-b))
     }
 
