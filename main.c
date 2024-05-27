@@ -175,7 +175,7 @@ int main(int argc, char **argv) {
       tu_filename = optarg;
       break;
     case 'o':
-      out_filename = optarg;
+      out_filename = strcmp(optarg, "-") ? optarg : "/dev/stdout";
       break;
     default:
       exit(1);
@@ -194,11 +194,8 @@ int main(int argc, char **argv) {
       in_filename = s;
       argv[i] = "";
       cc_flag = 1;
-    } else if (n == 2) {
-      if (s[0] == '-' && s[1] == 'c')
-        text_flag = 1;
-      else if (i + 1 < argc && s[0] == '-' && s[1] == 'o')
-        out_filename = argv[i + 1];
+    } else if (n == 2 && i + 1 < argc && s[0] == '-' && s[1] == 'o') {
+      out_filename = argv[i + 1];
     }
   }
 

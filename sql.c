@@ -213,7 +213,9 @@ static inline IMPL_ARRAY_CLEAR(hierarchies, NULL);
 static struct hierarchies hierarchies;
 
 int dump(const char *db_file) {
-  sqlite3_open(db_file, &db);
+  _Bool is_stdout = strcmp(db_file, "/dev/stdout") == 0;
+
+  sqlite3_open(is_stdout ? ":memory:" : db_file, &db);
   hierarchies_reserve(&hierarchies, ast.i);
 
   exec_sql("PRAGMA synchronous = OFF");

@@ -155,7 +155,7 @@ macro" "{POINTER}/[ \n] {
   return TOK_MACRO;
 }
 
-("->"|"."){NAME}?" "{POINTER}/[ \n] {
+("->"|".")({NAME}|{CLASS}" "{NAME}::\("anonymous at ".+\))?" "{POINTER}/[ \n] {
   yylval->TOK_MEMBER = strdup(yytext);
   return TOK_MEMBER;
 }
