@@ -257,8 +257,8 @@ int dump(const char *db_file) {
     const struct def *def = expr;                                              \
     FILL_TEXT(QUALIFIED_TYPE, def->type.qualified);                            \
     FILL_TEXT(DESUGARED_TYPE, def->type.desugared);                            \
-    FILL_INT(SPECS, mark_specs(def->specs));                                   \
     FILL_REF(&def->ref);                                                       \
+    specs |= mark_specs(def->specs);                                           \
   } while (0)
 
 static void dump_ast() {
@@ -285,12 +285,14 @@ static void dump_ast() {
            " specs INTEGER,"
            " ref_ptr TEXT)");
 
-  unsigned parents[MAX_AST_LEVEL + 1] = {-1};
+  unsigned parents[MAX_AST_LEVEL + 1];
+  for (unsigned i = 0; i < sizeof(parents) / sizeof(*parents); ++i)
+    parents[i] = -1;
+
   for (unsigned i = 0; i < ast.i; ++i) {
     const struct node *node = &ast.data[i];
-    int parent_number = -1;
     assert(node->level < MAX_AST_LEVEL);
-    parent_number = parents[node->level];
+    int parent_number = parents[node->level];
     if (node->level + 1 < MAX_AST_LEVEL)
       parents[node->level + 1] = i;
 
@@ -306,6 +308,7 @@ static void dump_ast() {
     const struct node *node = &ast.data[i];
     const struct decl *decl = &node->decl;
     int parent_number = -1;
+    unsigned specs = 0;
 
 #ifndef VALUES21
 #define VALUES21()                                                             \
@@ -368,6 +371,8 @@ static void dump_ast() {
         break;
       }
 
+      specs |= mark_specs(node->attrs);
+
       FILL_INT(NUMBER, i);
       FILL_INT(PARENT_NUMBER, hierarchies.data[i].parent_number);
       FILL_INT(FINAL_NUMBER, hierarchies.data[i].final_number);
@@ -380,7 +385,7 @@ static void dump_ast() {
       FILL_INT(SRC, src_number(node->loc.file));
       FILL_INT(ROW, node->loc.line);
       FILL_INT(COL, node->loc.col);
-      FILL_INT(SPECS, mark_specs(node->attrs));
+      FILL_INT(SPECS, specs);
     }
     END_INSERT_INTO();
   }
