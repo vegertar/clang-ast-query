@@ -268,6 +268,7 @@ static void dump_ast() {
            " final_number INTEGER,"
            " kind TEXT,"
            " ptr TEXT,"
+           " prev TEXT,"
            " macro TEXT,"
            " begin_src INTEGER,"
            " begin_row INTEGER,"
@@ -310,21 +311,22 @@ static void dump_ast() {
     int parent_number = -1;
     unsigned specs = 0;
 
-#ifndef VALUES21
-#define VALUES21()                                                             \
+#ifndef VALUES22
+#define VALUES22()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
-  "?,?,?"
+  "?,?,?,"                                                                     \
+  "?"
 #endif // !VALUES21
 
-    INSERT_INTO(ast, NUMBER, PARENT_NUMBER, FINAL_NUMBER, KIND, PTR, MACRO,
-                BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW, END_COL, SRC,
-                ROW, COL, CLASS, NAME, QUALIFIED_TYPE, DESUGARED_TYPE, SPECS,
-                REF_PTR) {
+    INSERT_INTO(ast, NUMBER, PARENT_NUMBER, FINAL_NUMBER, KIND, PTR, PREV,
+                MACRO, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
+                END_COL, SRC, ROW, COL, CLASS, NAME, QUALIFIED_TYPE,
+                DESUGARED_TYPE, SPECS, REF_PTR) {
 
       switch (decl->kind) {
       case DECL_KIND_V2:
@@ -359,6 +361,7 @@ static void dump_ast() {
 
         FILL_TEXT(KIND, node->name);
         FILL_TEXT(PTR, node->pointer);
+        FILL_TEXT(PREV, node->prev);
         break;
       case NODE_KIND_ENUM:
         break;
