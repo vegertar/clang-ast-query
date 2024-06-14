@@ -476,6 +476,59 @@ private:
       add_if_directive();
     }
 
+    void InclusionDirective(SourceLocation hash_loc, const Token &include_tok,
+                            StringRef filename, bool is_angled,
+                            CharSourceRange filename_range,
+                            OptionalFileEntryRef file, StringRef search_path,
+                            StringRef relative_path,
+                            const Module *suggested_module,
+                            bool module_imported,
+                            SrcMgr::CharacteristicKind file_type) override {
+      auto include_ii = include_tok.getIdentifierInfo();
+      assert(include_ii);
+
+      ast.directives.emplace_back(directive_inclusion{
+          hash_loc,
+          {filename_range.getBegin(), filename_range.getEnd()},
+          include_ii->getName(),
+          filename,
+          is_angled,
+      });
+
+      add_sub_directive();
+      ast.inclusion_stack.push_back(hash_loc);
+    }
+
+    void FileChanged(SourceLocation loc, FileChangeReason reason,
+                     SrcMgr::CharacteristicKind file_type,
+                     FileID prev_fid = FileID()) override {
+      if (reason == ExitFile && !ast.inclusion_stack.empty()) {
+        auto &sm = ast.pp.getSourceManager();
+        auto hash_loc = ast.inclusion_stack.back();
+
+        assert(hash_loc.isFileID() && loc.isFileID());
+        auto hash_ploc = sm.getPresumedLoc(hash_loc);
+        auto ploc = sm.getPresumedLoc(loc);
+
+        if (hash_ploc.getFileID() == ploc.getFileID() &&
+            hash_ploc.getLine() + 1 == ploc.getLine() &&
+            ploc.getColumn() == 1) {
+          ast.inclusion_stack.pop_back();
+          ast.lift_directive();
+        }
+      }
+    }
+
+    void FileSkipped(const FileEntryRef &skipped_file,
+                     const Token &filename_tok,
+                     SrcMgr::CharacteristicKind file_type) override {
+      assert(ast.inclusion_stack.size());
+      ast.inclusion_stack.pop_back();
+      ast.lift_directive();
+    }
+
+    void EndOfMainFile() override { assert(ast.inclusion_stack.empty()); }
+
   private:
     void lift_if_directive(SourceLocation if_loc) {
       std::visit(
@@ -501,10 +554,12 @@ private:
       ast.lift_directive();
     }
 
-    void add_if_directive() {
+    void add_if_directive() { add_sub_directive(); }
+
+    void add_sub_directive() {
       ast.add_directive();
-      ast.dir = ast.directive_nodes[ast.dir].children.back();
-      ast.add_macro_directive();
+      ast.down_directive();
+      ast.add_expansion_directive();
     }
 
     ast_consumer &ast;
@@ -587,6 +642,14 @@ private:
     directive_expansion() = default;
     directive_expansion(directive_expansion &&) = default;
     directive_expansion(const directive_expansion &) = delete;
+  };
+
+  struct directive_inclusion {
+    SourceLocation loc;
+    SourceRange range;
+    StringRef kind;
+    StringRef filename;
+    bool angled;
   };
 
   struct directive_node {
@@ -686,7 +749,7 @@ private:
 
     auto loc = token.getLocation();
     if (loc.isFileID()) {
-      add_macro_directive();
+      add_expansion_directive();
     } else {
       // The fast-expanded token is expanded at the parent macro, in this case
       // the expanding_stack will be empty in advance.
@@ -808,6 +871,15 @@ private:
               for (auto child : arg.root.children) {
                 dump_macro_expansion(*child);
               }
+            } else if constexpr (std::is_same_v<T, directive_inclusion>) {
+              out << "InclusionDirective";
+              dumper->dumpPointer(&arg);
+              dumper->dumpSourceRange(arg.range);
+              out << ' ';
+              dumper->dumpLocation(arg.loc);
+              if (arg.angled)
+                out << " angled";
+              out << ' ' << arg.kind << " '" << arg.filename << "'";
             } else {
               assert("Never reach here");
             }
@@ -919,12 +991,14 @@ private:
 
   void lift_directive() { dir = directive_nodes[dir].parent; }
 
+  void down_directive() { dir = directive_nodes[dir].children.back(); }
+
   void add_directive() {
     directive_nodes.emplace_back(directives.size() - 1, dir);
     directive_nodes[dir].children.emplace_back(directive_nodes.size() - 1);
   }
 
-  void add_macro_directive() {
+  void add_expansion_directive() {
     assert(expanding_stack.empty());
 
     unsigned k = last_macro_expansion.second;
@@ -1158,20 +1232,22 @@ private:
   ast_visitor visitor;
   std::optional<TextNodeDumper> dumper;
   llvm::SmallVector<unsigned, 8> expanding_stack;
+  llvm::SmallVector<SourceLocation, 8> inclusion_stack;
   std::vector<expansion_decl> macros;
   std::vector<std::pair<unsigned, Token>> expansions;
   std::pair<unsigned, unsigned> last_macro_expansion;
-  std::vector<std::variant<directive_def, directive_if, directive_elif,
-                           directive_else, directive_endif, directive_ifdef,
-                           directive_ifndef, directive_elifdef_taken,
-                           directive_elifdef_skiped, directive_elifndef_taken,
-                           directive_elifndef_skiped, directive_expansion>>
+  std::vector<
+      std::variant<directive_def, directive_if, directive_elif, directive_else,
+                   directive_endif, directive_ifdef, directive_ifndef,
+                   directive_elifdef_taken, directive_elifdef_skiped,
+                   directive_elifndef_taken, directive_elifndef_skiped,
+                   directive_expansion, directive_inclusion>>
       directives;
   unsigned dir; // index of the present directive_node
   std::vector<directive_node> directive_nodes;
   llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
   std::vector<syntax::Token> tokens;
-}; // namespace
+};
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
                                              CompilerInstance &compiler,
