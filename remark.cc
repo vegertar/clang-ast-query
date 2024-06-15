@@ -489,9 +489,11 @@ private:
 
       ast.directives.emplace_back(directive_inclusion{
           hash_loc,
-          {filename_range.getBegin(), filename_range.getEnd()},
+          {filename_range.getBegin(),
+           filename_range.getEnd().getLocWithOffset(-1)},
           include_ii->getName(),
           filename,
+          file,
           is_angled,
       });
 
@@ -649,6 +651,7 @@ private:
     SourceRange range;
     StringRef kind;
     StringRef filename;
+    OptionalFileEntryRef file;
     bool angled;
   };
 
@@ -880,6 +883,9 @@ private:
               if (arg.angled)
                 out << " angled";
               out << ' ' << arg.kind << " '" << arg.filename << "'";
+              if (arg.file)
+                out << ":'" << arg.file->getFileEntry().tryGetRealPathName()
+                    << "'";
             } else {
               assert("Never reach here");
             }

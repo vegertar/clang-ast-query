@@ -35,7 +35,7 @@ NUMBER (-?([0-9]*\.[0-9]+|[0-9]+)([Ee][+-]?[0-9]+)?)
 
 POINTER (0x[0-9a-f]+)
 
-ATTR (sugar|imported|implicit|used|referenced|prefix|postfix|Inherited|Implicit|warn_unused_result|"<undeserialized declarations>"|hasLeadingSpace|stringified|paste|arg|fast)
+ATTR (sugar|imported|implicit|used|referenced|prefix|postfix|Inherited|Implicit|warn_unused_result|"<undeserialized declarations>"|hasLeadingSpace|stringified|paste|arg|fast|angled)
 
 SPEC ({ATTR}|extern|static|inline|lvalue|bitfield|cinit|const|volatile|cdecl)
 
