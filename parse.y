@@ -180,6 +180,8 @@
 
   DECL_ARRAY(loc_exp_set, struct srange);
 
+  DECL_ARRAY(inactive_set, struct srange);
+
   struct tok {
     struct sloc loc;
     unsigned offset;
@@ -215,6 +217,7 @@
   extern struct ast ast;
   extern struct src_set src_set;
   extern struct loc_exp_set loc_exp_set;
+  extern struct inactive_set inactive_set;
   extern struct tok_decl_set tok_decl_set;
 
   #ifndef PATH_MAX
@@ -246,6 +249,7 @@
   struct ast ast;
   struct src_set src_set;
   struct loc_exp_set loc_exp_set;
+  struct inactive_set inactive_set;
   struct tok_decl_set tok_decl_set;
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
@@ -271,6 +275,9 @@
 
   static DECL_METHOD(loc_exp_set, push, struct srange);
   static DECL_METHOD(loc_exp_set, clear, int);
+
+  static DECL_METHOD(inactive_set, push, struct srange);
+  static DECL_METHOD(inactive_set, clear, int);
 
   static DECL_METHOD(tok_decl_set, push, struct tok_decl_pair);
   static DECL_METHOD(tok_decl_set, clear, int);
@@ -342,6 +349,7 @@
     ENUM
     FIELD
     REMARK
+    REMARK_INACTIVE
     REMARK_TOK_DECL
     REMARK_LOC_EXP
   <integer>
@@ -471,7 +479,7 @@ node: HEAD parent prev range loc attrs labels decl opts
     };
   }
 
-remark: REMARK | REMARK_TU | REMARK_CWD | remark_loc_exp | remark_tok_decl
+remark: REMARK | REMARK_TU | REMARK_CWD | remark_loc_exp | remark_tok_decl | remark_inactive
 
 remark_loc_exp: REMARK_LOC_EXP '<' srange '>'
   {
@@ -481,6 +489,11 @@ remark_loc_exp: REMARK_LOC_EXP '<' srange '>'
 remark_tok_decl: REMARK_TOK_DECL tok POINTER
   {
     tok_decl_set_push(&tok_decl_set, (struct tok_decl_pair){$2, $3});
+  }
+
+remark_inactive: REMARK_INACTIVE '<' srange '>'
+  {
+    inactive_set_push(&inactive_set, $3);
   }
 
 tok: sloc { $$ = (struct tok){$1}; }
@@ -879,6 +892,13 @@ static void free_loc_exp(void *p) {
 static IMPL_ARRAY_PUSH(loc_exp_set, struct srange);
 static IMPL_ARRAY_CLEAR(loc_exp_set, free_loc_exp);
 
+static void free_inactive(void *p) {
+  srange_destroy((struct srange *)p);
+}
+
+static IMPL_ARRAY_PUSH(inactive_set, struct srange);
+static IMPL_ARRAY_CLEAR(inactive_set, free_inactive);
+
 static void free_tok_decl(void *p) {
   struct tok_decl_pair *pair = (struct tok_decl_pair *)p;
   free((void *)pair->decl);
@@ -891,6 +911,7 @@ void destroy() {
   ast_clear(&ast, 1);
   src_set_clear(&src_set, 1);
   loc_exp_set_clear(&loc_exp_set, 1);
+  inactive_set_clear(&inactive_set, 1);
   tok_decl_set_clear(&tok_decl_set, 1);
 }
 

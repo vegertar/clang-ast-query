@@ -85,6 +85,11 @@ enum spec {
   SPEC_FAST = 1U << 9,
 };
 
+enum semantic {
+  SEMANTIC_EXPANSION,
+  SEMANTIC_INACTIVE,
+};
+
 static sqlite3 *db;
 static sqlite3_stmt *stmts[MAX_STMT_SIZE];
 static char *errmsg;
@@ -476,27 +481,48 @@ static void dump_loc() {
            " begin_col INTEGER,"
            " end_src INTEGER,"
            " end_row INTEGER,"
-           " end_col INTEGER)");
+           " end_col INTEGER,"
+           " semantics INTEGER)");
 
-  for (unsigned i = 0; i < loc_exp_set.i; ++i) {
-    struct srange *srange = &loc_exp_set.data[i];
-    int begin_src = src_number(srange->begin.file);
-    int end_src = src_number(srange->end.file);
+  struct {
+    struct srange *data;
+    unsigned i;
+    enum semantic semantic;
+  } inputs[] = {
+      {
+          loc_exp_set.data,
+          loc_exp_set.i,
+          SEMANTIC_EXPANSION,
+      },
+      {
+          inactive_set.data,
+          inactive_set.i,
+          SEMANTIC_INACTIVE,
+      },
+  };
 
-#ifndef VALUES6
-#define VALUES6() "?,?,?,?,?,?"
-#endif // !VALUES6
+  for (unsigned k = 0; k < sizeof(inputs) / sizeof(*inputs); ++k) {
+    for (unsigned i = 0; i < inputs[k].i; ++i) {
+      struct srange *srange = &inputs[k].data[i];
+      int begin_src = src_number(srange->begin.file);
+      int end_src = src_number(srange->end.file);
 
-    INSERT_INTO(loc, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
-                END_COL) {
-      FILL_INT(BEGIN_SRC, begin_src);
-      FILL_INT(BEGIN_ROW, srange->begin.line);
-      FILL_INT(BEGIN_COL, srange->begin.col);
-      FILL_INT(END_SRC, end_src);
-      FILL_INT(END_ROW, srange->end.line);
-      FILL_INT(END_COL, srange->end.col);
+#ifndef VALUES7
+#define VALUES7() "?,?,?,?,?,?,?"
+#endif // !VALUES7
+
+      INSERT_INTO(loc, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
+                  END_COL, SEMANTICS) {
+        FILL_INT(BEGIN_SRC, begin_src);
+        FILL_INT(BEGIN_ROW, srange->begin.line);
+        FILL_INT(BEGIN_COL, srange->begin.col);
+        FILL_INT(END_SRC, end_src);
+        FILL_INT(END_ROW, srange->end.line);
+        FILL_INT(END_COL, srange->end.col);
+        FILL_INT(SEMANTICS, inputs[k].semantic);
+      }
+      END_INSERT_INTO();
     }
-    END_INSERT_INTO();
   }
 }
 

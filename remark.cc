@@ -209,6 +209,12 @@ protected:
     out << "#TU:" << filename << '\n';
     out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
 
+    for (auto range : inactive_regions) {
+      out << "#INACTIVE:";
+      dumper->dumpSourceRange(range);
+      out << '\n';
+    }
+
     // Dump all root macro expansion ranges to make their locations indexable.
     for (auto &macro : macros) {
       if (macro.parent == -1) {
@@ -489,26 +495,29 @@ private:
 
       ast.directives.emplace_back(directive_inclusion{
           hash_loc,
-          {filename_range.getBegin(),
-           filename_range.getEnd().getLocWithOffset(-1)},
+          {filename_range.getBegin(), filename_range.getEnd()},
           include_ii->getName(),
           filename,
-          file,
+          file ? file->getFileEntry().tryGetRealPathName() : "",
           is_angled,
       });
 
+      ast.inclusion_stack.push_back(ast.directives.size() - 1);
       add_sub_directive();
-      ast.inclusion_stack.push_back(hash_loc);
     }
 
     void FileChanged(SourceLocation loc, FileChangeReason reason,
                      SrcMgr::CharacteristicKind file_type,
                      FileID prev_fid = FileID()) override {
       if (reason == ExitFile && !ast.inclusion_stack.empty()) {
-        auto &sm = ast.pp.getSourceManager();
-        auto hash_loc = ast.inclusion_stack.back();
+        auto i = ast.inclusion_stack.back();
+        auto inclusion = std::get_if<directive_inclusion>(&ast.directives[i]);
+
+        assert(inclusion);
+        auto hash_loc = inclusion->loc;
 
         assert(hash_loc.isFileID() && loc.isFileID());
+        auto &sm = ast.pp.getSourceManager();
         auto hash_ploc = sm.getPresumedLoc(hash_loc);
         auto ploc = sm.getPresumedLoc(loc);
 
@@ -527,6 +536,29 @@ private:
       assert(ast.inclusion_stack.size());
       ast.inclusion_stack.pop_back();
       ast.lift_directive();
+    }
+
+    void SourceRangeSkipped(SourceRange range,
+                            SourceLocation endif_loc) override {
+      assert(endif_loc.isFileID());
+      auto &sm = ast.pp.getSourceManager();
+      auto ploc = sm.getPresumedLoc(endif_loc);
+      auto file = sm.getFileEntryForID(ploc.getFileID());
+      assert(file);
+      auto path = file->tryGetRealPathName();
+
+      // Check if include recursively
+      if (std::find_if(ast.inclusion_stack.rbegin() + 1,
+                       ast.inclusion_stack.rend(), [path, this](auto i) {
+                         auto inclusion = std::get_if<directive_inclusion>(
+                             &ast.directives[i]);
+                         assert(inclusion);
+                         return inclusion->path == path;
+                       }) != ast.inclusion_stack.rend()) {
+        return;
+      }
+
+      ast.inactive_regions.push_back(range);
     }
 
     void EndOfMainFile() override { assert(ast.inclusion_stack.empty()); }
@@ -651,7 +683,7 @@ private:
     SourceRange range;
     StringRef kind;
     StringRef filename;
-    OptionalFileEntryRef file;
+    StringRef path;
     bool angled;
   };
 
@@ -883,9 +915,8 @@ private:
               if (arg.angled)
                 out << " angled";
               out << ' ' << arg.kind << " '" << arg.filename << "'";
-              if (arg.file)
-                out << ":'" << arg.file->getFileEntry().tryGetRealPathName()
-                    << "'";
+              if (arg.path.size())
+                out << ":'" << arg.path << "'";
             } else {
               assert("Never reach here");
             }
@@ -1238,7 +1269,7 @@ private:
   ast_visitor visitor;
   std::optional<TextNodeDumper> dumper;
   llvm::SmallVector<unsigned, 8> expanding_stack;
-  llvm::SmallVector<SourceLocation, 8> inclusion_stack;
+  llvm::SmallVector<unsigned, 8> inclusion_stack;
   std::vector<expansion_decl> macros;
   std::vector<std::pair<unsigned, Token>> expansions;
   std::pair<unsigned, unsigned> last_macro_expansion;
@@ -1253,6 +1284,7 @@ private:
   std::vector<directive_node> directive_nodes;
   llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
   std::vector<syntax::Token> tokens;
+  std::vector<SourceRange> inactive_regions;
 };
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
