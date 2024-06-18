@@ -439,15 +439,17 @@ private:
 
     void Ifdef(SourceLocation loc, const Token &token,
                const MacroDefinition &md) override {
-      ast.directives.emplace_back(
-          directive_ifdef{loc, token.getIdentifierInfo(), md.getMacroInfo()});
+      ast.directives.emplace_back(directive_ifdef{loc, token.getLocation(),
+                                                  token.getIdentifierInfo(),
+                                                  md.getMacroInfo()});
       add_if_directive();
     }
 
     void Ifndef(SourceLocation loc, const Token &token,
                 const MacroDefinition &md) override {
-      ast.directives.emplace_back(
-          directive_ifndef{loc, token.getIdentifierInfo(), md.getMacroInfo()});
+      ast.directives.emplace_back(directive_ifndef{loc, token.getLocation(),
+                                                   token.getIdentifierInfo(),
+                                                   md.getMacroInfo()});
       add_if_directive();
     }
 
@@ -455,7 +457,8 @@ private:
                  const MacroDefinition &md) override {
       ast.lift_directive();
       ast.directives.emplace_back(directive_elifdef_taken{
-          loc, token.getIdentifierInfo(), md.getMacroInfo()});
+          loc, token.getLocation(), token.getIdentifierInfo(),
+          md.getMacroInfo()});
       add_if_directive();
     }
 
@@ -470,7 +473,8 @@ private:
                   const MacroDefinition &md) override {
       ast.lift_directive();
       ast.directives.emplace_back(directive_elifndef_taken{
-          loc, token.getIdentifierInfo(), md.getMacroInfo()});
+          loc, token.getLocation(), token.getIdentifierInfo(),
+          md.getMacroInfo()});
       add_if_directive();
     }
 
@@ -480,6 +484,13 @@ private:
       ast.directives.emplace_back(
           directive_elifndef_skiped{loc, range, if_loc});
       add_if_directive();
+    }
+
+    void Defined(const Token &token, const MacroDefinition &md,
+                 SourceRange range) override {
+      ast.defined_queue.push_back({range.getBegin(), token.getLocation(),
+                                   token.getIdentifierInfo(),
+                                   md.getMacroInfo()});
     }
 
     void InclusionDirective(SourceLocation hash_loc, const Token &include_tok,
@@ -593,6 +604,7 @@ private:
     void add_sub_directive() {
       ast.add_directive();
       ast.down_directive();
+      ast.add_defined_operator();
       ast.add_expansion_directive();
     }
 
@@ -633,34 +645,27 @@ private:
     SourceLocation if_loc;
   };
 
-  struct directive_ifdef {
+  struct directive_ifxdef {
     SourceLocation loc;
+    SourceLocation tok_loc;
     const IdentifierInfo *id;
     const MacroInfo *mi;
   };
 
-  struct directive_ifndef {
-    SourceLocation loc;
-    const IdentifierInfo *id;
-    const MacroInfo *mi;
-  };
+  struct operator_defined : directive_ifxdef {};
 
-  struct directive_elifdef_taken {
-    SourceLocation loc;
-    const IdentifierInfo *id;
-    const MacroInfo *mi;
-  };
+  struct directive_ifdef : directive_ifxdef {};
+
+  struct directive_ifndef : directive_ifxdef {};
+
+  struct directive_elifdef_taken : directive_ifxdef {};
+
+  struct directive_elifndef_taken : directive_ifxdef {};
 
   struct directive_elifdef_skiped {
     SourceLocation loc;
     SourceRange range;
     SourceLocation if_loc;
-  };
-
-  struct directive_elifndef_taken {
-    SourceLocation loc;
-    const IdentifierInfo *id;
-    const MacroInfo *mi;
   };
 
   struct directive_elifndef_skiped {
@@ -865,11 +870,10 @@ private:
               out << "EndifDirective";
               dumper->dumpPointer(&arg);
               dumper->dumpSourceRange({arg.loc, arg.if_loc});
-            } else if constexpr (std::is_same_v<T, directive_ifdef> ||
-                                 std::is_same_v<T, directive_elifdef_taken> ||
-                                 std::is_same_v<T, directive_ifndef> ||
-                                 std::is_same_v<T, directive_elifndef_taken>) {
-              if constexpr (std::is_same_v<T, directive_ifdef>)
+            } else if constexpr (std::derived_from<T, directive_ifxdef>) {
+              if constexpr (std::is_same_v<T, operator_defined>)
+                out << "DefinedOperator";
+              else if constexpr (std::is_same_v<T, directive_ifdef>)
                 out << "IfdefDirective";
               else if constexpr (std::is_same_v<T, directive_elifdef_taken>)
                 out << "ElifdefDirective";
@@ -881,6 +885,11 @@ private:
                 assert("Never reach here");
 
               dumper->dumpPointer(&arg);
+              // Simulate the SourceRange of the expression being tested in
+              // #if/elif callback
+              dumper->dumpSourceRange(
+                  {arg.tok_loc,
+                   arg.tok_loc.getLocWithOffset(arg.id->getLength())});
               out << ' ';
               dumper->dumpLocation(arg.loc);
               if (arg.mi)
@@ -1033,6 +1042,14 @@ private:
   void add_directive() {
     directive_nodes.emplace_back(directives.size() - 1, dir);
     directive_nodes[dir].children.emplace_back(directive_nodes.size() - 1);
+  }
+
+  void add_defined_operator() {
+    for (auto &item : defined_queue) {
+      directives.push_back(item);
+      add_directive();
+    }
+    defined_queue.clear();
   }
 
   void add_expansion_directive() {
@@ -1270,15 +1287,16 @@ private:
   std::optional<TextNodeDumper> dumper;
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<unsigned, 8> inclusion_stack;
+  llvm::SmallVector<operator_defined, 8> defined_queue;
   std::vector<expansion_decl> macros;
   std::vector<std::pair<unsigned, Token>> expansions;
   std::pair<unsigned, unsigned> last_macro_expansion;
-  std::vector<
-      std::variant<directive_def, directive_if, directive_elif, directive_else,
-                   directive_endif, directive_ifdef, directive_ifndef,
-                   directive_elifdef_taken, directive_elifdef_skiped,
-                   directive_elifndef_taken, directive_elifndef_skiped,
-                   directive_expansion, directive_inclusion>>
+  std::vector<std::variant<directive_def, directive_if, directive_elif,
+                           directive_else, directive_endif, operator_defined,
+                           directive_ifdef, directive_ifndef,
+                           directive_elifdef_taken, directive_elifdef_skiped,
+                           directive_elifndef_taken, directive_elifndef_skiped,
+                           directive_expansion, directive_inclusion>>
       directives;
   unsigned dir; // index of the present directive_node
   std::vector<directive_node> directive_nodes;
