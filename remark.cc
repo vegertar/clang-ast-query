@@ -283,6 +283,7 @@ private:
     }
 
     bool VisitDeclRefExpr(const DeclRefExpr *e) {
+      exp_expr(e);
       return index_named(e->getDecl(), e->getLocation());
     }
 
@@ -302,6 +303,18 @@ private:
     bool shouldTraversePostOrder() const { return use_post_order; }
 
   private:
+    // #EXP-EXPR: dump the relevant expressions at the macro expansion point
+    void exp_expr(const Expr *e) {
+      auto loc = e->getExprLoc();
+      if (loc.isMacroID()) {
+        auto &sm = ast.pp.getSourceManager();
+        ast.out << "#EXP-EXPR:";
+        ast.dumper->dumpLocation(sm.getExpansionLoc(loc));
+        ast.dumper->dumpPointer(e);
+        ast.out << '\n';
+      }
+    }
+
     bool index_named(const NamedDecl *d, SourceLocation loc = {}) {
       if (!d->getDeclName().isEmpty())
         index(loc.isValid() ? loc : d->getLocation(), d);
@@ -1006,15 +1019,6 @@ private:
           assert(v && v->is_expansion());
           dumper->dumpPointer(v->get_expansion());
           out << '\n';
-
-          // if (d) {
-          //   out << "=====================================\n";
-          //   dumper->dumpLocation(last_expansion_loc);
-          //   out << ' ';
-          //   dumper->dumpLocation(d->get_location());
-          //   out << '\n';
-          //   out << '\n';
-          // }
 
           assert(!d && "All expanded_decls are visited");
         }

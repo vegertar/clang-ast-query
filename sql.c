@@ -47,6 +47,8 @@
       }                                                                        \
       assert(i < MAX_STMT_SIZE);                                               \
       err = sqlite3_prepare_v2(db, sql, sizeof(sql), &stmts[i], NULL);         \
+      if (err)                                                                 \
+        fprintf(stderr, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(db)); \
       stmt = stmts[i];                                                         \
     }                                                                          \
     if (stmt)                                                                  \
@@ -217,6 +219,23 @@ static inline IMPL_ARRAY_CLEAR(hierarchies, NULL);
 
 static struct hierarchies hierarchies;
 
+static int compare_exp_expr_pair(const void *a, const void *b) {
+  return strcmp(((const struct exp_expr_pair *)a)->expr,
+                ((const struct exp_expr_pair *)b)->expr);
+}
+
+static void sort_exp_expr_set() {
+  qsort(exp_expr_set.data, exp_expr_set.i, sizeof(struct exp_expr_pair),
+        compare_exp_expr_pair);
+}
+
+static const struct exp_expr_pair *find_exp_expr_set(const char *expr) {
+  struct exp_expr_pair key = {.expr = expr};
+  return (const struct exp_expr_pair *)bsearch(&key, exp_expr_set.data,
+                                               exp_expr_set.i, sizeof(key),
+                                               compare_exp_expr_pair);
+}
+
 int dump(const char *db_file) {
   _Bool is_stdout = strcmp(db_file, "/dev/stdout") == 0;
 
@@ -226,6 +245,8 @@ int dump(const char *db_file) {
   exec_sql("PRAGMA synchronous = OFF");
   exec_sql("PRAGMA journal_mode = MEMORY");
   exec_sql("BEGIN TRANSACTION");
+
+  sort_exp_expr_set();
 
   dump_src();
   dump_ast();
@@ -252,6 +273,7 @@ int dump(const char *db_file) {
   do {                                                                         \
     const struct ref *ref = expr;                                              \
     if (ref->pointer) {                                                        \
+      FILL_TEXT(REF_KIND, ref->name);                                          \
       FILL_TEXT(REF_PTR, ref->pointer);                                        \
       FILL_TEXT(NAME, ref->sqname);                                            \
     }                                                                          \
@@ -281,6 +303,9 @@ static void dump_ast() {
            " end_src INTEGER,"
            " end_row INTEGER,"
            " end_col INTEGER,"
+           " exp_src INTEGER,"
+           " exp_row INTEGER,"
+           " exp_col INTEGER,"
            " src INTEGER,"
            " row INTEGER,"
            " col INTEGER,"
@@ -289,6 +314,7 @@ static void dump_ast() {
            " qualified_type TEXT,"
            " desugared_type TEXT,"
            " specs INTEGER,"
+           " ref_kind TEXT,"
            " ref_ptr TEXT)");
 
   unsigned parents[MAX_AST_LEVEL + 1];
@@ -313,11 +339,12 @@ static void dump_ast() {
   for (unsigned i = 0; i < ast.i; ++i) {
     const struct node *node = &ast.data[i];
     const struct decl *decl = &node->decl;
+    const struct exp_expr_pair *exp_expr = NULL;
     int parent_number = -1;
     unsigned specs = 0;
 
-#ifndef VALUES22
-#define VALUES22()                                                             \
+#ifndef VALUES26
+#define VALUES26()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
@@ -325,13 +352,14 @@ static void dump_ast() {
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
-  "?"
-#endif // !VALUES21
+  "?,?,?,"                                                                     \
+  "?,?"
+#endif // !VALUES26
 
     INSERT_INTO(ast, NUMBER, PARENT_NUMBER, FINAL_NUMBER, KIND, PTR, PREV,
                 MACRO, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
-                END_COL, SRC, ROW, COL, CLASS, NAME, QUALIFIED_TYPE,
-                DESUGARED_TYPE, SPECS, REF_PTR) {
+                END_COL, EXP_SRC, EXP_ROW, EXP_COL, SRC, ROW, COL, CLASS, NAME,
+                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR) {
 
       switch (decl->kind) {
       case DECL_KIND_V2:
@@ -367,6 +395,13 @@ static void dump_ast() {
         FILL_TEXT(KIND, node->name);
         FILL_TEXT(PTR, node->pointer);
         FILL_TEXT(PREV, node->prev);
+
+        exp_expr = find_exp_expr_set(node->pointer);
+        if (exp_expr) {
+          FILL_INT(EXP_SRC, src_number(exp_expr->exp.file));
+          FILL_INT(EXP_ROW, exp_expr->exp.line);
+          FILL_INT(EXP_COL, exp_expr->exp.col);
+        }
         break;
       case NODE_KIND_ENUM:
         break;

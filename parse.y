@@ -194,6 +194,13 @@
 
   DECL_ARRAY(tok_decl_set, struct tok_decl_pair);
 
+  struct exp_expr_pair {
+    struct sloc exp;
+    const char *expr;
+  };
+
+  DECL_ARRAY(exp_expr_set, struct exp_expr_pair);
+
   // Exchanging information with the parser.
   typedef struct {
     // Whether to not emit error messages.
@@ -219,6 +226,7 @@
   extern struct loc_exp_set loc_exp_set;
   extern struct inactive_set inactive_set;
   extern struct tok_decl_set tok_decl_set;
+  extern struct exp_expr_set exp_expr_set;
 
   #ifndef PATH_MAX
   # define PATH_MAX 4096
@@ -251,6 +259,7 @@
   struct loc_exp_set loc_exp_set;
   struct inactive_set inactive_set;
   struct tok_decl_set tok_decl_set;
+  struct exp_expr_set exp_expr_set;
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
 
@@ -281,6 +290,9 @@
 
   static DECL_METHOD(tok_decl_set, push, struct tok_decl_pair);
   static DECL_METHOD(tok_decl_set, clear, int);
+
+  static DECL_METHOD(exp_expr_set, push, struct exp_expr_pair);
+  static DECL_METHOD(exp_expr_set, clear, int);
 }
 
 // Include the header in the implementation rather than duplicating it.
@@ -352,6 +364,7 @@
     REMARK_INACTIVE
     REMARK_TOK_DECL
     REMARK_LOC_EXP
+    REMARK_EXP_EXPR
   <integer>
     INDENT
   <string>
@@ -479,11 +492,22 @@ node: HEAD parent prev range loc attrs labels decl opts
     };
   }
 
-remark: REMARK | REMARK_TU | REMARK_CWD | remark_loc_exp | remark_tok_decl | remark_inactive
+remark: REMARK
+ | REMARK_TU
+ | REMARK_CWD
+ | remark_loc_exp
+ | remark_exp_expr
+ | remark_tok_decl
+ | remark_inactive
 
 remark_loc_exp: REMARK_LOC_EXP '<' srange '>'
   {
     loc_exp_set_push(&loc_exp_set, $3);
+  }
+
+remark_exp_expr: REMARK_EXP_EXPR sloc POINTER
+  {
+    exp_expr_set_push(&exp_expr_set, (struct exp_expr_pair){$2, $3});
   }
 
 remark_tok_decl: REMARK_TOK_DECL tok POINTER
@@ -907,12 +931,21 @@ static void free_tok_decl(void *p) {
 static IMPL_ARRAY_PUSH(tok_decl_set, struct tok_decl_pair);
 static IMPL_ARRAY_CLEAR(tok_decl_set, free_tok_decl);
 
+static void free_exp_expr(void *p) {
+  struct exp_expr_pair *pair = (struct exp_expr_pair *)p;
+  free((void *)pair->expr);
+}
+
+static IMPL_ARRAY_PUSH(exp_expr_set, struct exp_expr_pair);
+static IMPL_ARRAY_CLEAR(exp_expr_set, free_exp_expr);
+
 void destroy() {
   ast_clear(&ast, 1);
   src_set_clear(&src_set, 1);
   loc_exp_set_clear(&loc_exp_set, 1);
   inactive_set_clear(&inactive_set, 1);
   tok_decl_set_clear(&tok_decl_set, 1);
+  exp_expr_set_clear(&exp_expr_set, 1);
 }
 
 static char *get_pointer(char *s) {

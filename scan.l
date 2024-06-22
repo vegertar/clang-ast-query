@@ -105,6 +105,10 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return TOK_REMARK_LOC_EXP;
 }
 
+^"#EXP-EXPR:" {
+  return TOK_REMARK_EXP_EXPR;
+}
+
 ^"#TOK-DECL:" {
   return TOK_REMARK_TOK_DECL;
 }
