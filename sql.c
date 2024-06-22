@@ -315,7 +315,8 @@ static void dump_ast() {
            " desugared_type TEXT,"
            " specs INTEGER,"
            " ref_kind TEXT,"
-           " ref_ptr TEXT)");
+           " ref_ptr TEXT,"
+           " ancestors TEXT)");
 
   unsigned parents[MAX_AST_LEVEL + 1];
   for (unsigned i = 0; i < sizeof(parents) / sizeof(*parents); ++i)
@@ -340,11 +341,30 @@ static void dump_ast() {
     const struct node *node = &ast.data[i];
     const struct decl *decl = &node->decl;
     const struct exp_expr_pair *exp_expr = NULL;
-    int parent_number = -1;
     unsigned specs = 0;
+    unsigned j = 0;
+    char ancestors[BUFSIZ] = {'['};
+    unsigned length = 1;
+    for (int parent_number = hierarchies.data[i].parent_number;
+         parent_number != -1 && j < MAX_AST_LEVEL;
+         parent_number = hierarchies.data[parent_number].parent_number) {
+      const char *ancestor = ast.data[parent_number].name;
+      const unsigned len = strlen(ancestor);
+      assert(length + len + 3 < sizeof(ancestors));
+      ancestors[length] = '"';
+      memcpy(ancestors + length + 1, ancestor, len);
+      ancestors[length + 1 + len] = '"';
+      ancestors[length + 1 + len + 1] = ',';
+      length += len + 3;
+    }
+    if (length > 1) {
+      --length;
+      assert(ancestors[length] == ',');
+    }
+    ancestors[length] = ']';
 
-#ifndef VALUES26
-#define VALUES26()                                                             \
+#ifndef VALUES27
+#define VALUES27()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
@@ -353,13 +373,14 @@ static void dump_ast() {
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
-  "?,?"
-#endif // !VALUES26
+  "?,?,?"
+#endif // !VALUES27
 
     INSERT_INTO(ast, NUMBER, PARENT_NUMBER, FINAL_NUMBER, KIND, PTR, PREV,
                 MACRO, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
                 END_COL, EXP_SRC, EXP_ROW, EXP_COL, SRC, ROW, COL, CLASS, NAME,
-                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR) {
+                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR,
+                ANCESTORS) {
 
       switch (decl->kind) {
       case DECL_KIND_V2:
@@ -429,6 +450,7 @@ static void dump_ast() {
       FILL_INT(ROW, node->loc.line);
       FILL_INT(COL, node->loc.col);
       FILL_INT(SPECS, specs);
+      FILL_TEXT(ANCESTORS, ancestors);
     }
     END_INSERT_INTO();
   }
