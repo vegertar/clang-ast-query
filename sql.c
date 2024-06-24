@@ -316,6 +316,7 @@ static void dump_ast() {
            " specs INTEGER,"
            " ref_kind TEXT,"
            " ref_ptr TEXT,"
+           " type_ptr TEXT,"
            " ancestors TEXT)");
 
   unsigned parents[MAX_AST_LEVEL + 1];
@@ -341,6 +342,7 @@ static void dump_ast() {
     const struct node *node = &ast.data[i];
     const struct decl *decl = &node->decl;
     const struct exp_expr_pair *exp_expr = NULL;
+    const char *type_ptr = NULL;
     unsigned specs = 0;
     unsigned j = 0;
     char ancestors[BUFSIZ] = {'['};
@@ -363,8 +365,8 @@ static void dump_ast() {
     }
     ancestors[length] = ']';
 
-#ifndef VALUES27
-#define VALUES27()                                                             \
+#ifndef VALUES28
+#define VALUES28()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
@@ -373,14 +375,15 @@ static void dump_ast() {
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
-  "?,?,?"
-#endif // !VALUES27
+  "?,?,?,"                                                                     \
+  "?"
+#endif // !VALUES28
 
     INSERT_INTO(ast, NUMBER, PARENT_NUMBER, FINAL_NUMBER, KIND, PTR, PREV,
                 MACRO, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
                 END_COL, EXP_SRC, EXP_ROW, EXP_COL, SRC, ROW, COL, CLASS, NAME,
                 QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR,
-                ANCESTORS) {
+                TYPE_PTR, ANCESTORS) {
 
       switch (decl->kind) {
       case DECL_KIND_V2:
@@ -417,12 +420,14 @@ static void dump_ast() {
         FILL_TEXT(PTR, node->pointer);
         FILL_TEXT(PREV, node->prev);
 
-        exp_expr = find_exp_expr_set(node->pointer);
-        if (exp_expr) {
+        if ((exp_expr = find_exp_expr_set(node->pointer))) {
           FILL_INT(EXP_SRC, src_number(exp_expr->exp.file));
           FILL_INT(EXP_ROW, exp_expr->exp.line);
           FILL_INT(EXP_COL, exp_expr->exp.col);
         }
+
+        if ((type_ptr = find_var_type_map(node->pointer)))
+          FILL_TEXT(TYPE_PTR, type_ptr);
         break;
       case NODE_KIND_ENUM:
         break;

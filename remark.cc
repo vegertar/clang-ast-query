@@ -335,17 +335,20 @@ private:
 
     template <typename T>
     bool index_valuable(const T *p, bool type_only = false) {
-      if (auto d = named(p->getType().getTypePtr()); d && !d->isImplicit()) {
-        if (!d->getDeclName().isEmpty()) {
-          if constexpr (std::is_same_v<T, FunctionDecl>) {
-            auto range = p->getReturnTypeSourceRange();
-            index(range.getBegin(), d);
-          } else if (auto ti = p->getTypeSourceInfo()) {
-            auto type_loc = ti->getTypeLoc();
-            index(get_location(type_loc), d);
-          } else {
-            assert(p->getLocation().isInvalid());
-          }
+      auto t = p->getType().getTypePtr();
+
+      // The ordinary hover splits the type token from a complete type spec,
+      // such as "int" in "int*", hence only the "int" part is indexed.
+      if (auto d = named(t, p);
+          d && !d->isImplicit() && !d->getDeclName().isEmpty()) {
+        if constexpr (std::is_same_v<T, FunctionDecl>) {
+          auto range = p->getReturnTypeSourceRange();
+          index(range.getBegin(), d);
+        } else if (auto ti = p->getTypeSourceInfo()) {
+          auto type_loc = ti->getTypeLoc();
+          index(get_location(type_loc), d);
+        } else {
+          assert(p->getLocation().isInvalid());
         }
       }
 
@@ -355,23 +358,29 @@ private:
       return true;
     }
 
-    NamedDecl *named(const Type *p) {
-      if (auto t = p->getAs<TypedefType>())
-        return t->getDecl();
+    NamedDecl *named(const Type *p, const void *var = nullptr) {
+      NamedDecl *d = nullptr;
+      bool record = false;
 
-      if (auto t = p->getAs<TagType>())
-        return t->getDecl();
+      if (auto t = p->getAs<TypedefType>()) {
+        d = t->getDecl();
+        record = true;
+      } else if (auto t = p->getAs<TagType>()) {
+        d = t->getDecl();
+        record = true;
+      } else if (auto t = p->getAs<FunctionType>()) {
+        d = named(t->getReturnType().getTypePtr(), var);
+      } else if (auto t = p->getAs<PointerType>()) {
+        d = named(t->getPointeeType().getTypePtr());
+      } else if (auto t = p->getArrayElementTypeNoTypeQual()) {
+        d = named(t);
+      }
 
-      if (auto t = p->getAs<FunctionType>())
-        return named(t->getReturnType().getTypePtr());
+      // #VAR-TYPE: record the type definition for the given variable.
+      if (record && var && d)
+        ast.out << "#VAR-TYPE:" << var << ' ' << d << '\n';
 
-      if (auto t = p->getAs<PointerType>())
-        return named(t->getPointeeType().getTypePtr());
-
-      if (auto t = p->getArrayElementTypeNoTypeQual())
-        return named(t);
-
-      return nullptr;
+      return d;
     }
 
     void index(SourceLocation loc, index_value_t val) { ast.index(loc, val); }
