@@ -279,12 +279,26 @@ int dump(const char *db_file) {
     }                                                                          \
   } while (0)
 
+// mem shares the fields with ref
+#define FILL_MEM(expr)                                                         \
+  do {                                                                         \
+    const struct mem *mem = expr;                                              \
+    if (mem->pointer) {                                                        \
+      assert(!def->ref.pointer);                                               \
+      assert(mem->kind);                                                       \
+      FILL_TEXT(REF_KIND, mem->kind == MEM_KIND_ARROW ? "arrow" : "dot");      \
+      FILL_TEXT(REF_PTR, mem->pointer);                                        \
+      FILL_TEXT(NAME, mem->name);                                              \
+    }                                                                          \
+  } while (0)
+
 #define FILL_DEF(expr)                                                         \
   do {                                                                         \
     const struct def *def = expr;                                              \
     FILL_TEXT(QUALIFIED_TYPE, def->type.qualified);                            \
     FILL_TEXT(DESUGARED_TYPE, def->type.desugared);                            \
     FILL_REF(&def->ref);                                                       \
+    FILL_MEM(&def->mem);                                                       \
     specs |= mark_specs(def->specs);                                           \
   } while (0)
 
