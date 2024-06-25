@@ -261,6 +261,11 @@ private:
     }
 
     bool VisitVarDecl(const VarDecl *d) {
+      if (!d->hasDefinition())
+        remark_imported_decl(d);
+      else if (d->isExternC() && d->isThisDeclarationADefinition())
+        remark_exported_decl(d);
+
       if (auto p = dyn_cast<ParmVarDecl>(d)) {
         // It still needs to index the parameter type.
         // e.g. typedef void foo_t(Type parm_var)
@@ -275,15 +280,21 @@ private:
     bool VisitFunctionDecl(const FunctionDecl *d) {
       index_valuable(d);
 
-      auto index_type_only = !d->doesThisDeclarationHaveABody();
+      const auto with_body = d->doesThisDeclarationHaveABody();
+      const auto index_type_only = !with_body;
       for (auto param : d->parameters())
         index_valuable(param, index_type_only);
+
+      if (!d->hasBody())
+        remark_imported_decl(d);
+      else if (d->isExternC() && with_body)
+        remark_exported_decl(d);
 
       return true;
     }
 
     bool VisitDeclRefExpr(const DeclRefExpr *e) {
-      exp_expr(e);
+      remark_exp_expr(e);
       return index_named(e->getDecl(), e->getLocation());
     }
 
@@ -302,9 +313,11 @@ private:
 
     bool shouldTraversePostOrder() const { return use_post_order; }
 
+    bool shouldVisitImplicitCode() const { return true; }
+
   private:
     // #EXP-EXPR: dump the relevant expressions at the macro expansion point
-    void exp_expr(const Expr *e) {
+    void remark_exp_expr(const Expr *e) {
       auto loc = e->getExprLoc();
       if (loc.isMacroID()) {
         auto &sm = ast.pp.getSourceManager();
@@ -313,6 +326,22 @@ private:
         ast.dumper->dumpPointer(e);
         ast.out << '\n';
       }
+    }
+
+    template <typename D> void remark_imported_decl(const D *d) {
+      remark_io_decl(d, "IMPORTED");
+    }
+
+    template <typename D> void remark_exported_decl(const D *d) {
+      remark_io_decl(d, "EXPORTED");
+    }
+
+    template <typename D> void remark_io_decl(const D *d, const char *s) {
+      ast.out << '#' << s << ':';
+      ast.dumper->dumpPointer(d);
+      ast.dumper->dumpName(d);
+      ast.dumper->dumpType(d->getType());
+      ast.out << '\n';
     }
 
     bool index_named(const NamedDecl *d, SourceLocation loc = {}) {
