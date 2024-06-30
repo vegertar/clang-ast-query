@@ -328,8 +328,6 @@ private:
 
     bool shouldTraversePostOrder() const { return use_post_order; }
 
-    bool shouldVisitImplicitCode() const { return true; }
-
   private:
     // #EXP-EXPR: dump the relevant expressions at the macro expansion point
     void remark_exp_expr(const Expr *e) {
@@ -344,14 +342,14 @@ private:
     }
 
     template <typename D> void remark_imported_decl(const D *d) {
-      remark_io_decl(d, "IMPORTED");
+      remark_symbol(d, "IMPORTED");
     }
 
     template <typename D> void remark_exported_decl(const D *d) {
-      remark_io_decl(d, "EXPORTED");
+      remark_symbol(d, "EXPORTED");
     }
 
-    template <typename D> void remark_io_decl(const D *d, const char *s) {
+    template <typename D> void remark_symbol(const D *d, const char *s) {
       ast.out << '#' << s << ':';
       ast.dumper->dumpPointer(d);
       ast.dumper->dumpName(d);

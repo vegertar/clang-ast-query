@@ -330,6 +330,7 @@ static void dump_ast() {
            " specs INTEGER,"
            " ref_kind TEXT,"
            " ref_ptr TEXT,"
+           " def_ptr TEXT,"
            " type_ptr TEXT,"
            " ancestors TEXT)");
 
@@ -357,6 +358,7 @@ static void dump_ast() {
     const struct decl *decl = &node->decl;
     const struct exp_expr_pair *exp_expr = NULL;
     const char *type_ptr = NULL;
+    const char *def_ptr = NULL;
     unsigned specs = 0;
     unsigned j = 0;
     char ancestors[BUFSIZ] = {'['};
@@ -379,8 +381,8 @@ static void dump_ast() {
     }
     ancestors[length] = ']';
 
-#ifndef VALUES28
-#define VALUES28()                                                             \
+#ifndef VALUES29
+#define VALUES29()                                                             \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
@@ -390,13 +392,13 @@ static void dump_ast() {
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
   "?,?,?,"                                                                     \
-  "?"
-#endif // !VALUES28
+  "?,?"
+#endif // !VALUES29
 
     INSERT_INTO(ast, NUMBER, PARENT_NUMBER, FINAL_NUMBER, KIND, PTR, PREV,
                 MACRO, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
                 END_COL, EXP_SRC, EXP_ROW, EXP_COL, SRC, ROW, COL, CLASS, NAME,
-                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR,
+                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR, DEF_PTR,
                 TYPE_PTR, ANCESTORS) {
 
       switch (decl->kind) {
@@ -440,7 +442,10 @@ static void dump_ast() {
           FILL_INT(EXP_COL, exp_expr->exp.col);
         }
 
-        if ((type_ptr = find_var_type_map(node->pointer)))
+        if ((def_ptr = find_string_map(&decl_def_map, node->pointer)))
+          FILL_TEXT(DEF_PTR, def_ptr);
+
+        if ((type_ptr = find_string_map(&var_type_map, node->pointer)))
           FILL_TEXT(TYPE_PTR, type_ptr);
         break;
       case NODE_KIND_ENUM:

@@ -253,12 +253,6 @@
   /// The memory of the found filename is owned by the underlying array.
   const char *search_src(const char *filename, unsigned *number);
 
-#define add_var_type_map(var, type) add_string_map(&var_type_map, var, type)
-#define find_var_type_map(var) find_string_map(&var_type_map, var)
-
-#define add_decl_def_map(decl, def) add_string_map(&decl_def_map, decl, def)
-#define find_decl_def_map(decl) find_string_map(&decl_def_map, decl)
-
   /// Memory ownership of the parameters will be transferred to the underlying map.
   struct string_pair add_string_map(struct string_map *map, const char *k, const char *v);
   /// The memory of the found type is owned by the underlying map.
@@ -386,6 +380,8 @@
     ENUM
     FIELD
     REMARK
+    REMARK_IMPORTED
+    REMARK_EXPORTED
     REMARK_INACTIVE
     REMARK_TOK_DECL
     REMARK_LOC_EXP
@@ -529,6 +525,8 @@ remark: REMARK
  | remark_exp_expr
  | remark_tok_decl
  | remark_inactive
+ | remark_imported
+ | remark_exported
 
 remark_loc_exp: REMARK_LOC_EXP '<' srange '>'
   {
@@ -549,6 +547,12 @@ remark_inactive: REMARK_INACTIVE '<' srange '>'
   {
     inactive_set_push(&inactive_set, $3);
   }
+
+remark_imported: REMARK_IMPORTED symbol
+
+remark_exported: REMARK_EXPORTED symbol
+
+symbol: POINTER NAME type
 
 tok: sloc { $$ = (struct tok){$1}; }
  | sloc INTEGER

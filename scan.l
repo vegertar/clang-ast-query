@@ -23,10 +23,10 @@
   do {                                                                         \
     char k[32];                                                                \
     char v[32];                                                                \
-    int n = sscanf(yytext, "#%s:%s %s",                                        \
+    int n = sscanf(yytext,                                                     \
                    tok == TOK_REMARK_VAR_TYPE                                  \
-                       ? "VAR-TYPE"                                            \
-                       : tok == TOK_REMARK_DECL_DEF ? "DECL-DEF" : "UNKNOWN",  \
+                       ? "#VAR-TYPE:%s %s"                                     \
+                       : tok == TOK_REMARK_DECL_DEF ? "#DECL-DEF:%s %s" : "",  \
                    k, v);                                                      \
     if (n != 2)                                                                \
       return TOK_YYUNDEF;                                                      \
@@ -123,6 +123,14 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
 
 ^"#DECL-DEF:".+ {
   REMARK_KV(TOK_REMARK_DECL_DEF);
+}
+
+^"#IMPORTED:" {
+  return TOK_REMARK_IMPORTED;
+}
+
+^"#EXPORTED:" {
+  return TOK_REMARK_EXPORTED;
 }
 
 ^"#INACTIVE:" {
