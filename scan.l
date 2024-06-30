@@ -19,6 +19,26 @@
     yylloc->first_column = yylloc->last_column; \
   } while (0)
 
+#define REMARK_KV(tok)                                                         \
+  do {                                                                         \
+    char k[32];                                                                \
+    char v[32];                                                                \
+    int n = sscanf(yytext, "#%s:%s %s",                                        \
+                   tok == TOK_REMARK_VAR_TYPE                                  \
+                       ? "VAR-TYPE"                                            \
+                       : tok == TOK_REMARK_DECL_DEF ? "DECL-DEF" : "UNKNOWN",  \
+                   k, v);                                                      \
+    if (n != 2)                                                                \
+      return TOK_YYUNDEF;                                                      \
+    struct string_map *map =                                                   \
+        tok == TOK_REMARK_VAR_TYPE                                             \
+            ? &var_type_map                                                    \
+            : tok == TOK_REMARK_DECL_DEF ? &decl_def_map : NULL;               \
+    assert(map);                                                               \
+    yylval->tok = add_string_map(map, strdup(k), strdup(v));                   \
+    return tok;                                                                \
+  } while (0)
+
 static inline char * qname() {
   return strndup(yytext + 1, yyleng - 2);
 }
@@ -98,12 +118,11 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
 }
 
 ^"#VAR-TYPE:".+ {
-  char var[32];
-  char type[32];
-  int n = sscanf(yytext, "#VAR-TYPE:%s %s", var, type);
-  if (n != 2) return TOK_YYUNDEF;
-  yylval->TOK_REMARK_VAR_TYPE = add_var_type_map(strdup(var), strdup(type));
-  return TOK_REMARK_VAR_TYPE;
+  REMARK_KV(TOK_REMARK_VAR_TYPE);
+}
+
+^"#DECL-DEF:".+ {
+  REMARK_KV(TOK_REMARK_DECL_DEF);
 }
 
 ^"#INACTIVE:" {

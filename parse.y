@@ -171,12 +171,12 @@
 
   DECL_ARRAY(ast, struct node);
 
-  struct var_type_pair {
-    const char *var;
-    const char *type;
+  struct string_pair {
+    const char *k;
+    const char *v;
   };
 
-  DECL_ARRAY(var_type_map, struct var_type_pair);
+  DECL_ARRAY(string_map, struct string_pair);
 
   struct src {
     const char *filename;
@@ -234,6 +234,8 @@
   extern struct inactive_set inactive_set;
   extern struct tok_decl_set tok_decl_set;
   extern struct exp_expr_set exp_expr_set;
+  extern struct string_map var_type_map;
+  extern struct string_map decl_def_map;
 
   #ifndef PATH_MAX
   # define PATH_MAX 4096
@@ -251,10 +253,16 @@
   /// The memory of the found filename is owned by the underlying array.
   const char *search_src(const char *filename, unsigned *number);
 
+#define add_var_type_map(var, type) add_string_map(&var_type_map, var, type)
+#define find_var_type_map(var) find_string_map(&var_type_map, var)
+
+#define add_decl_def_map(decl, def) add_string_map(&decl_def_map, decl, def)
+#define find_decl_def_map(decl) find_string_map(&decl_def_map, decl)
+
   /// Memory ownership of the parameters will be transferred to the underlying map.
-  struct var_type_pair add_var_type_map(const char *var, const char *type);
+  struct string_pair add_string_map(struct string_map *map, const char *k, const char *v);
   /// The memory of the found type is owned by the underlying map.
-  const char *find_var_type_map(const char *var);
+  const char *find_string_map(struct string_map *map, const char *k);
 }
 
 // Emitted in the implementation file.
@@ -272,10 +280,11 @@
   struct inactive_set inactive_set;
   struct tok_decl_set tok_decl_set;
   struct exp_expr_set exp_expr_set;
+  struct string_map var_type_map;
+  struct string_map decl_def_map;
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
 
-  static struct var_type_map var_type_map;
   static char *last_loc_src;
   static unsigned last_loc_line;
 
@@ -295,7 +304,7 @@
 
   static DECL_METHOD(src_set, clear, int);
 
-  static DECL_METHOD(var_type_map, clear, int);
+  static DECL_METHOD(string_map, clear, int);
 
   static DECL_METHOD(loc_exp_set, push, struct srange);
   static DECL_METHOD(loc_exp_set, clear, int);
@@ -353,7 +362,7 @@
 %printer { fprintf(yyo, "%s", "col"); } COL;
 %printer { fprintf(yyo, "%s", "value: Int"); } ENUM;
 %printer { fprintf(yyo, "%s", "field"); } FIELD;
-%printer { fprintf(yyo, "var(%s) type(%s)", $$.var, $$.type); } REMARK_VAR_TYPE;
+%printer { fprintf(yyo, "<%s,%s>", $$.k, $$.v); } <struct string_pair>;
 %printer { fprintf(yyo, "%d", $$); } <integer>;
 %printer { fprintf(yyo, "\"%s\"", $$); } <string>;
 %printer { print_type(yyo, &$$); } <struct type>;
@@ -408,8 +417,9 @@
     INTEGER
     REMARK_TU
     REMARK_CWD
-  <struct var_type_pair>
+  <struct string_pair>
     REMARK_VAR_TYPE
+    REMARK_DECL_DEF
 
 %nterm
   <_Bool>
@@ -514,6 +524,7 @@ remark: REMARK
  | REMARK_TU
  | REMARK_CWD
  | REMARK_VAR_TYPE
+ | REMARK_DECL_DEF
  | remark_loc_exp
  | remark_exp_expr
  | remark_tok_decl
@@ -919,34 +930,34 @@ const char * add_src(const char *filename) {
   return src_set.data[i].filename;
 }
 
-static int compare_var_type(const void *a, const void *b, size_t n) {
-  const char *x = ((const struct var_type_pair *)a)->var;
-  const char *y = ((const struct var_type_pair *)b)->var;
+static int compare_string_pair(const void *a, const void *b, size_t n) {
+  const char *x = ((const struct string_pair *)a)->k;
+  const char *y = ((const struct string_pair *)b)->k;
   return strcmp(x, y);
 }
 
-static void free_var_type(void *p) {
-  struct var_type_pair *pair = (struct var_type_pair *)p;
-  free((void *)pair->var);
-  free((void *)pair->type);
+static void free_string_pair(void *p) {
+  struct string_pair *pair = (struct string_pair *)p;
+  free((void *)pair->k);
+  free((void *)pair->v);
 }
 
-static IMPL_ARRAY_PUSH(var_type_map, struct var_type_pair)
-static IMPL_ARRAY_BSEARCH(var_type_map, compare_var_type)
-static IMPL_ARRAY_BADD(var_type_map, NULL)
-static IMPL_ARRAY_CLEAR(var_type_map, free_var_type)
+static IMPL_ARRAY_PUSH(string_map, struct string_pair)
+static IMPL_ARRAY_BSEARCH(string_map, compare_string_pair)
+static IMPL_ARRAY_BADD(string_map, NULL)
+static IMPL_ARRAY_CLEAR(string_map, free_string_pair)
 
-struct var_type_pair add_var_type_map(const char *var, const char *type) {
-  struct var_type_pair pair = {var, type};
-  _Bool added = var_type_map_badd(&var_type_map, &pair, NULL);
+struct string_pair add_string_map(struct string_map *map, const char *k, const char *v) {
+  struct string_pair pair = {k, v};
+  _Bool added = string_map_badd(map, &pair, NULL);
   assert(added);
   return pair;
 }
 
-const char *find_var_type_map(const char *var) {
+const char *find_string_map(struct string_map *map, const char *k) {
   unsigned i;
-  _Bool found = var_type_map_bsearch(&var_type_map, &var, &i);
-  return found ? var_type_map.data[i].type : NULL;
+  _Bool found = string_map_bsearch(map, &k, &i);
+  return found ? map->data[i].v : NULL;
 }
 
 static void sloc_destroy(struct sloc *sloc) {
@@ -995,7 +1006,8 @@ void destroy() {
   inactive_set_clear(&inactive_set, 1);
   tok_decl_set_clear(&tok_decl_set, 1);
   exp_expr_set_clear(&exp_expr_set, 1);
-  var_type_map_clear(&var_type_map, 1);
+  string_map_clear(&var_type_map, 1);
+  string_map_clear(&decl_def_map, 1);
 }
 
 static char *get_pointer(char *s) {

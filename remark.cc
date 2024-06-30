@@ -261,10 +261,22 @@ private:
     }
 
     bool VisitVarDecl(const VarDecl *d) {
-      if (!d->hasDefinition())
+      const auto kind = d->isThisDeclarationADefinition();
+      const auto max_kind = d->hasDefinition();
+
+      if (max_kind == VarDecl::DeclarationOnly) {
         remark_imported_decl(d);
-      else if (d->isExternC() && d->isThisDeclarationADefinition())
-        remark_exported_decl(d);
+      } else {
+        if (d->isExternC() && kind == max_kind)
+          remark_exported_decl(d);
+
+        const auto def = max_kind == VarDecl::TentativeDefinition
+                             ? d->getActingDefinition()
+                             : d->getDefinition();
+
+        if (d != def)
+          remark_decl_def(d, def);
+      }
 
       if (auto p = dyn_cast<ParmVarDecl>(d)) {
         // It still needs to index the parameter type.
@@ -284,6 +296,9 @@ private:
       const auto index_type_only = !with_body;
       for (auto param : d->parameters())
         index_valuable(param, index_type_only);
+
+      if (!with_body)
+        remark_decl_def(d, d->getDefinition());
 
       if (!d->hasBody())
         remark_imported_decl(d);
@@ -341,6 +356,13 @@ private:
       ast.dumper->dumpPointer(d);
       ast.dumper->dumpName(d);
       ast.dumper->dumpType(d->getType());
+      ast.out << '\n';
+    }
+
+    void remark_decl_def(const void *decl, const void *def) {
+      ast.out << "#DECL-DEF:";
+      ast.dumper->dumpPointer(decl);
+      ast.dumper->dumpPointer(def);
       ast.out << '\n';
     }
 
