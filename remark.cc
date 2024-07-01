@@ -267,15 +267,14 @@ private:
       if (max_kind == VarDecl::DeclarationOnly) {
         remark_imported_decl(d);
       } else {
-        if (d->isExternC() && kind == max_kind)
-          remark_exported_decl(d);
-
         const auto def = max_kind == VarDecl::TentativeDefinition
                              ? d->getActingDefinition()
                              : d->getDefinition();
 
         if (d != def)
           remark_decl_def(d, def);
+        else if (d->isExternC())
+          remark_exported_decl(d);
       }
 
       if (auto p = dyn_cast<ParmVarDecl>(d)) {
@@ -787,15 +786,16 @@ private:
     if (!mi)
       return;
 
-    dump_macro_parameters(mi);
-    out << " Macro";
+    out << " '<...>' Macro";
     dumper->dumpPointer(mi);
-    out << " '" << name << "'";
+    out << " '" << name << "' ";
+    dump_macro_parameters(mi);
+    out << ':';
     dump_macro_replacement(mi);
   }
 
   void dump_macro_parameters(const MacroInfo *mi) {
-    out << " '";
+    out << "'";
     if (mi->isFunctionLike()) {
       out << '(';
       auto i = mi->param_begin(), e = mi->param_end();
@@ -821,7 +821,7 @@ private:
   }
 
   void dump_macro_replacement(const MacroInfo *mi) {
-    out << " '";
+    out << "'";
     out.escape('\'');
     if (!mi->tokens_empty()) {
       auto i = mi->tokens_begin(), e = mi->tokens_end();
@@ -843,13 +843,15 @@ private:
     out << "'";
   }
 
-  void dump_macro(const MacroInfo *mi) {
+  void dump_macro(const MacroInfo *mi, StringRef name) {
     out << "MacroDecl";
     dumper->dumpPointer(mi);
     dumper->dumpSourceRange(
         {mi->getDefinitionLoc(), mi->getDefinitionEndLoc()});
 
+    out << ' ' << name << ' ';
     dump_macro_parameters(mi);
+    out << ':';
     dump_macro_replacement(mi);
   }
 
@@ -895,6 +897,7 @@ private:
           [this](auto &&arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, directive_def>) {
+              auto id = arg.id;
               auto md = arg.md;
               dump_kind(md->getKind());
               out << "Directive";
@@ -905,9 +908,9 @@ private:
               }
               out << ' ';
               dumper->dumpLocation(md->getLocation());
-              out << ' ';
-              out << arg.id->getName();
-              dumper->AddChild([md, this] { dump_macro(md->getMacroInfo()); });
+              dumper->AddChild([id, md, this] {
+                dump_macro(md->getMacroInfo(), id->getName());
+              });
             } else if constexpr (std::is_same_v<T, directive_if> ||
                                  std::is_same_v<T, directive_elif>) {
               if constexpr (std::is_same_v<T, directive_if>)
