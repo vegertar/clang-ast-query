@@ -244,11 +244,11 @@ private:
 
     bool VisitTypedefDecl(const TypedefDecl *d) {
       auto t = d->getUnderlyingType().getTypePtr();
-      if (!t->getAs<TagType>()) {
-        auto p = named(t);
-        if (p && !p->isImplicit()) {
-          index_named(p, get_location(d->getTypeSourceInfo()->getTypeLoc()));
-        }
+      if (auto p = named(t); p && !p->isImplicit()) {
+        auto loc = get_location(d->getTypeSourceInfo()->getTypeLoc());
+        // TagDecl has already been visited
+        if (!loc.isMacroID() || !t->getAs<TagType>())
+          index_named(p, loc);
       }
       return index_named(d);
     }
@@ -322,6 +322,19 @@ private:
       ++use_post_order;
       RecursiveASTVisitor::TraverseMemberExpr(e);
       --use_post_order;
+      return true;
+    }
+
+    bool VisitInitListExpr(InitListExpr *expr) {
+      for (auto init : expr->inits()) {
+        if (auto designated = llvm::dyn_cast<DesignatedInitExpr>(init)) {
+          for (auto designator : designated->designators()) {
+            if (designator.isFieldDesignator()) {
+              index_named(designator.getFieldDecl(), designator.getFieldLoc());
+            }
+          }
+        }
+      }
       return true;
     }
 
@@ -1043,7 +1056,7 @@ private:
     auto &sm = pp.getSourceManager();
     SourceLocation last_loc;
     SourceLocation last_expansion_loc;
-    unsigned index_of_last_expansion_loc = -1;
+    int index_of_last_expansion_loc = -1;
     unsigned indexable_tokens = 0;
     unsigned indexed_tokens = 0;
 
@@ -1071,7 +1084,7 @@ private:
         if (last_loc.isMacroID()) {
           auto v = find(last_expansion_loc, FIND_OPTION_EQUAL);
           auto d = v ? v->get_expanded_decl() : nullptr;
-          unsigned j = i - 1;
+          int j = i - 1;
 
           while (d && j > index_of_last_expansion_loc) {
             auto &t = tokens[j];
