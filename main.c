@@ -213,8 +213,15 @@ int main(int argc, char **argv) {
     err = text_mode(argc, argv);
   }
 
-  if (!err && !text_flag && out_filename)
-    err = dump(out_filename);
+  if (!err && !text_flag && out_filename) {
+    char tmp_filename[PATH_MAX];
+    snprintf(tmp_filename, sizeof(tmp_filename), "%s.tmp", out_filename);
+    err = dump(tmp_filename);
+    if (!err)
+      rename(tmp_filename, out_filename);
+    else
+      unlink(tmp_filename);
+  }
 
   if (text_file)
     fclose(text_file);

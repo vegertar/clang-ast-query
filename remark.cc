@@ -363,6 +363,13 @@ private:
       ast.out << '\n';
     }
 
+    void remark_var_type(const void *var, const void *type) {
+      ast.out << "#VAR-TYPE:";
+      ast.dumper->dumpPointer(var);
+      ast.dumper->dumpPointer(type);
+      ast.out << '\n';
+    }
+
     bool index_named(const NamedDecl *d, SourceLocation loc = {}) {
       if (!d->getDeclName().isEmpty())
         index(loc.isValid() ? loc : d->getLocation(), d);
@@ -385,8 +392,9 @@ private:
     bool index_valuable(const T *p, bool type_only = false) {
       auto t = p->getType().getTypePtr();
 
-      // The ordinary hover splits the type token from a complete type spec,
-      // such as "int" in "int*", hence only the "int" part is indexed.
+      // Index the type part of the VarDecl. Since the ordinary hover splits
+      // the type token from a complete type spec, such as "int" in "int*",
+      // hence only the "int" part is indexed.
       if (auto d = named(t, p);
           d && !d->isImplicit() && !d->getDeclName().isEmpty()) {
         if constexpr (std::is_same_v<T, FunctionDecl>) {
@@ -406,16 +414,36 @@ private:
       return true;
     }
 
-    NamedDecl *named(const Type *p, const void *var = nullptr) {
+    NamedDecl *named(const Type *p, const void *var = nullptr,
+                     bool *remarked = nullptr) {
       NamedDecl *d = nullptr;
       bool record = false;
 
       if (auto t = p->getAs<TypedefType>()) {
-        d = t->getDecl();
-        record = true;
+        auto decl = t->getDecl();
+        if (var && decl && (!remarked || !*remarked)) {
+          bool done = false;
+          if (!remarked)
+            remarked = &done;
+
+          // remark var with the underlying type if possible
+          named(decl->getUnderlyingType().getTypePtr(), var, remarked);
+          if (!*remarked) {
+            // otherwise fallback to the type alias that close to the possible
+            // underlying type
+            remark_var_type(var, decl);
+            *remarked = true;
+          }
+        }
+
+        d = decl;
       } else if (auto t = p->getAs<TagType>()) {
         d = t->getDecl();
-        record = true;
+        if (var && d) {
+          remark_var_type(var, d);
+          if (remarked)
+            *remarked = true;
+        }
       } else if (auto t = p->getAs<FunctionType>()) {
         d = named(t->getReturnType().getTypePtr(), var);
       } else if (auto t = p->getAs<PointerType>()) {
@@ -423,10 +451,6 @@ private:
       } else if (auto t = p->getArrayElementTypeNoTypeQual()) {
         d = named(t);
       }
-
-      // #VAR-TYPE: record the type definition for the given variable.
-      if (record && var && d)
-        ast.out << "#VAR-TYPE:" << var << ' ' << d << '\n';
 
       return d;
     }

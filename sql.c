@@ -85,6 +85,7 @@ enum spec {
   SPEC_PASTE = 1U << 7,
   SPEC_ARG = 1U << 8,
   SPEC_FAST = 1U << 9,
+  SPEC_CINIT = 1U << 10,
 };
 
 enum semantic {
@@ -146,6 +147,8 @@ static unsigned mark_specs(const struct array array) {
       specs |= SPEC_ARG;
     } else if (strcmp(spec, "fast") == 0) {
       specs |= SPEC_FAST;
+    } else if (strcmp(spec, "cinit") == 0) {
+      specs |= SPEC_CINIT;
     }
   }
   assert(specs <= INT_MAX);
