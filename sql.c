@@ -38,8 +38,13 @@
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
-    static sqlite3_stmt *stmt = NULL;                                          \
+    static sqlite3_stmt *stmt;                                                 \
+    static sqlite3 *last_db;                                                   \
     __VA_ARGS__;                                                               \
+    if (last_db != db) {                                                       \
+      last_db = db;                                                            \
+      stmt = NULL;                                                             \
+    }                                                                          \
     if (!err && !stmt) {                                                       \
       int i = 0;                                                               \
       while (i < MAX_STMT_SIZE && stmts[i]) {                                  \
@@ -242,6 +247,11 @@ static const struct exp_expr_pair *find_exp_expr_set(const char *expr) {
 int dump(const char *db_file) {
   _Bool is_stdout = strcmp(db_file, "/dev/stdout") == 0;
 
+  db = NULL;
+  memset(stmts, 0, sizeof(stmts));
+  errmsg = NULL;
+  err = 0;
+
   sqlite3_open(is_stdout ? ":memory:" : db_file, &db);
   hierarchies_reserve(&hierarchies, ast.i);
 
@@ -401,8 +411,8 @@ static void dump_ast() {
     INSERT_INTO(ast, NUMBER, PARENT_NUMBER, FINAL_NUMBER, KIND, PTR, PREV,
                 MACRO, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
                 END_COL, EXP_SRC, EXP_ROW, EXP_COL, SRC, ROW, COL, CLASS, NAME,
-                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR, DEF_PTR,
-                TYPE_PTR, ANCESTORS) {
+                QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR,
+                DEF_PTR, TYPE_PTR, ANCESTORS) {
 
       switch (decl->kind) {
       case DECL_KIND_V2:

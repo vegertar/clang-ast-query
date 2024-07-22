@@ -6,23 +6,18 @@
 #include "remark.h"
 #endif // USE_CLANG_TOOL
 
+#include <sqlite3.h>
+
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <libgen.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
-static int debug_flag;
-static int text_flag;
-static int cc_flag;
-static const char *in_filename;
-static const char *out_filename;
-static const char *tu_filename;
-static FILE *text_file;
-
-const char *tu_code;
-size_t tu_size;
+#define ALT(x, y) (x ? x : y)
 
 struct parser_context {
   YYLTYPE lloc;
@@ -31,11 +26,33 @@ struct parser_context {
 };
 
 DECL_ARRAY(string, char);
-IMPL_ARRAY_RESERVE(string, char)
 IMPL_ARRAY_APPEND(string, char)
 IMPL_ARRAY_CLEAR(string, NULL)
 
-static struct string in_content;
+enum if_kind {
+  IF_TEXT,
+  IF_C,
+  IF_OBJ,
+};
+
+struct input_file {
+  enum if_kind kind;
+  const char *filename;
+  sqlite3 *db;
+};
+
+static void free_input_file(void *p) {
+  struct input_file *f = (struct input_file *)p;
+  if (f->db)
+    sqlite3_close(f->db);
+}
+
+DECL_ARRAY(input_file_list, struct input_file);
+IMPL_ARRAY_PUSH(input_file_list, struct input_file)
+IMPL_ARRAY_CLEAR(input_file_list, free_input_file)
+
+static struct input_file_list in_files;
+static FILE *text_file;
 
 static int parse_line(char *line, size_t n, size_t cap, void *data) {
   assert(n + 1 < cap);
@@ -78,63 +95,64 @@ static int parse_file(FILE *fp) {
 static inline FILE *open_file(const char *filename, const char *mode) {
   FILE *fp = fopen(filename, mode);
   if (!fp) {
-    fprintf(stderr, "%s: open('%s') error: %s\n", __func__, in_filename,
+    fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
             strerror(errno));
   }
   return fp;
 }
 
-static int text_mode(int argc, char **argv) {
-  FILE *fp = in_filename ? open_file(in_filename, "r") : stdin;
-  if (!fp)
-    return 1;
-
-  int err = parse_file(fp);
-  if (in_filename)
-    fclose(fp);
-  return err;
-}
-
-static void read_content(struct string *s) {
-  FILE *fp = in_filename ? open_file(in_filename, "r") : stdin;
-  if (!fp)
-    exit(1);
-
+static int read_content(FILE *fp, struct string *s) {
   char buffer[BUFSIZ];
   size_t n = 0;
   while ((n = fread(buffer, 1, sizeof(buffer), fp))) {
     string_append(s, buffer, n);
   }
-  if (ferror(fp)) {
-    fprintf(stderr, "fread error: %s\n", strerror(errno));
-    exit(1);
+  return ferror(fp);
+}
+
+static _Bool ends_with(const char *s, const char *ending) {
+  int n = s ? strlen(s) : 0;
+  int m = ending ? strlen(ending) : 0;
+  return m == 0 || n >= m && strcmp(s + n - m, ending) == 0;
+}
+
+static char rand_char() {
+  static const char s[] = "0123456789"
+                          "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                          "abcdefghijklmnopqrstuvwxyz";
+  return s[rand() % (sizeof(s) - 1)];
+}
+
+static const char *rand7() {
+  static char s[8];
+  for (unsigned i = 0; i < sizeof(s) - 1; ++i) {
+    s[i] = rand_char();
   }
-
-  if (in_filename)
-    fclose(fp);
+  return s;
 }
 
-static void prepare_tu(struct string *s) {
-  read_content(s);
-  tu_code = s->data;
-  tu_size = s->i;
-  if (!tu_filename)
-    tu_filename = in_filename;
-}
-
-static int cc_mode(int argc, char **argv) {
+static int compile(const char *code, size_t size, const char *filename,
+                   int argc, char **argv) {
 #ifdef USE_CLANG_TOOL
   struct parser_context ctx = {(YYLTYPE){1, 1, 1, 1}};
-  int err = remark(tu_code, tu_size, tu_filename, argv + optind, argc - optind,
+  int err = remark(code, size, filename, argv + optind, argc - optind,
                    parse_line, &ctx);
   return err ? err : ctx.errs;
 #else
-  fprintf(stderr, "CC mode is not compiled in\n");
+  fprintf(stderr, "Clang tool is not compiled in\n");
   return -1;
 #endif // USE_CLANG_TOOL
 }
 
+static int bundle(const char *filename) { return 0; }
+
 int main(int argc, char **argv) {
+  int debug_flag = 0;
+  int text_flag = 0;
+  int cc_flag = 0;
+  const char *out_filename = NULL;
+  const char *tu_filename = NULL;
+
   int c;
 
   while ((c = getopt(argc, argv, "ht::T::dCci:o:")) != -1)
@@ -144,14 +162,14 @@ int main(int argc, char **argv) {
               argv[0]);
       fprintf(stderr, "The utility to handle Clang AST from FILE (the stdin by "
                       "default)\n\n");
+      fprintf(stderr, "\t-h         display this help and exit\n");
       fprintf(stderr, "\t-t[help]   run test\n");
       fprintf(stderr, "\t-T[help]   operate toggle\n");
       fprintf(stderr, "\t-d         enable debug\n");
       fprintf(stderr, "\t-C         treat the input file as the C input\n");
       fprintf(stderr, "\t-c         only dump text\n");
-      fprintf(stderr, "\t-i NAME    name the input TU\n");
+      fprintf(stderr, "\t-i NAME    name the input TU if possible\n");
       fprintf(stderr, "\t-o OUTPUT  specify the output file\n");
-      fprintf(stderr, "\t-h         display this help and exit\n");
       return 0;
     case 't':
       return optarg && strcmp(optarg, "help") == 0 ? test_help()
@@ -184,19 +202,25 @@ int main(int argc, char **argv) {
   if (debug_flag)
     yydebug = 1;
 
-  in_filename = argv[optind];
-
-  // examine the CLANG OPTION
   for (int i = optind; i < argc; ++i) {
     const char *s = argv[i];
     size_t n = strlen(s);
-    if (s[n - 1] == 'c' && s[n - 2] == '.') {
-      in_filename = s;
+    if (n > 2 && s[n - 2] == '.') {
       argv[i] = "";
-      cc_flag = 1;
-    } else if (n == 2 && i + 1 < argc && s[0] == '-' && s[1] == 'o') {
-      out_filename = argv[i + 1];
+      int kind = s[n - 1] == 'c' ? IF_C : s[n - 1] == 'o' ? IF_OBJ : cc_flag;
+      input_file_list_push(&in_files, (struct input_file){kind, s});
+    } else if (n == 2 && s[0] == '-' && s[1] == 'o' && i + 1 < argc) {
+      out_filename = argv[++i];
     }
+  }
+
+  if (!in_files.i)
+    input_file_list_push(&in_files, (struct input_file){cc_flag, argv[optind]});
+
+  if (text_flag && in_files.i != 1) {
+    fprintf(stderr, "Cannot specify `-c' with multiple input files\n");
+    input_file_list_clear(&in_files, 2);
+    return 1;
   }
 
   if (text_flag && out_filename && !(text_file = fopen(out_filename, "w"))) {
@@ -206,28 +230,83 @@ int main(int argc, char **argv) {
   }
 
   int err = 0;
-  if (cc_flag) {
-    prepare_tu(&in_content);
-    err = cc_mode(argc, argv);
-  } else {
-    err = text_mode(argc, argv);
+  _Bool is_linking = in_files.i > 1 && out_filename;
+
+  for (unsigned i = 0; !err && i < in_files.i; ++i) {
+    const char *in_filename = ALT(in_files.data[i].filename, "/dev/stdin");
+    const int kind = in_files.data[i].kind;
+
+    if (kind != IF_OBJ) {
+      FILE *fp = open_file(in_filename, "r");
+      if (!fp)
+        exit(1);
+
+      // Try to create the obj(sqlite3) file
+
+      if (kind == IF_TEXT) {
+        err = parse_file(fp);
+      } else {
+        struct string s = {};
+        if (!(err = read_content(fp, &s)))
+          err = compile(s.data, s.i,
+                        ends_with(in_filename, ".c")
+                            ? in_filename
+                            : ALT(tu_filename, in_filename),
+                        argc, argv);
+        string_clear(&s, 2);
+      }
+
+      if (!err && !text_flag && out_filename) {
+        char buf[PATH_MAX];
+        strcpy(buf, out_filename);
+
+        char tmp[PATH_MAX];
+        int n = snprintf(tmp, sizeof(tmp), "%s", dirname(buf));
+        assert(n > 0);
+
+        if (tmp[n - 1] == '.')
+          tmp[--n] = 0;
+        else if (tmp[n - 1] != '/')
+          tmp[n++] = '/';
+
+        // Trim the suffix
+        strcpy(buf, tu);
+        char *dot = strrchr(buf, '.');
+        if (dot)
+          *dot = 0;
+
+        int m = snprintf(tmp + n, sizeof(tmp) - n, "%s-%s.o.tmp", basename(buf),
+                         rand7());
+        assert(m > 0);
+
+        err = dump(tmp);
+        if (!err) {
+          if (is_linking) {
+            memcpy(buf, tmp, n + m - 4);
+            buf[n + m - 4] = 0;
+            rename(tmp, buf);
+            sqlite3_open(buf, &in_files.data[i].db);
+          } else {
+            rename(tmp, out_filename);
+          }
+        } else {
+          unlink(tmp);
+        }
+      }
+
+      destroy();
+      yylex_destroy();
+      fclose(fp);
+    } else if (is_linking) {
+      sqlite3_open(in_filename, &in_files.data[i].db);
+    }
   }
 
-  if (!err && !text_flag && out_filename) {
-    char tmp_filename[PATH_MAX];
-    snprintf(tmp_filename, sizeof(tmp_filename), "%s.tmp", out_filename);
-    err = dump(tmp_filename);
-    if (!err)
-      rename(tmp_filename, out_filename);
-    else
-      unlink(tmp_filename);
-  }
+  if (is_linking)
+    err = bundle(out_filename);
 
   if (text_file)
     fclose(text_file);
-  destroy();
-  yylex_destroy();
-  string_clear(&in_content, 2);
-
+  input_file_list_clear(&in_files, 1);
   return err;
 }
