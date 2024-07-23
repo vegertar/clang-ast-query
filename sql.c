@@ -107,6 +107,7 @@ static void dump_src();
 static void dump_ast();
 static void dump_loc();
 static void dump_tok();
+static void dump_sym();
 
 static void exec_sql(const char *s) {
   if (!db || err) {
@@ -265,6 +266,7 @@ int dump(const char *db_file) {
   dump_ast();
   dump_loc();
   dump_tok();
+  dump_sym();
 
   exec_sql("END TRANSACTION");
 
@@ -645,5 +647,41 @@ static void dump_tok() {
       FILL_INT(DECL, decl);
     }
     END_INSERT_INTO();
+  }
+}
+
+static void dump_sym() {
+  exec_sql("CREATE TABLE sym ("
+           " name TEXT,"
+           " decl INTEGER)");
+
+  for (unsigned i = 0; i < exported_symbols.i; ++i) {
+    int decl = decl_number((const char *)exported_symbols.data[i]);
+    assert(decl != -1);
+    assert(strcmp(ast.data[decl].pointer,
+                  (const char *)exported_symbols.data[i]) == 0);
+    const char *name = NULL;
+    const struct decl *v = &ast.data[decl].decl;
+    switch (v->kind) {
+    case DECL_KIND_V2:
+      name = v->variants.v2.name;
+      break;
+    case DECL_KIND_V3:
+      name = v->variants.v3.name;
+      break;
+    case DECL_KIND_V9:
+      name = v->variants.v9.name;
+      break;
+    default:
+      break;
+    }
+    assert(name);
+
+    if_prepared_stmt("INSERT INTO sym (name, decl)"
+                     " VALUES (?, ?)") {
+      FILL_TEXT(1, name);
+      FILL_INT(2, decl);
+    }
+    end_if_prepared_stmt();
   }
 }

@@ -125,10 +125,6 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   REMARK_KV(TOK_REMARK_DECL_DEF);
 }
 
-^"#IMPORTED:" {
-  return TOK_REMARK_IMPORTED;
-}
-
 ^"#EXPORTED:" {
   return TOK_REMARK_EXPORTED;
 }

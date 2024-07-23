@@ -236,6 +236,7 @@
   extern struct exp_expr_set exp_expr_set;
   extern struct string_map var_type_map;
   extern struct string_map decl_def_map;
+  extern struct array exported_symbols;
 
   #ifndef PATH_MAX
   # define PATH_MAX 4096
@@ -276,6 +277,7 @@
   struct exp_expr_set exp_expr_set;
   struct string_map var_type_map;
   struct string_map decl_def_map;
+  struct array exported_symbols;
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
 
@@ -380,7 +382,6 @@
     ENUM
     FIELD
     REMARK
-    REMARK_IMPORTED
     REMARK_EXPORTED
     REMARK_INACTIVE
     REMARK_TOK_DECL
@@ -432,6 +433,7 @@
     specs
     opts
     seq
+    symbols
   <struct tags>
     tags
   <struct op>
@@ -525,7 +527,6 @@ remark: REMARK
  | remark_exp_expr
  | remark_tok_decl
  | remark_inactive
- | remark_imported
  | remark_exported
 
 remark_loc_exp: REMARK_LOC_EXP '<' srange '>'
@@ -548,11 +549,11 @@ remark_inactive: REMARK_INACTIVE '<' srange '>'
     inactive_set_push(&inactive_set, $3);
   }
 
-remark_imported: REMARK_IMPORTED symbol
+remark_exported: REMARK_EXPORTED symbols
+  { exported_symbols = $2; }
 
-remark_exported: REMARK_EXPORTED symbol
-
-symbol: POINTER NAME type
+symbols: POINTER { array_push((struct array *)memset(&$$, 0, sizeof(struct array)), $1); }
+ | symbols POINTER { $$ = *array_push(&$1, $2); }
 
 tok: sloc { $$ = (struct tok){$1}; }
  | sloc INTEGER
@@ -1012,6 +1013,7 @@ void destroy() {
   exp_expr_set_clear(&exp_expr_set, 1);
   string_map_clear(&var_type_map, 1);
   string_map_clear(&decl_def_map, 1);
+  array_clear(&exported_symbols, 1);
 }
 
 static char *get_pointer(char *s) {

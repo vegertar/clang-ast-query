@@ -207,6 +207,7 @@ int main(int argc, char **argv) {
     size_t n = strlen(s);
     if (n > 2 && s[n - 2] == '.') {
       argv[i] = "";
+      // TODO: identify magic
       int kind = s[n - 1] == 'c' ? IF_C : s[n - 1] == 'o' ? IF_OBJ : cc_flag;
       input_file_list_push(&in_files, (struct input_file){kind, s});
     } else if (n == 2 && s[0] == '-' && s[1] == 'o' && i + 1 < argc) {
@@ -275,6 +276,7 @@ int main(int argc, char **argv) {
         if (dot)
           *dot = 0;
 
+        srand(time(NULL));
         int m = snprintf(tmp + n, sizeof(tmp) - n, "%s-%s.o.tmp", basename(buf),
                          rand7());
         assert(m > 0);

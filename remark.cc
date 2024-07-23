@@ -234,6 +234,14 @@ protected:
     }
 
     visitor.TraverseDecl(ctx.getTranslationUnitDecl());
+
+    if (exported_symbols.size()) {
+      out << "#EXPORTED:";
+      for (auto p : exported_symbols)
+        dumper->dumpPointer(p);
+      out << '\n';
+    }
+
     dump_token_expansion();
   }
 
@@ -354,19 +362,11 @@ private:
     }
 
     template <typename D> void remark_imported_decl(const D *d) {
-      remark_symbol(d, "IMPORTED");
+      // NOP
     }
 
     template <typename D> void remark_exported_decl(const D *d) {
-      remark_symbol(d, "EXPORTED");
-    }
-
-    template <typename D> void remark_symbol(const D *d, const char *s) {
-      ast.out << '#' << s << ':';
-      ast.dumper->dumpPointer(d);
-      ast.dumper->dumpName(d);
-      ast.dumper->dumpType(d->getType());
-      ast.out << '\n';
+      ast.exported_symbols.push_back(d);
     }
 
     void remark_decl_def(const void *decl, const void *def) {
@@ -1405,6 +1405,7 @@ private:
   llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
   std::vector<syntax::Token> tokens;
   std::vector<SourceRange> inactive_regions;
+  std::vector<const void *> exported_symbols;
 };
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
