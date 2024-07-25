@@ -11,9 +11,12 @@
 !/print.h
 !/array.h
 !/array.c
+!/sql.h
 !/sql.c
 !/remark.cc
 !/remark.h
+!/util.h
+!/util.c
 !/samples
 !/spec
 !/.shellspec

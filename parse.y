@@ -242,6 +242,7 @@
   # define PATH_MAX 4096
   #endif // !PATH_MAX
 
+  extern long ts;
   extern char tu[PATH_MAX];
   extern char cwd[PATH_MAX];
 
@@ -278,6 +279,8 @@
   struct string_map var_type_map;
   struct string_map decl_def_map;
   struct array exported_symbols;
+
+  long ts;
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
 
@@ -389,6 +392,7 @@
     REMARK_EXP_EXPR
   <integer>
     INDENT
+    REMARK_TS
   <string>
     HEAD
     PARENT
@@ -520,6 +524,7 @@ node: HEAD parent prev range loc attrs labels decl opts
 
 remark: REMARK
  | REMARK_TU
+ | REMARK_TS
  | REMARK_CWD
  | REMARK_VAR_TYPE
  | REMARK_DECL_DEF

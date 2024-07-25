@@ -1,6 +1,8 @@
 #include "parse.h"
 #include "scan.h"
+#include "sql.h"
 #include "test.h"
+#include "util.h"
 
 #ifdef USE_CLANG_TOOL
 #include "remark.h"
@@ -35,31 +37,40 @@ enum if_kind {
   IF_OBJ,
 };
 
+enum of_kind {
+  OF_OBJ,
+  OF_TEXT,
+};
+
 struct input_file {
   enum if_kind kind;
   const char *filename;
-  sqlite3 *db;
+  const char *db_filename;
 };
 
 static void free_input_file(void *p) {
   struct input_file *f = (struct input_file *)p;
-  if (f->db)
-    sqlite3_close(f->db);
+  if (f->db_filename && f->db_filename != f->filename)
+    free((void *)f->db_filename);
 }
 
 DECL_ARRAY(input_file_list, struct input_file);
 IMPL_ARRAY_PUSH(input_file_list, struct input_file)
 IMPL_ARRAY_CLEAR(input_file_list, free_input_file)
 
+static struct string in_content;
 static struct input_file_list in_files;
-static FILE *text_file;
+static FILE *out_text;
+static sqlite3 *db;
+static sqlite3_stmt *stmts[MAX_STMT_SIZE];
+static char *errmsg;
 
 static int parse_line(char *line, size_t n, size_t cap, void *data) {
   assert(n + 1 < cap);
   line[n] = line[n + 1] = 0;
 
-  if (text_file) {
-    fwrite(line, n, 1, text_file);
+  if (out_text) {
+    fwrite(line, n, 1, out_text);
     return 0;
   }
 
@@ -110,27 +121,6 @@ static int read_content(FILE *fp, struct string *s) {
   return ferror(fp);
 }
 
-static _Bool ends_with(const char *s, const char *ending) {
-  int n = s ? strlen(s) : 0;
-  int m = ending ? strlen(ending) : 0;
-  return m == 0 || n >= m && strcmp(s + n - m, ending) == 0;
-}
-
-static char rand_char() {
-  static const char s[] = "0123456789"
-                          "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                          "abcdefghijklmnopqrstuvwxyz";
-  return s[rand() % (sizeof(s) - 1)];
-}
-
-static const char *rand7() {
-  static char s[8];
-  for (unsigned i = 0; i < sizeof(s) - 1; ++i) {
-    s[i] = rand_char();
-  }
-  return s;
-}
-
 static int compile(const char *code, size_t size, const char *filename,
                    int argc, char **argv) {
 #ifdef USE_CLANG_TOOL
@@ -144,16 +134,53 @@ static int compile(const char *code, size_t size, const char *filename,
 #endif // USE_CLANG_TOOL
 }
 
-static int bundle(const char *filename) { return 0; }
+static int bundle(const char *obj, unsigned i) {
+  int err = 0;
+
+  char buffer[BUFSIZ];
+  getcwd(buffer, sizeof(buffer));
+
+  char path[PATH_MAX];
+  expand_path(buffer, strlen(buffer), obj, path);
+
+  snprintf(buffer, sizeof(buffer), "ATTACH '%s' AS obj", path);
+  EXEC_SQL(buffer);
+  EXEC_SQL("BEGIN TRANSACTION");
+
+#ifndef VALUES2
+#define VALUES2() "?,?"
+#endif // !VALUES2
+
+  INSERT_INTO(obj, NUMBER, FILENAME) {
+    FILL_INT(NUMBER, i);
+    FILL_TEXT(FILENAME, path);
+  }
+  END_INSERT_INTO();
+
+  snprintf(buffer, sizeof(buffer),
+           "INSERT INTO sym SELECT name, decl, %u from obj.sym", i);
+  EXEC_SQL(buffer);
+
+  EXEC_SQL("END TRANSACTION");
+  EXEC_SQL("DETACH obj");
+
+  return err;
+}
 
 int main(int argc, char **argv) {
+  srand(time(NULL));
+
   int debug_flag = 0;
-  int text_flag = 0;
   int cc_flag = 0;
+  int ld_flag = 1;
+  int if_kind = IF_TEXT;
+  int of_kind = OF_OBJ;
+
   const char *out_filename = NULL;
   const char *tu_filename = NULL;
 
-  int c;
+  int c, n, err = 0;
+  char tmp[PATH_MAX];
 
   while ((c = getopt(argc, argv, "ht::T::dCci:o:")) != -1)
     switch (c) {
@@ -166,7 +193,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "\t-t[help]   run test\n");
       fprintf(stderr, "\t-T[help]   operate toggle\n");
       fprintf(stderr, "\t-d         enable debug\n");
-      fprintf(stderr, "\t-C         treat the input file as the C input\n");
+      fprintf(stderr, "\t-C         treat the default input file as C code\n");
       fprintf(stderr, "\t-c         only dump text\n");
       fprintf(stderr, "\t-i NAME    name the input TU if possible\n");
       fprintf(stderr, "\t-o OUTPUT  specify the output file\n");
@@ -184,10 +211,10 @@ int main(int argc, char **argv) {
       debug_flag = 1;
       break;
     case 'C':
-      cc_flag = 1;
+      if_kind = IF_C;
       break;
     case 'c':
-      text_flag = 1;
+      of_kind = OF_TEXT;
       break;
     case 'i':
       tu_filename = optarg;
@@ -204,111 +231,114 @@ int main(int argc, char **argv) {
 
   for (int i = optind; i < argc; ++i) {
     const char *s = argv[i];
-    size_t n = strlen(s);
-    if (n > 2 && s[n - 2] == '.') {
+    const size_t n = strlen(s);
+    if (n == 2 && s[0] == '-' && i + 1 < argc) {
+      if (s[1] == 'o')
+        out_filename = argv[++i];
+      else if (s[1] == 'c')
+        cc_flag = 1;
+    } else if (n > 2 && s[n - 2] == '.') {
+      const int ext = s[n - 1];
       argv[i] = "";
       // TODO: identify magic
-      int kind = s[n - 1] == 'c' ? IF_C : s[n - 1] == 'o' ? IF_OBJ : cc_flag;
+      const int kind = ext == 'c' ? IF_C : ext == 'o' ? IF_OBJ : if_kind;
       input_file_list_push(&in_files, (struct input_file){kind, s});
-    } else if (n == 2 && s[0] == '-' && s[1] == 'o' && i + 1 < argc) {
-      out_filename = argv[++i];
     }
   }
 
   if (!in_files.i)
-    input_file_list_push(&in_files, (struct input_file){cc_flag, argv[optind]});
+    input_file_list_push(&in_files, (struct input_file){if_kind, argv[optind]});
 
-  if (text_flag && in_files.i != 1) {
-    fprintf(stderr, "Cannot specify `-c' with multiple input files\n");
-    input_file_list_clear(&in_files, 2);
-    return 1;
+  if (of_kind == OF_TEXT || cc_flag)
+    ld_flag = 0;
+
+  if (out_filename && !starts_with(out_filename, "/dev/fd/") &&
+      !starts_with(out_filename, "/dev/std")) {
+    char str[8];
+
+    n = snprintf(tmp, sizeof(tmp), "%s.tmp-%s", out_filename,
+                 rands(str, sizeof(str)));
+    assert(n == strlen(tmp));
+
+    if (ld_flag) {
+      if ((err = sqlite3_open(tmp, &db)))
+        fprintf(stderr, "sqlite3 error(%d): %s\n", err, sqlite3_errstr(err));
+
+      EXEC_SQL("PRAGMA synchronous = OFF");
+      EXEC_SQL("PRAGMA journal_mode = MEMORY");
+      EXEC_SQL("BEGIN TRANSACTION");
+      EXEC_SQL("CREATE TABLE obj (number INTEGER, filename TEXT)");
+      EXEC_SQL("CREATE TABLE sym (name TEXT, decl INTEGER, obj INTEGER)");
+      EXEC_SQL("END TRANSACTION");
+    }
+  } else {
+    *tmp = 0;
   }
-
-  if (text_flag && out_filename && !(text_file = fopen(out_filename, "w"))) {
-    fprintf(stderr, "%s: open('%s') error: %s\n", __func__, out_filename,
-            strerror(errno));
-    return 1;
-  }
-
-  int err = 0;
-  _Bool is_linking = in_files.i > 1 && out_filename;
 
   for (unsigned i = 0; !err && i < in_files.i; ++i) {
-    const char *in_filename = ALT(in_files.data[i].filename, "/dev/stdin");
-    const int kind = in_files.data[i].kind;
+    const char *in = ALT(in_files.data[i].filename, "/dev/stdin");
+    const int in_kind = in_files.data[i].kind;
 
-    if (kind != IF_OBJ) {
-      FILE *fp = open_file(in_filename, "r");
-      if (!fp)
-        exit(1);
+    if (in_kind != IF_OBJ) {
+      FILE *in_fp;
+      if (!(in_fp = open_file(in, "r"))) {
+        err = errno;
+        break;
+      }
 
-      // Try to create the obj(sqlite3) file
+      if (*tmp)
+        snprintf(tmp + n, sizeof(tmp) - n, ".%u", i + 1);
 
-      if (kind == IF_TEXT) {
-        err = parse_file(fp);
+      const char *out = *tmp ? tmp : out_filename;
+
+      if (out_filename && of_kind == OF_TEXT &&
+          !(out_text = open_file(out, "w"))) {
+        err = errno;
+        fclose(in_fp);
+        break;
+      }
+
+      if (in_kind == IF_TEXT) {
+        err = parse_file(in_fp);
       } else {
-        struct string s = {};
-        if (!(err = read_content(fp, &s)))
-          err = compile(s.data, s.i,
-                        ends_with(in_filename, ".c")
-                            ? in_filename
-                            : ALT(tu_filename, in_filename),
-                        argc, argv);
-        string_clear(&s, 2);
+        string_clear(&in_content, 0);
+        if (!(err = read_content(in_fp, &in_content)))
+          err = compile(in_content.data, in_content.i,
+                        ends_with(in, ".c") ? in : ALT(tu_filename, in), argc,
+                        argv);
       }
 
-      if (!err && !text_flag && out_filename) {
-        char buf[PATH_MAX];
-        strcpy(buf, out_filename);
-
-        char tmp[PATH_MAX];
-        int n = snprintf(tmp, sizeof(tmp), "%s", dirname(buf));
-        assert(n > 0);
-
-        if (tmp[n - 1] == '.')
-          tmp[--n] = 0;
-        else if (tmp[n - 1] != '/')
-          tmp[n++] = '/';
-
-        // Trim the suffix
-        strcpy(buf, tu);
-        char *dot = strrchr(buf, '.');
-        if (dot)
-          *dot = 0;
-
-        srand(time(NULL));
-        int m = snprintf(tmp + n, sizeof(tmp) - n, "%s-%s.o.tmp", basename(buf),
-                         rand7());
-        assert(m > 0);
-
-        err = dump(tmp);
-        if (!err) {
-          if (is_linking) {
-            memcpy(buf, tmp, n + m - 4);
-            buf[n + m - 4] = 0;
-            rename(tmp, buf);
-            sqlite3_open(buf, &in_files.data[i].db);
-          } else {
-            rename(tmp, out_filename);
-          }
-        } else {
-          unlink(tmp);
-        }
+      if (!err && out_filename && of_kind == OF_OBJ) {
+        err = dump(out);
+        if (!err && *tmp && ld_flag)
+          err = bundle(tmp, i + 1);
       }
+
+      if (!err && in_files.i == 1 && *tmp && !ld_flag)
+        rename(tmp, out_filename);
 
       destroy();
       yylex_destroy();
-      fclose(fp);
-    } else if (is_linking) {
-      sqlite3_open(in_filename, &in_files.data[i].db);
+
+      if (out_text) {
+        fclose(out_text);
+        out_text = NULL;
+      }
+
+      fclose(in_fp);
+    } else if (ld_flag) {
+      err = bundle(in, i + 1);
     }
   }
 
-  if (is_linking)
-    err = bundle(out_filename);
+  if (*tmp && ld_flag) {
+    sqlite3_close(db);
+    tmp[n] = 0;
+    rename(tmp, out_filename);
+  }
 
-  if (text_file)
-    fclose(text_file);
   input_file_list_clear(&in_files, 1);
+  string_clear(&in_content, 1);
+
   return err;
 }

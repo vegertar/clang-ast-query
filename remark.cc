@@ -207,6 +207,7 @@ protected:
     char cwd[PATH_MAX];
 
     out << "#TU:" << filename << '\n';
+    out << "#TS:" << time(NULL) << '\n';
     out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
 
     for (auto range : inactive_regions) {
@@ -309,7 +310,7 @@ private:
 
       if (!d->hasBody())
         remark_imported_decl(d);
-      else if (d->isExternC() && with_body)
+      else if (d->isExternC() && with_body && !d->hasAttr<GNUInlineAttr>())
         remark_exported_decl(d);
 
       return true;

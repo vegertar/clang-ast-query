@@ -3,6 +3,7 @@
 #include "test.h"
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
 
 static int help(const char *kind, void **p, const struct __tinfo *q) {
   fprintf(stderr, "Available %s(s):\n", kind);
@@ -35,6 +36,9 @@ static int run_test(const char *option) {
   void **p = (void **)&test;
   const struct __tinfo *q = &testinfo;
 
+  struct winsize w;
+  ioctl(2, TIOCGWINSZ, &w);
+
   while (*++p) {
     ++n;
     fprintf(stderr, "TEST(%s)", q[n].name);
@@ -44,7 +48,7 @@ static int run_test(const char *option) {
       fprintf(stderr, ":FAILED\n");
     } else {
       // clear the line
-      fprintf(stderr, "\r%120s\r", "");
+      fprintf(stderr, "\r%*s\r", w.ws_col, "");
     }
   }
 

@@ -110,6 +110,13 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return TOK_REMARK_TU;
 }
 
+^"#TS:".+ {
+  int n = sscanf(yytext, "#TS:%ld", &ts);
+  if (n != 1) return TOK_YYUNDEF;
+  yylval->TOK_REMARK_TS = ts;
+  return TOK_REMARK_TS;
+}
+
 ^"#CWD:".+ {
   int n = sscanf(yytext, "#CWD:%s", cwd);
   if (n != 1) return TOK_YYUNDEF;
