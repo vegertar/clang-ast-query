@@ -1,3 +1,4 @@
+#include "util.h"
 #include "test.h"
 
 #include <assert.h>
@@ -5,11 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef PATH_MAX
-#define PATH_MAX 4096
-#endif // !PATH_MAX
-
-const char *expand_path(const char *cwd, size_t n, const char *in, char *out) {
+const char *expand_path(const char *cwd, unsigned n, const char *in,
+                        char *out) {
   assert(n < PATH_MAX);
   if (!in || *in == '/')
     return in;
@@ -90,7 +88,7 @@ TEST(ends_with, {
   ASSERT(!ends_with("/abc", "/"));
 });
 
-const char *rands(char buf[], size_t cap) {
+const char *rands(char buf[], unsigned cap) {
   static const char s[] = "0123456789"
                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                           "abcdefghijklmnopqrstuvwxyz";

@@ -51,6 +51,8 @@
   if (!err && stmt) {                                                          \
     sqlite3_step(stmt);                                                        \
     err = sqlite3_reset(stmt);                                                 \
+    if (err)                                                                   \
+      fprintf(stderr, "sqlite3 error(%d): %s\n", err, sqlite3_errstr(err));    \
   }                                                                            \
   }                                                                            \
   while (0)
@@ -78,3 +80,5 @@
       fprintf(stderr, "Ignored `%s' due to error\n", s);                       \
     }                                                                          \
   } while (0)
+
+int sql(const char *db_file);

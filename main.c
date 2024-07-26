@@ -1,3 +1,4 @@
+#include "html.h"
 #include "parse.h"
 #include "scan.h"
 #include "sql.h"
@@ -19,8 +20,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#define ALT(x, y) (x ? x : y)
-
 struct parser_context {
   YYLTYPE lloc;
   user_context uctx;
@@ -34,11 +33,13 @@ IMPL_ARRAY_CLEAR(string, NULL)
 enum if_kind {
   IF_TEXT,
   IF_C,
-  IF_OBJ,
+  IF_SQL,
+  IF_ELF, // TODO:
 };
 
 enum of_kind {
-  OF_OBJ,
+  OF_SQL,
+  OF_HTML,
   OF_TEXT,
 };
 
@@ -129,21 +130,21 @@ static int compile(const char *code, size_t size, const char *filename,
                    parse_line, &ctx);
   return err ? err : ctx.errs;
 #else
-  fprintf(stderr, "Clang tool is not compiled in\n");
+  fprintf(stderr, "Clang tool is not compiled in_filename\n");
   return -1;
 #endif // USE_CLANG_TOOL
 }
 
-static int bundle(const char *obj, unsigned i) {
+static int bundle(const char *sql) {
   int err = 0;
 
   char buffer[BUFSIZ];
   getcwd(buffer, sizeof(buffer));
 
   char path[PATH_MAX];
-  expand_path(buffer, strlen(buffer), obj, path);
+  expand_path(buffer, strlen(buffer), sql, path);
 
-  snprintf(buffer, sizeof(buffer), "ATTACH '%s' AS obj", path);
+  snprintf(buffer, sizeof(buffer), "ATTACH '%s' AS sql", path);
   EXEC_SQL(buffer);
   EXEC_SQL("BEGIN TRANSACTION");
 
@@ -151,18 +152,22 @@ static int bundle(const char *obj, unsigned i) {
 #define VALUES2() "?,?"
 #endif // !VALUES2
 
-  INSERT_INTO(obj, NUMBER, FILENAME) {
+  // the index of sql
+  static int i = 0;
+
+  ++i;
+  INSERT_INTO(sql, NUMBER, FILENAME) {
     FILL_INT(NUMBER, i);
     FILL_TEXT(FILENAME, path);
   }
   END_INSERT_INTO();
 
   snprintf(buffer, sizeof(buffer),
-           "INSERT INTO sym SELECT name, decl, %u from obj.sym", i);
+           "INSERT INTO sym SELECT name, decl, %d from sql.sym", i);
   EXEC_SQL(buffer);
 
   EXEC_SQL("END TRANSACTION");
-  EXEC_SQL("DETACH obj");
+  EXEC_SQL("DETACH sql");
 
   return err;
 }
@@ -171,10 +176,11 @@ int main(int argc, char **argv) {
   srand(time(NULL));
 
   int debug_flag = 0;
+  int c_flag = 0;
   int cc_flag = 0;
   int ld_flag = 1;
   int if_kind = IF_TEXT;
-  int of_kind = OF_OBJ;
+  int of_kind = OF_SQL;
 
   const char *out_filename = NULL;
   const char *tu_filename = NULL;
@@ -182,7 +188,7 @@ int main(int argc, char **argv) {
   int c, n, err = 0;
   char tmp[PATH_MAX];
 
-  while ((c = getopt(argc, argv, "ht::T::dCci:o:")) != -1)
+  while ((c = getopt(argc, argv, "ht::T::dCcx:i:o:")) != -1)
     switch (c) {
     case 'h':
       fprintf(stderr, "Usage: %s [OPTION]... [-- [CLANG OPTION]...] [FILE]\n",
@@ -194,7 +200,9 @@ int main(int argc, char **argv) {
       fprintf(stderr, "\t-T[help]   operate toggle\n");
       fprintf(stderr, "\t-d         enable debug\n");
       fprintf(stderr, "\t-C         treat the default input file as C code\n");
-      fprintf(stderr, "\t-c         only dump text\n");
+      fprintf(stderr, "\t-c         the alias of -xt if no -xh given\n");
+      fprintf(stderr, "\t-xt[ext]   output as TEXT\n");
+      fprintf(stderr, "\t-xh[tml]   output as HTML\n");
       fprintf(stderr, "\t-i NAME    name the input TU if possible\n");
       fprintf(stderr, "\t-o OUTPUT  specify the output file\n");
       return 0;
@@ -214,7 +222,15 @@ int main(int argc, char **argv) {
       if_kind = IF_C;
       break;
     case 'c':
-      of_kind = OF_TEXT;
+      c_flag = 1;
+      break;
+    case 'x':
+      if (strcmp(optarg, "text") == 0 || strcmp(optarg, "t") == 0)
+        of_kind = OF_TEXT;
+      else if (strcmp(optarg, "html") == 0 || strcmp(optarg, "h") == 0)
+        of_kind = OF_HTML;
+      else
+        return fprintf(stderr, "invalid output format: %s\n", optarg);
       break;
     case 'i':
       tu_filename = optarg;
@@ -229,6 +245,13 @@ int main(int argc, char **argv) {
   if (debug_flag)
     yydebug = 1;
 
+  if (c_flag) {
+    if (of_kind == OF_HTML)
+      cc_flag = 1;
+    else
+      of_kind = OF_TEXT;
+  }
+
   for (int i = optind; i < argc; ++i) {
     const char *s = argv[i];
     const size_t n = strlen(s);
@@ -241,7 +264,7 @@ int main(int argc, char **argv) {
       const int ext = s[n - 1];
       argv[i] = "";
       // TODO: identify magic
-      const int kind = ext == 'c' ? IF_C : ext == 'o' ? IF_OBJ : if_kind;
+      const int kind = ext == 'c' ? IF_C : ext == 'o' ? IF_SQL : if_kind;
       input_file_list_push(&in_files, (struct input_file){kind, s});
     }
   }
@@ -256,19 +279,20 @@ int main(int argc, char **argv) {
       !starts_with(out_filename, "/dev/std")) {
     char str[8];
 
-    n = snprintf(tmp, sizeof(tmp), "%s.tmp-%s", out_filename,
+    n = snprintf(tmp, sizeof(tmp), "%s.caq-%s", out_filename,
                  rands(str, sizeof(str)));
     assert(n == strlen(tmp));
 
     if (ld_flag) {
       if ((err = sqlite3_open(tmp, &db)))
-        fprintf(stderr, "sqlite3 error(%d): %s\n", err, sqlite3_errstr(err));
+        fprintf(stderr, "%s: sqlite3 error(%d): %s\n", tmp, err,
+                sqlite3_errstr(err));
 
       EXEC_SQL("PRAGMA synchronous = OFF");
       EXEC_SQL("PRAGMA journal_mode = MEMORY");
       EXEC_SQL("BEGIN TRANSACTION");
-      EXEC_SQL("CREATE TABLE obj (number INTEGER, filename TEXT)");
-      EXEC_SQL("CREATE TABLE sym (name TEXT, decl INTEGER, obj INTEGER)");
+      EXEC_SQL("CREATE TABLE sql (number INTEGER, filename TEXT)");
+      EXEC_SQL("CREATE TABLE sym (name TEXT, decl INTEGER, sql INTEGER)");
       EXEC_SQL("END TRANSACTION");
     }
   } else {
@@ -276,12 +300,12 @@ int main(int argc, char **argv) {
   }
 
   for (unsigned i = 0; !err && i < in_files.i; ++i) {
-    const char *in = ALT(in_files.data[i].filename, "/dev/stdin");
+    const char *in_filename = ALT(in_files.data[i].filename, "/dev/stdin");
     const int in_kind = in_files.data[i].kind;
 
-    if (in_kind != IF_OBJ) {
+    if (in_kind != IF_SQL) {
       FILE *in_fp;
-      if (!(in_fp = open_file(in, "r"))) {
+      if (!(in_fp = open_file(in_filename, "r"))) {
         err = errno;
         break;
       }
@@ -289,33 +313,43 @@ int main(int argc, char **argv) {
       if (*tmp)
         snprintf(tmp + n, sizeof(tmp) - n, ".%u", i + 1);
 
-      const char *out = *tmp ? tmp : out_filename;
-
       if (out_filename && of_kind == OF_TEXT &&
-          !(out_text = open_file(out, "w"))) {
+          !(out_text = open_file(*tmp ? tmp : out_filename, "w"))) {
         err = errno;
         fclose(in_fp);
         break;
       }
 
-      if (in_kind == IF_TEXT) {
+      switch (in_kind) {
+      case IF_TEXT:
         err = parse_file(in_fp);
-      } else {
+        break;
+      case IF_C:
         string_clear(&in_content, 0);
         if (!(err = read_content(in_fp, &in_content)))
           err = compile(in_content.data, in_content.i,
-                        ends_with(in, ".c") ? in : ALT(tu_filename, in), argc,
-                        argv);
+                        ends_with(in_filename, ".c")
+                            ? in_filename
+                            : ALT(tu_filename, in_filename),
+                        argc, argv);
+        break;
+      default:
+        break;
       }
 
-      if (!err && out_filename && of_kind == OF_OBJ) {
-        err = dump(out);
-        if (!err && *tmp && ld_flag)
-          err = bundle(tmp, i + 1);
+      if (!err && *tmp && of_kind <= OF_HTML) {
+        err = sql(tmp);
+        if (!err && of_kind == OF_HTML)
+          err = html(tmp);
+        if (!err && ld_flag)
+          err = bundle(tmp);
       }
 
-      if (!err && in_files.i == 1 && *tmp && !ld_flag)
+      if (!err && in_files.i == 1 && *tmp && !ld_flag) {
         rename(tmp, out_filename);
+        if (of_kind == OF_HTML)
+          rename_html(tmp, out_filename);
+      }
 
       destroy();
       yylex_destroy();
@@ -327,11 +361,15 @@ int main(int argc, char **argv) {
 
       fclose(in_fp);
     } else if (ld_flag) {
-      err = bundle(in, i + 1);
+      err = bundle(in_filename);
     }
   }
 
   if (*tmp && ld_flag) {
+    for (int i = 0; i < MAX_STMT_SIZE; ++i) {
+      if (stmts[i])
+        sqlite3_finalize(stmts[i]);
+    }
     sqlite3_close(db);
     tmp[n] = 0;
     rename(tmp, out_filename);

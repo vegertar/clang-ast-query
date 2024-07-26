@@ -8,7 +8,6 @@
 #include <clang/Frontend/MultiplexConsumer.h>
 #include <clang/Tooling/Syntax/Tokens.h>
 #include <clang/Tooling/Tooling.h>
-#include <llvm/ADT/SmallString.h>
 
 #include <optional>
 #include <unistd.h>

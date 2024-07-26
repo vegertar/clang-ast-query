@@ -248,7 +248,6 @@
 
   int parse(YYLTYPE *lloc, const user_context *uctx);
   void destroy();
-  int dump(const char *db_file);
 
   /// If the filename is not found, a copy will be added and returned.
   const char *add_src(const char *filename);

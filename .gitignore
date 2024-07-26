@@ -13,6 +13,8 @@
 !/array.c
 !/sql.h
 !/sql.c
+!/html.h
+!/html.c
 !/remark.cc
 !/remark.h
 !/util.h

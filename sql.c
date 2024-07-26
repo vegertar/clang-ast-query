@@ -170,16 +170,17 @@ static const struct exp_expr_pair *find_exp_expr_set(const char *expr) {
                                                compare_exp_expr_pair);
 }
 
-int dump(const char *db_file) {
-  _Bool is_stdout = strcmp(db_file, "/dev/stdout") == 0;
-
+int sql(const char *db_file) {
   db = NULL;
   memset(stmts, 0, sizeof(stmts));
   errmsg = NULL;
   err = 0;
 
-  sqlite3_open(is_stdout ? ":memory:" : db_file, &db);
   hierarchies_reserve(&hierarchies, ast.i);
+
+  if ((err = sqlite3_open(db_file, &db)))
+    fprintf(stderr, "%s: sqlite3 error(%d): %s\n", db_file, err,
+            sqlite3_errstr(err));
 
   EXEC_SQL("PRAGMA synchronous = OFF");
   EXEC_SQL("PRAGMA journal_mode = MEMORY");
@@ -187,12 +188,12 @@ int dump(const char *db_file) {
 
   sort_exp_expr_set();
 
-  dump_src();
-  dump_ast();
-  dump_loc();
-  dump_tok();
-  dump_sym();
-  dump_dot();
+  err += dump_src();
+  err += dump_ast();
+  err += dump_loc();
+  err += dump_tok();
+  err += dump_sym();
+  err += dump_dot();
 
   EXEC_SQL("END TRANSACTION");
 
@@ -201,12 +202,10 @@ int dump(const char *db_file) {
       sqlite3_finalize(stmts[i]);
   }
 
-  if (err && !errmsg)
-    fprintf(stderr, "sqlite3 error(%d): %s\n", err, sqlite3_errstr(err));
-
-  decl_number_map_clear(&decl_number_map, 2);
-  hierarchies_clear(&hierarchies, 2);
   sqlite3_close(db);
+  hierarchies_clear(&hierarchies, 2);
+  decl_number_map_clear(&decl_number_map, 2);
+
   return err;
 }
 
