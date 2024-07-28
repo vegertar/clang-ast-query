@@ -1,10 +1,33 @@
 #include "util.h"
+#include "murmur3.h"
 #include "test.h"
 
 #include <assert.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+
+int reads(FILE *fp, struct string *s, const char *escape) {
+  assert(fp && s);
+
+  char buffer[BUFSIZ];
+  size_t n = 0;
+  while ((n = fread(buffer, 1, sizeof(buffer), fp))) {
+    string_reserve(s, s->i + n + 1);
+
+    if (escape)
+      ESCAPE(escape, buffer, n, s);
+    else
+      string_append(s, buffer, n);
+
+    s->data[s->i] = 0;
+  }
+
+  if (ferror(fp)) {
+    fprintf(stderr, "%s: fread error\n", __func__);
+    return -1;
+  }
+
+  return 0;
+}
 
 const char *expand_path(const char *cwd, unsigned n, const char *in,
                         char *out) {
@@ -104,4 +127,10 @@ const char *rands(char buf[], unsigned cap) {
   }
   buf[i] = 0;
   return buf;
+}
+
+unsigned __int128 hash(const void *key, int len) {
+  unsigned __int128 out;
+  MurmurHash3_x64_128(key, len, 496789, &out);
+  return out;
 }

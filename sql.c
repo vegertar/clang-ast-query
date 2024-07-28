@@ -171,17 +171,9 @@ static const struct exp_expr_pair *find_exp_expr_set(const char *expr) {
 }
 
 int sql(const char *db_file) {
-  db = NULL;
-  memset(stmts, 0, sizeof(stmts));
-  errmsg = NULL;
-  err = 0;
-
   hierarchies_reserve(&hierarchies, ast.i);
 
-  if ((err = sqlite3_open(db_file, &db)))
-    fprintf(stderr, "%s: sqlite3 error(%d): %s\n", db_file, err,
-            sqlite3_errstr(err));
-
+  OPEN_DB(db_file);
   EXEC_SQL("PRAGMA synchronous = OFF");
   EXEC_SQL("PRAGMA journal_mode = MEMORY");
   EXEC_SQL("BEGIN TRANSACTION");
@@ -196,17 +188,17 @@ int sql(const char *db_file) {
   err += dump_dot();
 
   EXEC_SQL("END TRANSACTION");
+  CLOSE_DB();
 
-  for (int i = 0; i < MAX_STMT_SIZE; ++i) {
-    if (stmts[i])
-      sqlite3_finalize(stmts[i]);
-  }
-
-  sqlite3_close(db);
-  hierarchies_clear(&hierarchies, 2);
-  decl_number_map_clear(&decl_number_map, 2);
+  hierarchies_clear(&hierarchies, 0);
+  decl_number_map_clear(&decl_number_map, 0);
 
   return err;
+}
+
+void sql_halt() {
+  hierarchies_clear(&hierarchies, 2);
+  decl_number_map_clear(&decl_number_map, 2);
 }
 
 #define FILL_REF(expr)                                                         \
@@ -339,83 +331,83 @@ static int dump_ast() {
                 MACRO, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
                 END_COL, EXP_SRC, EXP_ROW, EXP_COL, SRC, ROW, COL, CLASS, NAME,
                 QUALIFIED_TYPE, DESUGARED_TYPE, SPECS, REF_KIND, REF_PTR,
-                DEF_PTR, TYPE_PTR, ANCESTORS) {
+                DEF_PTR, TYPE_PTR, ANCESTORS);
 
-      switch (decl->kind) {
-      case DECL_KIND_V2:
-        FILL_TEXT(NAME, decl->variants.v2.name);
-        break;
-      case DECL_KIND_V3:
-        FILL_INT(CLASS, numeric_class(decl->variants.v3.class));
-        FILL_TEXT(NAME, decl->variants.v3.name);
-        break;
-      case DECL_KIND_V7:
-        FILL_TEXT(NAME, decl->variants.v7.sqname);
-        FILL_DEF(&decl->variants.v7.def);
-        break;
-      case DECL_KIND_V8:
-        FILL_DEF(&decl->variants.v8.def);
-        break;
-      case DECL_KIND_V9:
-        FILL_TEXT(NAME, decl->variants.v9.name);
-        FILL_DEF(&decl->variants.v9.def);
-        break;
-      default:
-        break;
-      }
-
-      switch (node->kind) {
-      case NODE_KIND_HEAD:
-        if (is_decl(node)) {
-          struct decl_number_pair entry = {node->pointer, i};
-          _Bool added = decl_number_map_badd(&decl_number_map, &entry, NULL);
-          assert(added);
-        }
-
-        FILL_TEXT(KIND, node->name);
-        FILL_TEXT(PTR, node->pointer);
-        FILL_TEXT(PREV, node->prev);
-
-        if ((exp_expr = find_exp_expr_set(node->pointer))) {
-          FILL_INT(EXP_SRC, src_number(exp_expr->exp.file));
-          FILL_INT(EXP_ROW, exp_expr->exp.line);
-          FILL_INT(EXP_COL, exp_expr->exp.col);
-        }
-
-        if ((def_ptr = find_string_map(&decl_def_map, node->pointer)))
-          FILL_TEXT(DEF_PTR, def_ptr);
-
-        if ((type_ptr = find_string_map(&var_type_map, node->pointer)))
-          FILL_TEXT(TYPE_PTR, type_ptr);
-        break;
-      case NODE_KIND_ENUM:
-        break;
-      case NODE_KIND_NULL:
-        break;
-      case NODE_KIND_TOKEN:
-        FILL_TEXT(KIND, "Token");
-        FILL_TEXT(NAME, node->name);
-        FILL_TEXT(MACRO, node->macro);
-        break;
-      }
-
-      specs |= mark_specs(node->attrs);
-
-      FILL_INT(NUMBER, i);
-      FILL_INT(PARENT_NUMBER, hierarchies.data[i].parent_number);
-      FILL_INT(FINAL_NUMBER, hierarchies.data[i].final_number);
-      FILL_INT(BEGIN_SRC, src_number(node->range.begin.file));
-      FILL_INT(BEGIN_ROW, node->range.begin.line);
-      FILL_INT(BEGIN_COL, node->range.begin.col);
-      FILL_INT(END_SRC, src_number(node->range.end.file));
-      FILL_INT(END_ROW, node->range.end.line);
-      FILL_INT(END_COL, node->range.end.col);
-      FILL_INT(SRC, src_number(node->loc.file));
-      FILL_INT(ROW, node->loc.line);
-      FILL_INT(COL, node->loc.col);
-      FILL_INT(SPECS, specs);
-      FILL_TEXT(ANCESTORS, ancestors);
+    switch (decl->kind) {
+    case DECL_KIND_V2:
+      FILL_TEXT(NAME, decl->variants.v2.name);
+      break;
+    case DECL_KIND_V3:
+      FILL_INT(CLASS, numeric_class(decl->variants.v3.class));
+      FILL_TEXT(NAME, decl->variants.v3.name);
+      break;
+    case DECL_KIND_V7:
+      FILL_TEXT(NAME, decl->variants.v7.sqname);
+      FILL_DEF(&decl->variants.v7.def);
+      break;
+    case DECL_KIND_V8:
+      FILL_DEF(&decl->variants.v8.def);
+      break;
+    case DECL_KIND_V9:
+      FILL_TEXT(NAME, decl->variants.v9.name);
+      FILL_DEF(&decl->variants.v9.def);
+      break;
+    default:
+      break;
     }
+
+    switch (node->kind) {
+    case NODE_KIND_HEAD:
+      if (is_decl(node)) {
+        struct decl_number_pair entry = {node->pointer, i};
+        _Bool added = decl_number_map_badd(&decl_number_map, &entry, NULL);
+        assert(added);
+      }
+
+      FILL_TEXT(KIND, node->name);
+      FILL_TEXT(PTR, node->pointer);
+      FILL_TEXT(PREV, node->prev);
+
+      if ((exp_expr = find_exp_expr_set(node->pointer))) {
+        FILL_INT(EXP_SRC, src_number(exp_expr->exp.file));
+        FILL_INT(EXP_ROW, exp_expr->exp.line);
+        FILL_INT(EXP_COL, exp_expr->exp.col);
+      }
+
+      if ((def_ptr = find_string_map(&decl_def_map, node->pointer)))
+        FILL_TEXT(DEF_PTR, def_ptr);
+
+      if ((type_ptr = find_string_map(&var_type_map, node->pointer)))
+        FILL_TEXT(TYPE_PTR, type_ptr);
+      break;
+    case NODE_KIND_ENUM:
+      break;
+    case NODE_KIND_NULL:
+      break;
+    case NODE_KIND_TOKEN:
+      FILL_TEXT(KIND, "Token");
+      FILL_TEXT(NAME, node->name);
+      FILL_TEXT(MACRO, node->macro);
+      break;
+    }
+
+    specs |= mark_specs(node->attrs);
+
+    FILL_INT(NUMBER, i);
+    FILL_INT(PARENT_NUMBER, hierarchies.data[i].parent_number);
+    FILL_INT(FINAL_NUMBER, hierarchies.data[i].final_number);
+    FILL_INT(BEGIN_SRC, src_number(node->range.begin.file));
+    FILL_INT(BEGIN_ROW, node->range.begin.line);
+    FILL_INT(BEGIN_COL, node->range.begin.col);
+    FILL_INT(END_SRC, src_number(node->range.end.file));
+    FILL_INT(END_ROW, node->range.end.line);
+    FILL_INT(END_COL, node->range.end.col);
+    FILL_INT(SRC, src_number(node->loc.file));
+    FILL_INT(ROW, node->loc.line);
+    FILL_INT(COL, node->loc.col);
+    FILL_INT(SPECS, specs);
+    FILL_TEXT(ANCESTORS, ancestors);
+
     END_INSERT_INTO();
   }
 
@@ -485,15 +477,14 @@ static int dump_loc() {
 #endif // !VALUES7
 
       INSERT_INTO(loc, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
-                  END_COL, SEMANTICS) {
-        FILL_INT(BEGIN_SRC, begin_src);
-        FILL_INT(BEGIN_ROW, srange->begin.line);
-        FILL_INT(BEGIN_COL, srange->begin.col);
-        FILL_INT(END_SRC, end_src);
-        FILL_INT(END_ROW, srange->end.line);
-        FILL_INT(END_COL, srange->end.col);
-        FILL_INT(SEMANTICS, inputs[k].semantic);
-      }
+                  END_COL, SEMANTICS);
+      FILL_INT(BEGIN_SRC, begin_src);
+      FILL_INT(BEGIN_ROW, srange->begin.line);
+      FILL_INT(BEGIN_COL, srange->begin.col);
+      FILL_INT(END_SRC, end_src);
+      FILL_INT(END_ROW, srange->end.line);
+      FILL_INT(END_COL, srange->end.col);
+      FILL_INT(SEMANTICS, inputs[k].semantic);
       END_INSERT_INTO();
     }
   }
@@ -518,13 +509,12 @@ static int dump_tok() {
 #define VALUES5() "?,?,?,?,?"
 #endif // !VALUES5
 
-    INSERT_INTO(tok, SRC, BEGIN_ROW, BEGIN_COL, OFFSET, DECL) {
-      FILL_INT(SRC, src);
-      FILL_INT(BEGIN_ROW, tok->loc.line);
-      FILL_INT(BEGIN_COL, tok->loc.col);
-      FILL_INT(OFFSET, tok->offset);
-      FILL_INT(DECL, decl);
-    }
+    INSERT_INTO(tok, SRC, BEGIN_ROW, BEGIN_COL, OFFSET, DECL);
+    FILL_INT(SRC, src);
+    FILL_INT(BEGIN_ROW, tok->loc.line);
+    FILL_INT(BEGIN_COL, tok->loc.col);
+    FILL_INT(OFFSET, tok->offset);
+    FILL_INT(DECL, decl);
     END_INSERT_INTO();
   }
 
@@ -579,11 +569,10 @@ static int dump_dot() {
 #define VALUES3() "?,?,?"
 #endif // !VALUES3
 
-  INSERT_INTO(dot, TS, TU, CWD) {
-    FILL_INT(TS, ts);
-    FILL_TEXT(TU, tu);
-    FILL_TEXT(CWD, cwd);
-  }
+  INSERT_INTO(dot, TS, TU, CWD);
+  FILL_INT(TS, ts);
+  FILL_TEXT(TU, tu);
+  FILL_TEXT(CWD, cwd);
   END_INSERT_INTO();
 
   return 0;

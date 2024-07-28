@@ -1178,8 +1178,8 @@ static void void_destroy(void *p) {
   free(*(void **)p);
 }
 
-IMPL_ARRAY_PUSH(array, void *)
-IMPL_ARRAY_CLEAR(array, void_destroy)
+static IMPL_ARRAY_PUSH(array, void *)
+static IMPL_ARRAY_CLEAR(array, void_destroy)
 
 static IMPL_ARRAY_PUSH(tags, struct tag)
 static IMPL_ARRAY_CLEAR(tags, tag_destroy)

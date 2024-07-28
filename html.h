@@ -1,5 +1,5 @@
 #pragma once
 
 int html(const char *db_file);
-
-int rename_html(const char *db_file, const char *out_filename);
+void html_halt();
+int html_rename(const char *db_file, const char *out_filename);

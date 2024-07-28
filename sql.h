@@ -47,11 +47,18 @@
       sqlite3_clear_bindings(stmt);                                            \
     if (!err && stmt)
 
-#define end_if_prepared_stmt()                                                 \
+#define end_if_prepared_stmt(...)                                              \
   if (!err && stmt) {                                                          \
-    sqlite3_step(stmt);                                                        \
-    err = sqlite3_reset(stmt);                                                 \
-    if (err)                                                                   \
+    int rc = 0;                                                                \
+    do {                                                                       \
+      rc = sqlite3_step(stmt);                                                 \
+      if (rc == SQLITE_ROW) {                                                  \
+        __VA_ARGS__                                                            \
+      }                                                                        \
+    } while (rc == SQLITE_ROW);                                                \
+    if (rc == SQLITE_ERROR)                                                    \
+      fprintf(stderr, "sqlite3_step error: %s\n", sqlite3_errmsg(db));         \
+    if ((err = sqlite3_reset(stmt)))                                           \
       fprintf(stderr, "sqlite3 error(%d): %s\n", err, sqlite3_errstr(err));    \
   }                                                                            \
   }                                                                            \
@@ -60,13 +67,41 @@
 #define INSERT_INTO(table, ...)                                                \
   if_prepared_stmt("INSERT INTO " #table " (" #__VA_ARGS__                     \
                    ") VALUES (" VALUES_I1(PP_NARG(__VA_ARGS__)) ")",           \
-                   enum {_, __VA_ARGS__})
+                   enum {_, __VA_ARGS__}) {
+#define END_INSERT_INTO()                                                      \
+  }                                                                            \
+  end_if_prepared_stmt()
 
-#define END_INSERT_INTO() end_if_prepared_stmt()
+#define QUERY(sql, ...) if_prepared_stmt(sql, __VA_ARGS__) {
+#define QUERY_END(...)                                                         \
+  }                                                                            \
+  end_if_prepared_stmt(__VA_ARGS__)
 
 #define BIND_TEXT(k, v, opt) sqlite3_bind_text(stmt, k, v, -1, opt)
 #define FILL_TEXT(k, v) sqlite3_bind_text(stmt, k, v, -1, SQLITE_STATIC)
 #define FILL_INT(k, v) sqlite3_bind_int(stmt, k, v)
+#define COL_TEXT(k) (const char *)sqlite3_column_text(stmt, k)
+#define COL_INT(k) sqlite3_column_INT(stmt, k)
+#define COL_SIZE(k) sqlite3_column_bytes(stmt, k)
+
+#define OPEN_DB(file)                                                          \
+  do {                                                                         \
+    db = NULL;                                                                 \
+    memset(stmts, 0, sizeof(stmts));                                           \
+    errmsg = NULL;                                                             \
+    if ((err = sqlite3_open(file, &db)))                                       \
+      fprintf(stderr, "%s: sqlite3 error(%d): %s\n", file, err,                \
+              sqlite3_errstr(err));                                            \
+  } while (0)
+
+#define CLOSE_DB()                                                             \
+  do {                                                                         \
+    for (int i = 0; i < MAX_STMT_SIZE; ++i) {                                  \
+      if (stmts[i])                                                            \
+        sqlite3_finalize(stmts[i]);                                            \
+    }                                                                          \
+    sqlite3_close(db);                                                         \
+  } while (0)
 
 #define EXEC_SQL(s)                                                            \
   do {                                                                         \
@@ -82,3 +117,4 @@
   } while (0)
 
 int sql(const char *db_file);
+void sql_halt();

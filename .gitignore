@@ -19,6 +19,8 @@
 !/remark.h
 !/util.h
 !/util.c
+!/murmur3.h
+!/murmur3.c
 !/samples
 !/spec
 !/.shellspec

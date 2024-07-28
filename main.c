@@ -26,10 +26,6 @@ struct parser_context {
   int errs;
 };
 
-DECL_ARRAY(string, char);
-IMPL_ARRAY_APPEND(string, char)
-IMPL_ARRAY_CLEAR(string, NULL)
-
 enum if_kind {
   IF_TEXT,
   IF_C,
@@ -56,8 +52,8 @@ static void free_input_file(void *p) {
 }
 
 DECL_ARRAY(input_file_list, struct input_file);
-IMPL_ARRAY_PUSH(input_file_list, struct input_file)
-IMPL_ARRAY_CLEAR(input_file_list, free_input_file)
+static IMPL_ARRAY_PUSH(input_file_list, struct input_file);
+static IMPL_ARRAY_CLEAR(input_file_list, free_input_file);
 
 static struct string in_content;
 static struct input_file_list in_files;
@@ -104,24 +100,6 @@ static int parse_file(FILE *fp) {
   return err;
 }
 
-static inline FILE *open_file(const char *filename, const char *mode) {
-  FILE *fp = fopen(filename, mode);
-  if (!fp) {
-    fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
-            strerror(errno));
-  }
-  return fp;
-}
-
-static int read_content(FILE *fp, struct string *s) {
-  char buffer[BUFSIZ];
-  size_t n = 0;
-  while ((n = fread(buffer, 1, sizeof(buffer), fp))) {
-    string_append(s, buffer, n);
-  }
-  return ferror(fp);
-}
-
 static int compile(const char *code, size_t size, const char *filename,
                    int argc, char **argv) {
 #ifdef USE_CLANG_TOOL
@@ -156,10 +134,10 @@ static int bundle(const char *sql) {
   static int i = 0;
 
   ++i;
-  INSERT_INTO(sql, NUMBER, FILENAME) {
-    FILL_INT(NUMBER, i);
-    FILL_TEXT(FILENAME, path);
-  }
+
+  INSERT_INTO(sql, NUMBER, FILENAME);
+  FILL_INT(NUMBER, i);
+  FILL_TEXT(FILENAME, path);
   END_INSERT_INTO();
 
   snprintf(buffer, sizeof(buffer),
@@ -284,10 +262,7 @@ int main(int argc, char **argv) {
     assert(n == strlen(tmp));
 
     if (ld_flag) {
-      if ((err = sqlite3_open(tmp, &db)))
-        fprintf(stderr, "%s: sqlite3 error(%d): %s\n", tmp, err,
-                sqlite3_errstr(err));
-
+      OPEN_DB(tmp);
       EXEC_SQL("PRAGMA synchronous = OFF");
       EXEC_SQL("PRAGMA journal_mode = MEMORY");
       EXEC_SQL("BEGIN TRANSACTION");
@@ -326,7 +301,7 @@ int main(int argc, char **argv) {
         break;
       case IF_C:
         string_clear(&in_content, 0);
-        if (!(err = read_content(in_fp, &in_content)))
+        if (!(err = reads(in_fp, &in_content, NULL)))
           err = compile(in_content.data, in_content.i,
                         ends_with(in_filename, ".c")
                             ? in_filename
@@ -348,7 +323,7 @@ int main(int argc, char **argv) {
       if (!err && in_files.i == 1 && *tmp && !ld_flag) {
         rename(tmp, out_filename);
         if (of_kind == OF_HTML)
-          rename_html(tmp, out_filename);
+          html_rename(tmp, out_filename);
       }
 
       destroy();
@@ -366,15 +341,13 @@ int main(int argc, char **argv) {
   }
 
   if (*tmp && ld_flag) {
-    for (int i = 0; i < MAX_STMT_SIZE; ++i) {
-      if (stmts[i])
-        sqlite3_finalize(stmts[i]);
-    }
-    sqlite3_close(db);
+    CLOSE_DB();
     tmp[n] = 0;
     rename(tmp, out_filename);
   }
 
+  sql_halt();
+  html_halt();
   input_file_list_clear(&in_files, 1);
   string_clear(&in_content, 1);
 
