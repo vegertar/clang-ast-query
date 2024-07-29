@@ -21,6 +21,7 @@
 !/util.c
 !/murmur3.h
 !/murmur3.c
+!/reader.js
 !/samples
 !/spec
 !/.shellspec

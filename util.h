@@ -44,6 +44,14 @@ static IMPL_ARRAY_PUSH(string, char);
 static IMPL_ARRAY_APPEND(string, char);
 static IMPL_ARRAY_CLEAR(string, NULL);
 
+static inline struct string *string_appends(struct string *string,
+                                            const char *s, size_t n) {
+  string_reserve(string, n + 1);
+  string_append(string, s, n);
+  string->data[string->i] = 0;
+  return string;
+}
+
 int reads(FILE *fp, struct string *s, const char *escape);
 
 const char *expand_path(const char *cwd, unsigned n, const char *in, char *out);

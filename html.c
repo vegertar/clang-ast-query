@@ -2,6 +2,10 @@
 #include "sql.h"
 #include "util.h"
 
+#ifndef READER_JS
+#define READER_JS "./reader.js"
+#endif // READER_JS
+
 #include <sqlite3.h>
 
 #include <assert.h>
@@ -17,7 +21,9 @@ static int err;
 
 struct source {
   unsigned __int128 key;
-  struct string content;
+  struct string path;
+  struct string code;
+  int src;
 };
 
 static int compare_source(const void *a, const void *b, size_t n) {
@@ -27,7 +33,9 @@ static int compare_source(const void *a, const void *b, size_t n) {
 }
 
 static void free_source(void *p) {
-  string_clear(&((struct source *)p)->content, 1);
+  struct source *source = (struct source *)p;
+  string_clear(&source->path, 1);
+  string_clear(&source->code, 1);
 }
 
 DECL_ARRAY(source_map, struct source);
@@ -39,25 +47,55 @@ static inline IMPL_ARRAY_CLEAR(source_map, free_source);
 static struct source_map source_map;
 
 static int add_source(const char *path) {
-  struct source source = {hash(path, strlen(path))};
+  struct source source = {.key = hash(path, strlen(path)), .src = -1};
   unsigned i = -1;
   source_map_badd(&source_map, &source, &i);
   assert(i != -1 && i < INT_MAX);
 
-  if (!source_map.data[i].content.i) {
+  if (!source_map.data[i].code.i) {
     FILE *fp = open_file(path, "r");
-    if (!fp || reads(fp, &source_map.data[i].content, "$`"))
+    if (!fp || reads(fp, &source_map.data[i].code, "$`"))
       i = -1;
     if (fp)
       fclose(fp);
+    if (i != -1)
+      string_appends(&source_map.data[i].path, path, strlen(path));
   }
 
   return i;
 }
 
+static void require_src(struct source *source) {
+  if (err || source->src != -1)
+    return;
+
+  assert(source->path.i);
+
+  QUERY("SELECT number FROM src WHERE filename = ?");
+  FILL_TEXT(1, source->path.data);
+  QUERY_END({ source->src = COL_INT(0); });
+
+  assert(source->src != -1);
+}
+
+static void dump_link(FILE *fp, struct source *source) {
+  require_src(source);
+  fprintf(fp, "Symbol('link'),");
+
+  QUERY("SELECT begin_row, begin_col, end_row, end_col, desugared_type uri"
+        " FROM ast"
+        " WHERE kind = 'InclusionDirective'"
+        " AND src = ?");
+  FILL_INT(1, source->src);
+  QUERY_END({
+    fprintf(fp, "%d,%d,%d,%d,'%s',", COL_INT(0), COL_INT(1), COL_INT(2),
+            COL_INT(3), COL_TEXT(4));
+  });
+}
+
 int html(const char *db_file) {
   char title[PATH_MAX] = {0};
-  const char *code = NULL;
+  struct source source = {0};
 
   OPEN_DB(db_file);
   QUERY("SELECT cwd, tu FROM dot");
@@ -67,9 +105,8 @@ int html(const char *db_file) {
     strncpy(title, tu, COL_SIZE(1));
     int i = add_source(expand_path(COL_TEXT(0), COL_SIZE(0), tu, path));
     if (i != -1)
-      code = source_map.data[i].content.data;
+      source = source_map.data[i];
   });
-  CLOSE_DB();
 
   if (!err) {
     snprintf(tmp, sizeof(tmp), "%s.html", db_file);
@@ -81,24 +118,31 @@ int html(const char *db_file) {
 <!DOCTYPE html>\
 <html lang='en'>\
   <head>\
-  <title>%s</title>\
-  <meta charset='utf-8'>\
-  <style></style>\
-  <script type='module'>\
-    import {EditorView} from 'https://cdn.jsdelivr.net/npm/@codemirror/view@6.29.0/+esm';\
+    <title>%s</title>\
+    <meta charset='utf-8'>\
+    <style></style>\
+    <script type='module'>\
+      import {ReaderView} from '%s';\
 \
-    new EditorView({\
-      doc: String.raw`%s`,\
-      extensions: [],\
-      parent: document.body\
-    });\
-  </script>\
+      new ReaderView({\
+        doc: String.raw`%s`,\
+        data: [",
+            title, READER_JS, source.code.data);
+
+    dump_link(fp, &source);
+
+    fprintf(fp, "\
+        ],\
+        parent: document.body\
+      });\
+    </script>\
   </head>\
   <body></body>\
-</html>",
-            title, code);
+</html>");
     fclose(fp);
   }
+
+  CLOSE_DB();
   return err;
 }
 

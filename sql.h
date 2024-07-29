@@ -38,10 +38,13 @@
         ++i;                                                                   \
       }                                                                        \
       assert(i < MAX_STMT_SIZE);                                               \
+      assert(db);                                                              \
       err = sqlite3_prepare_v2(db, sql, sizeof(sql), &stmts[i], NULL);         \
       if (err)                                                                 \
-        fprintf(stderr, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(db)); \
-      stmt = stmts[i];                                                         \
+        fprintf(stderr, "%s:%d: sqlite3_prepare_v2 error: %s\n", __func__,     \
+                __LINE__, sqlite3_errmsg(db));                                 \
+      else                                                                     \
+        stmt = stmts[i];                                                       \
     }                                                                          \
     if (stmt)                                                                  \
       sqlite3_clear_bindings(stmt);                                            \
@@ -57,9 +60,11 @@
       }                                                                        \
     } while (rc == SQLITE_ROW);                                                \
     if (rc == SQLITE_ERROR)                                                    \
-      fprintf(stderr, "sqlite3_step error: %s\n", sqlite3_errmsg(db));         \
+      fprintf(stderr, "%s:%d: sqlite3_step error: %s\n", __func__, __LINE__,   \
+              sqlite3_errmsg(db));                                             \
     if ((err = sqlite3_reset(stmt)))                                           \
-      fprintf(stderr, "sqlite3 error(%d): %s\n", err, sqlite3_errstr(err));    \
+      fprintf(stderr, "%s:%d: sqlite3 error(%d): %s\n", __func__, __LINE__,    \
+              err, sqlite3_errstr(err));                                       \
   }                                                                            \
   }                                                                            \
   while (0)
@@ -81,7 +86,7 @@
 #define FILL_TEXT(k, v) sqlite3_bind_text(stmt, k, v, -1, SQLITE_STATIC)
 #define FILL_INT(k, v) sqlite3_bind_int(stmt, k, v)
 #define COL_TEXT(k) (const char *)sqlite3_column_text(stmt, k)
-#define COL_INT(k) sqlite3_column_INT(stmt, k)
+#define COL_INT(k) sqlite3_column_int(stmt, k)
 #define COL_SIZE(k) sqlite3_column_bytes(stmt, k)
 
 #define OPEN_DB(file)                                                          \
@@ -90,8 +95,8 @@
     memset(stmts, 0, sizeof(stmts));                                           \
     errmsg = NULL;                                                             \
     if ((err = sqlite3_open(file, &db)))                                       \
-      fprintf(stderr, "%s: sqlite3 error(%d): %s\n", file, err,                \
-              sqlite3_errstr(err));                                            \
+      fprintf(stderr, "%s:%d: %s: sqlite3 error(%d): %s\n", __func__,          \
+              __LINE__, file, err, sqlite3_errstr(err));                       \
   } while (0)
 
 #define CLOSE_DB()                                                             \
@@ -108,11 +113,13 @@
     if (db && !err) {                                                          \
       err = sqlite3_exec(db, s, NULL, NULL, &errmsg);                          \
       if (errmsg) {                                                            \
-        fprintf(stderr, "sqlite3_exec(%s): %s\n", s, errmsg);                  \
+        fprintf(stderr, "%s:%d: sqlite3_exec(%s): %s\n", __func__, __LINE__,   \
+                s, errmsg);                                                    \
         sqlite3_free(errmsg);                                                  \
       }                                                                        \
     } else {                                                                   \
-      fprintf(stderr, "Ignored `%s' due to error\n", s);                       \
+      fprintf(stderr, "%s:%d: ignored `%s' due to error\n", __func__,          \
+              __LINE__, s);                                                    \
     }                                                                          \
   } while (0)
 

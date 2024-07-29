@@ -36,7 +36,8 @@
   }
 
 #define IMPL_ARRAY_APPEND(name, type)                                          \
-  struct name *name##_append(struct name *p, type *src, ARRAY_size_t len) {    \
+  struct name *name##_append(struct name *p, const type *src,                  \
+                             ARRAY_size_t len) {                               \
     return (struct name *)ARRAY_set((struct ARRAY_base *)p, sizeof(type),      \
                                     p->i, src, len, NULL);                     \
   }
