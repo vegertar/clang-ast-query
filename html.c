@@ -2,16 +2,18 @@
 #include "sql.h"
 #include "util.h"
 
-#ifndef READER_JS
-#define READER_JS "./reader.js"
-#endif // READER_JS
-
 #include <sqlite3.h>
 
 #include <assert.h>
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifndef READER_JS
+#define READER_JS "./reader.js"
+#endif // READER_JS
+
+#define DUMP(x) fprintf(fp, "Symbol('" #x "'),")
 
 static char tmp[PATH_MAX];
 static sqlite3 *db;
@@ -65,33 +67,9 @@ static int add_source(const char *path) {
   return i;
 }
 
-static void require_src(struct source *source) {
-  if (err || source->src != -1)
-    return;
-
-  assert(source->path.i);
-
-  QUERY("SELECT number FROM src WHERE filename = ?");
-  FILL_TEXT(1, source->path.data);
-  QUERY_END({ source->src = COL_INT(0); });
-
-  assert(source->src != -1);
-}
-
-static void dump_link(FILE *fp, struct source *source) {
-  require_src(source);
-  fprintf(fp, "Symbol('link'),");
-
-  QUERY("SELECT begin_row, begin_col, end_row, end_col, desugared_type uri"
-        " FROM ast"
-        " WHERE kind = 'InclusionDirective'"
-        " AND src = ?");
-  FILL_INT(1, source->src);
-  QUERY_END({
-    fprintf(fp, "%d,%d,%d,%d,'%s',", COL_INT(0), COL_INT(1), COL_INT(2),
-            COL_INT(3), COL_TEXT(4));
-  });
-}
+static void dump_link(FILE *fp, struct source *source);
+static void dump_decl(FILE *fp, struct source *source);
+static void dump_semantics(FILE *fp, struct source *source);
 
 int html(const char *db_file) {
   char title[PATH_MAX] = {0};
@@ -130,6 +108,8 @@ int html(const char *db_file) {
             title, READER_JS, source.code.data);
 
     dump_link(fp, &source);
+    dump_decl(fp, &source);
+    dump_semantics(fp, &source);
 
     fprintf(fp, "\
         ],\
@@ -156,4 +136,63 @@ int html_rename(const char *db_file, const char *out_filename) {
   err = rename(tmp, out);
   assert(err == 0);
   return err;
+}
+
+static void require_src(struct source *source) {
+  if (err || source->src != -1)
+    return;
+
+  assert(source->path.i);
+
+  QUERY("SELECT number FROM src WHERE filename = ?");
+  FILL_TEXT(1, source->path.data);
+  QUERY_END({ source->src = COL_INT(0); });
+
+  assert(source->src != -1);
+}
+
+static void dump_link(FILE *fp, struct source *source) {
+  require_src(source);
+  DUMP(link);
+
+  QUERY("SELECT begin_row, begin_col, end_row, end_col, desugared_type uri"
+        " FROM ast"
+        " WHERE kind = 'InclusionDirective'"
+        " AND src = ?");
+  FILL_INT(1, source->src);
+  QUERY_END({
+    fprintf(fp, "%d,%d,%d,%d,'%s',", COL_INT(0), COL_INT(1), COL_INT(2),
+            COL_INT(3), COL_TEXT(4));
+  });
+}
+
+static void dump_decl(FILE *fp, struct source *source) {
+  require_src(source);
+  DUMP(decl);
+
+  QUERY("SELECT tok.begin_row, tok.begin_col, name, kind"
+        " FROM ast"
+        " JOIN tok"
+        " ON ast.number = tok.decl"
+        " WHERE tok.src = ?"
+        " AND offset = 0");
+  FILL_INT(1, source->src);
+  QUERY_END({
+    fprintf(fp, "%d,%d,'%s','%s',", COL_INT(0), COL_INT(1), COL_TEXT(2),
+            COL_TEXT(3));
+  });
+}
+
+static void dump_semantics(FILE *fp, struct source *source) {
+  require_src(source);
+  DUMP(semantics);
+
+  QUERY("SELECT begin_row, begin_col, end_row, end_col, kind"
+        " FROM loc"
+        " WHERE begin_src = ?");
+  FILL_INT(1, source->src);
+  QUERY_END({
+    fprintf(fp, "%d,%d,%d,%d,'%s',", COL_INT(0), COL_INT(1), COL_INT(2),
+            COL_INT(3), COL_TEXT(4));
+  });
 }

@@ -15,7 +15,7 @@
 #define MAX_AST_LEVEL 255
 #endif // !MAX_AST_LEVEL
 
-enum spec {
+enum specs {
   SPEC_EXTERN = 1U,
   SPEC_STATIC = 1U << 1,
   SPEC_INLINE = 1U << 2,
@@ -29,9 +29,15 @@ enum spec {
   SPEC_CINIT = 1U << 10,
 };
 
-enum semantic {
+enum semantics {
   SEMANTIC_EXPANSION,
   SEMANTIC_INACTIVE,
+  SEMANTIC_LITERAL,
+  SEMANTIC_IDENTIFIER,
+  SEMANTIC_TYPE,
+  SEMANTIC_KEYWORD,
+  SEMANTIC_COMMENT,
+  SEMANTIC_PUNCTUATOR,
 };
 
 static sqlite3 *db;
@@ -84,6 +90,18 @@ static unsigned mark_specs(const struct array array) {
   }
   assert(specs <= INT_MAX);
   return specs;
+}
+
+static int examine_semantics(const char *s) {
+#define EXAMINE_SEMANTICS(s, x)                                                \
+  do {                                                                         \
+    if (strncmp(s, #x, sizeof(#x) - 1) == 0)                                   \
+      return SEMANTIC_##x;                                                     \
+  } while (0)
+
+  EXAMINE_SEMANTICS(s, KEYWORD);
+  EXAMINE_SEMANTICS(s, PUNCTUATOR);
+  return -1;
 }
 
 static int numeric_class(const char *s) {
@@ -447,12 +465,13 @@ static int dump_loc() {
            " end_src INTEGER,"
            " end_row INTEGER,"
            " end_col INTEGER,"
-           " semantics INTEGER)");
+           " semantics INTEGER,"
+           " kind TEXT)");
 
   struct {
     struct srange *data;
     unsigned i;
-    enum semantic semantic;
+    enum semantics semantics;
   } inputs[] = {
       {
           loc_exp_set.data,
@@ -484,9 +503,35 @@ static int dump_loc() {
       FILL_INT(END_SRC, end_src);
       FILL_INT(END_ROW, srange->end.line);
       FILL_INT(END_COL, srange->end.col);
-      FILL_INT(SEMANTICS, inputs[k].semantic);
+      FILL_INT(SEMANTICS, inputs[k].semantics);
       END_INSERT_INTO();
     }
+  }
+
+  for (unsigned i = 0; i < tok_kind_set.i; ++i) {
+    struct srange tok = tok_kind_set.data[i].tok;
+    int begin_src = src_number(tok.begin.file);
+    int end_src = src_number(tok.end.file);
+
+    const char *kind = tok_kind_set.data[i].kind;
+    assert(strchr(kind, ' '));
+    int semantics = examine_semantics(kind);
+
+#ifndef VALUES8
+#define VALUES8() "?,?,?,?,?,?,?,?"
+#endif // !VALUES8
+
+    INSERT_INTO(loc, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW, END_COL,
+                SEMANTICS, KIND);
+    FILL_INT(BEGIN_SRC, begin_src);
+    FILL_INT(BEGIN_ROW, tok.begin.line);
+    FILL_INT(BEGIN_COL, tok.begin.col);
+    FILL_INT(END_SRC, end_src);
+    FILL_INT(END_ROW, tok.end.line);
+    FILL_INT(END_COL, tok.end.col);
+    FILL_INT(SEMANTICS, semantics);
+    FILL_TEXT(KIND, kind);
+    END_INSERT_INTO();
   }
 
   return 0;

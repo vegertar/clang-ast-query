@@ -201,6 +201,13 @@
 
   DECL_ARRAY(tok_decl_set, struct tok_decl_pair);
 
+  struct tok_kind_pair {
+    struct srange tok;
+    const char *kind;
+  };
+
+  DECL_ARRAY(tok_kind_set, struct tok_kind_pair);
+
   struct exp_expr_pair {
     struct sloc exp;
     const char *expr;
@@ -233,6 +240,7 @@
   extern struct loc_exp_set loc_exp_set;
   extern struct inactive_set inactive_set;
   extern struct tok_decl_set tok_decl_set;
+  extern struct tok_kind_set tok_kind_set;
   extern struct exp_expr_set exp_expr_set;
   extern struct string_map var_type_map;
   extern struct string_map decl_def_map;
@@ -274,6 +282,7 @@
   struct loc_exp_set loc_exp_set;
   struct inactive_set inactive_set;
   struct tok_decl_set tok_decl_set;
+  struct tok_kind_set tok_kind_set;
   struct exp_expr_set exp_expr_set;
   struct string_map var_type_map;
   struct string_map decl_def_map;
@@ -312,6 +321,9 @@
 
   static DECL_METHOD(tok_decl_set, push, struct tok_decl_pair);
   static DECL_METHOD(tok_decl_set, clear, int);
+
+  static DECL_METHOD(tok_kind_set, push, struct tok_kind_pair);
+  static DECL_METHOD(tok_kind_set, clear, int);
 
   static DECL_METHOD(exp_expr_set, push, struct exp_expr_pair);
   static DECL_METHOD(exp_expr_set, clear, int);
@@ -387,6 +399,7 @@
     REMARK_EXPORTED
     REMARK_INACTIVE
     REMARK_TOK_DECL
+    REMARK_TOK_KIND
     REMARK_LOC_EXP
     REMARK_EXP_EXPR
   <integer>
@@ -530,6 +543,7 @@ remark: REMARK
  | remark_loc_exp
  | remark_exp_expr
  | remark_tok_decl
+ | remark_tok_kind
  | remark_inactive
  | remark_exported
 
@@ -546,6 +560,11 @@ remark_exp_expr: REMARK_EXP_EXPR sloc POINTER
 remark_tok_decl: REMARK_TOK_DECL tok POINTER
   {
     tok_decl_set_push(&tok_decl_set, (struct tok_decl_pair){$2, $3});
+  }
+
+remark_tok_kind: REMARK_TOK_KIND '<' srange '>' DQNAME
+  {
+    tok_kind_set_push(&tok_kind_set, (struct tok_kind_pair){$3, $5});
   }
 
 remark_inactive: REMARK_INACTIVE '<' srange '>'
@@ -1000,6 +1019,14 @@ static void free_tok_decl(void *p) {
 static IMPL_ARRAY_PUSH(tok_decl_set, struct tok_decl_pair);
 static IMPL_ARRAY_CLEAR(tok_decl_set, free_tok_decl);
 
+static void free_tok_kind(void *p) {
+  struct tok_kind_pair *pair = (struct tok_kind_pair *)p;
+  free((void *)pair->kind);
+}
+
+static IMPL_ARRAY_PUSH(tok_kind_set, struct tok_kind_pair);
+static IMPL_ARRAY_CLEAR(tok_kind_set, free_tok_kind);
+
 static void free_exp_expr(void *p) {
   struct exp_expr_pair *pair = (struct exp_expr_pair *)p;
   free((void *)pair->expr);
@@ -1014,6 +1041,7 @@ void destroy() {
   loc_exp_set_clear(&loc_exp_set, 1);
   inactive_set_clear(&inactive_set, 1);
   tok_decl_set_clear(&tok_decl_set, 1);
+  tok_kind_set_clear(&tok_kind_set, 1);
   exp_expr_set_clear(&exp_expr_set, 1);
   string_map_clear(&var_type_map, 1);
   string_map_clear(&decl_def_map, 1);

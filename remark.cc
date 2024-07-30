@@ -895,7 +895,7 @@ private:
   void on_token_lexed(const Token &token) {
     // Collect all tokens to dump in later.
     if (!token.isAnnotation())
-      tokens.push_back(syntax::Token(token));
+      tokens.push_back(token);
 
     auto loc = token.getLocation();
     if (loc.isFileID()) {
@@ -906,15 +906,6 @@ private:
       expansions.emplace_back(expanding_stack.empty() ? macros.size() - 1
                                                       : expanding_stack.back(),
                               token);
-    }
-  }
-
-  bool indexable(const syntax::Token &token) {
-    switch (token.kind()) {
-    case tok::identifier:
-      return true;
-    default:
-      return false;
     }
   }
 
@@ -1051,7 +1042,7 @@ private:
 
   void dump_token_expansion() {
     assert(!tokens.empty());
-    assert(tokens.back().kind() == tok::eof);
+    assert(tokens.back().getKind() == tok::eof);
 
     auto &sm = pp.getSourceManager();
     SourceLocation last_loc;
@@ -1061,15 +1052,18 @@ private:
     unsigned indexed_tokens = 0;
 
     for (unsigned i = 0, e = tokens.size(); i < e; ++i) {
-      auto loc = tokens[i].location();
-      if (indexable(tokens[i])) {
+      syntax::Token token(tokens[i]);
+      auto loc = token.location();
+      auto kind = token.kind();
+
+      if (kind == tok::identifier) {
         ++indexable_tokens;
 
         if (loc.isFileID()) {
           auto v = find(loc, FIND_OPTION_EQUAL);
 
           out << "#TOK-DECL:";
-          dumper->dumpLocation(tokens[i].location());
+          dumper->dumpLocation(loc);
 
           auto d = v ? v->get_decl() : nullptr;
           if (d)
@@ -1077,6 +1071,18 @@ private:
           dumper->dumpPointer(d);
           out << '\n';
         }
+      } else if (loc.isFileID() && kind != tok::eof) {
+        static std::pair<const char *, const char *> token_names[] = {
+#define TOK(X) {"UNKNOWN", #X},
+#define KEYWORD(X, Y) {"KEYWORD", #X},
+#define PUNCTUATOR(X, Y) {"PUNCTUATOR", #X},
+#include "clang/Basic/TokenKinds.def"
+            {nullptr, nullptr}};
+        out << "#TOK-KIND:";
+        dumper->dumpSourceRange({loc, token.endLocation()});
+        out << " \""
+            << (tok::isLiteral(kind) ? "LITERAL" : token_names[kind].first)
+            << ' ' << token_names[kind].second << "\"\n";
       }
 
       auto expansion_loc = sm.getExpansionLoc(loc);
@@ -1087,8 +1093,8 @@ private:
           int j = i - 1;
 
           while (d && j > index_of_last_expansion_loc) {
-            auto &t = tokens[j];
-            if (indexable(t)) {
+            syntax::Token t(tokens[j]);
+            if (t.kind() == tok::identifier) {
               out << "#TOK-DECL:";
               dumper->dumpLocation(t.location());
               out << ' ' << j - index_of_last_expansion_loc;
@@ -1403,7 +1409,7 @@ private:
   unsigned dir; // index of the present directive_node
   std::vector<directive_node> directive_nodes;
   llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
-  std::vector<syntax::Token> tokens;
+  std::vector<Token> tokens;
   std::vector<SourceRange> inactive_regions;
   std::vector<const void *> exported_symbols;
 };

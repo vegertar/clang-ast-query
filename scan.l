@@ -152,6 +152,10 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return TOK_REMARK_TOK_DECL;
 }
 
+^"#TOK-KIND:" {
+  return TOK_REMARK_TOK_KIND;
+}
+
 {ATTR}/[ \n] {
   yylval->TOK_ATTR = strdup(yytext);
   return TOK_ATTR;
