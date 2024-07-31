@@ -189,7 +189,8 @@ static void dump_semantics(FILE *fp, struct source *source) {
 
   QUERY("SELECT begin_row, begin_col, end_row, end_col, kind"
         " FROM loc"
-        " WHERE begin_src = ?");
+        " WHERE begin_src = ?"
+        " ORDER BY begin_row, begin_col");
   FILL_INT(1, source->src);
   QUERY_END({
     fprintf(fp, "%d,%d,%d,%d,'%s',", COL_INT(0), COL_INT(1), COL_INT(2),

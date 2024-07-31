@@ -185,7 +185,20 @@
 
   DECL_ARRAY(src_set, struct src);
 
-  DECL_ARRAY(loc_exp_set, struct srange);
+  struct loc_exp_pair {
+    struct srange loc;
+    /**
+     * The kind of expansion.
+     *
+     * 0: macro
+     * 1: built-in macro
+     * 2: function like macro
+     * 3: built-in function like macro
+     */
+    unsigned exp;
+  };
+
+  DECL_ARRAY(loc_exp_set, struct loc_exp_pair);
 
   DECL_ARRAY(inactive_set, struct srange);
 
@@ -313,7 +326,7 @@
 
   static DECL_METHOD(string_map, clear, int);
 
-  static DECL_METHOD(loc_exp_set, push, struct srange);
+  static DECL_METHOD(loc_exp_set, push, struct loc_exp_pair);
   static DECL_METHOD(loc_exp_set, clear, int);
 
   static DECL_METHOD(inactive_set, push, struct srange);
@@ -547,9 +560,9 @@ remark: REMARK
  | remark_inactive
  | remark_exported
 
-remark_loc_exp: REMARK_LOC_EXP '<' srange '>'
+remark_loc_exp: REMARK_LOC_EXP '<' srange '>' INTEGER
   {
-    loc_exp_set_push(&loc_exp_set, $3);
+    loc_exp_set_push(&loc_exp_set, (struct loc_exp_pair){$3, atoi($5)});
   }
 
 remark_exp_expr: REMARK_EXP_EXPR sloc POINTER
@@ -998,10 +1011,11 @@ static void srange_destroy(struct srange *srange) {
 }
 
 static void free_loc_exp(void *p) {
-  srange_destroy((struct srange *)p);
+  struct loc_exp_pair *pair = (struct loc_exp_pair *)p;
+  srange_destroy(&pair->loc);
 }
 
-static IMPL_ARRAY_PUSH(loc_exp_set, struct srange);
+static IMPL_ARRAY_PUSH(loc_exp_set, struct loc_exp_pair);
 static IMPL_ARRAY_CLEAR(loc_exp_set, free_loc_exp);
 
 static void free_inactive(void *p) {

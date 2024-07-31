@@ -9,12 +9,22 @@
 #include <clang/Tooling/Syntax/Tokens.h>
 #include <clang/Tooling/Tooling.h>
 
+#include <cctype>
 #include <optional>
 #include <unistd.h>
 
 namespace {
 
 using namespace clang;
+
+static std::pair<const char *, const char *> token_names[] = {
+#define TOK(X) {"UNKNOWN", #X},
+#define KEYWORD(X, Y) {"KEYWORD", #X},
+#define PUNCTUATOR(X, Y) {"PUNCTUATION", #X},
+#include "clang/Basic/TokenKinds.def"
+    {nullptr, nullptr}};
+
+static int not_space(int c) { return !std::isspace(c); }
 
 class expanded_decl {
 public:
@@ -215,6 +225,23 @@ protected:
       out << '\n';
     }
 
+    for (auto &token : pp_tokens) {
+      std::pair<const char *, const char *> kind = {};
+      if (token.second == tok::hash) {
+        kind = token_names[token.second];
+      } else {
+        kind.first = "PPKEYWORD";
+        kind.second = tok::getPPKeywordSpelling(
+            static_cast<tok::PPKeywordKind>(token.second));
+      }
+
+      assert(kind.first && kind.second);
+
+      out << "#TOK-KIND:";
+      dumper->dumpSourceRange(token.first);
+      out << " \"" << kind.first << ' ' << kind.second << "\"\n";
+    }
+
     // Dump all root macro expansion ranges to make their locations indexable.
     for (auto &macro : macros) {
       if (macro.parent == -1) {
@@ -223,9 +250,16 @@ protected:
             macro.range.getBegin() == macro.range.getEnd()
                 ? loc.getLocWithOffset(macro.token.getLength())
                 : sm.getExpansionLoc(macro.range.getEnd()).getLocWithOffset(1);
+
+        unsigned kind = 0;
+        if (macro.info->isBuiltinMacro())
+          kind |= 1;
+        if (macro.info->isFunctionLike())
+          kind |= 2;
+
         out << "#LOC-EXP:";
         dumper->dumpSourceRange({loc, end});
-        out << '\n';
+        out << ' ' << kind << '\n';
 
         // Index the macro to be used by #TOK-DECL in
         // dump_token_expansion().
@@ -613,6 +647,7 @@ private:
 
       ast.directives.emplace_back(directive_inclusion{
           hash_loc,
+          include_tok.getLocation(),
           {filename_range.getBegin(), filename_range.getEnd()},
           include_ii->getName(),
           filename,
@@ -632,7 +667,7 @@ private:
         auto inclusion = std::get_if<directive_inclusion>(&ast.directives[i]);
 
         assert(inclusion);
-        auto hash_loc = inclusion->loc;
+        auto hash_loc = inclusion->hash_loc;
 
         assert(hash_loc.isFileID() && loc.isFileID());
         auto &sm = ast.pp.getSourceManager();
@@ -791,6 +826,7 @@ private:
   };
 
   struct directive_inclusion {
+    SourceLocation hash_loc;
     SourceLocation loc;
     SourceRange range;
     StringRef kind;
@@ -919,6 +955,106 @@ private:
     });
   }
 
+  char get(SourceLocation loc, bool *invalid = nullptr) {
+    auto s = Lexer::getSourceText(
+        CharSourceRange::getCharRange({loc, loc.getLocWithOffset(1)}),
+        pp.getSourceManager(), pp.getLangOpts(), invalid);
+    return s.empty() ? 0 : s[0];
+  }
+
+  StringRef get(SourceLocation loc, SourceLocation end) {
+    return Lexer::getSourceText(CharSourceRange::getCharRange({loc, end}),
+                                pp.getSourceManager(), pp.getLangOpts());
+  }
+
+  SourceLocation find(SourceLocation loc, int (*predicator)(int), int step,
+                      bool *invalid = nullptr) {
+    SourceLocation last = loc;
+    bool err = false;
+    while (!predicator(get(loc, &err)) && !err) {
+      last = loc;
+      loc = loc.getLocWithOffset(step);
+    }
+    if (invalid)
+      *invalid = err;
+    return err ? last : loc;
+  }
+
+  SourceLocation find(SourceLocation loc, int (*predicator)(int),
+                      bool *invalid = nullptr) {
+    return find(loc, predicator, 1, invalid);
+  }
+
+  SourceLocation rfind(SourceLocation loc, int (*predicator)(int),
+                       bool *invalid = nullptr) {
+    return find(loc, predicator, -1, invalid);
+  }
+
+  void add_pp_define(SourceLocation loc) {
+    auto &sm = pp.getSourceManager();
+    bool invalid = false;
+    auto define_last = rfind(loc.getLocWithOffset(-1), not_space, &invalid);
+    assert(!invalid);
+    auto define_rend = rfind(define_last, std::isspace, &invalid);
+    // If rfind is invalid, define_rend is the file start.
+    auto define_loc = define_rend.getLocWithOffset(invalid ? 0 : 1);
+    auto define_end = define_last.getLocWithOffset(1);
+    auto text = get(define_loc, define_end);
+
+    SourceLocation hash_loc;
+    if (text[0] == '#') {
+      hash_loc = define_loc;
+      define_loc = define_loc.getLocWithOffset(1);
+    } else {
+      assert(text[0] == 'd');
+      hash_loc = rfind(define_loc.getLocWithOffset(-1), not_space);
+    }
+
+    pp_tokens.emplace_back(SourceRange{hash_loc, hash_loc.getLocWithOffset(1)},
+                           tok::hash);
+    pp_tokens.emplace_back(SourceRange{define_loc, define_end}, tok::pp_define);
+  }
+
+  void add_pp_defined(SourceLocation loc) {
+    pp_tokens.emplace_back(
+        SourceRange{loc, loc.getLocWithOffset(7) /* defined */},
+        tok::pp_defined);
+  }
+
+  void add_pp_if(SourceLocation loc, tok::PPKeywordKind kind) {
+    auto &sm = pp.getSourceManager();
+    SourceLocation hash_loc = loc.getLocWithOffset(-1);
+    auto prev = get(hash_loc);
+
+    if (std::isspace(prev))
+      hash_loc = rfind(hash_loc.getLocWithOffset(-1), not_space);
+    else
+      assert(prev == '#');
+
+    pp_tokens.emplace_back(SourceRange{hash_loc, hash_loc.getLocWithOffset(1)},
+                           tok::hash);
+    pp_tokens.emplace_back(
+        SourceRange{
+            loc, find(loc.getLocWithOffset(2) /* if/elif/else/endif */,
+                      std::isspace)},
+        kind);
+  }
+
+  void add_pp_include(SourceLocation hash_loc, SourceLocation loc) {
+    pp_tokens.emplace_back(SourceRange{hash_loc, hash_loc.getLocWithOffset(1)},
+                           tok::hash);
+    pp_tokens.emplace_back(
+        SourceRange{loc, loc.getLocWithOffset(7) /* include */},
+        tok::pp_include);
+  }
+
+  bool is_written_internally(SourceLocation loc) {
+    auto &sm = pp.getSourceManager();
+    return sm.isWrittenInBuiltinFile(loc) ||
+           sm.isWrittenInCommandLineFile(loc) ||
+           sm.isWrittenInScratchSpace(loc);
+  }
+
   void dump_directive(const directive_node &node) {
     dumper->AddChild([=, this] {
       std::visit(
@@ -927,6 +1063,8 @@ private:
             if constexpr (std::is_same_v<T, directive_def>) {
               auto id = arg.id;
               auto md = arg.md;
+              auto loc = md->getLocation();
+
               dump_kind(md->getKind());
               out << "Directive";
               dumper->dumpPointer(md);
@@ -934,19 +1072,26 @@ private:
                 out << " prev";
                 dumper->dumpPointer(prev);
               }
+
+              if (!is_written_internally(loc))
+                add_pp_define(loc);
+
               out << ' ';
-              dumper->dumpLocation(md->getLocation());
+              dumper->dumpLocation(loc);
               dumper->AddChild([id, md, this] {
                 dump_macro(md->getMacroInfo(), id->getName());
               });
             } else if constexpr (std::is_same_v<T, directive_if> ||
                                  std::is_same_v<T, directive_elif>) {
-              if constexpr (std::is_same_v<T, directive_if>)
+              if constexpr (std::is_same_v<T, directive_if>) {
+                add_pp_if(arg.loc, tok::pp_if);
                 out << "IfDirective";
-              else if constexpr (std::is_same_v<T, directive_elif>)
+              } else if constexpr (std::is_same_v<T, directive_elif>) {
+                add_pp_if(arg.loc, tok::pp_elif);
                 out << "ElifDirective";
-              else
+              } else {
                 assert("Never reach here");
+              }
 
               dumper->dumpPointer(&arg);
               dumper->dumpSourceRange(arg.range);
@@ -965,26 +1110,35 @@ private:
                 break;
               }
             } else if constexpr (std::is_same_v<T, directive_else>) {
+              add_pp_if(arg.loc, tok::pp_else);
               out << "ElseDirective";
               dumper->dumpPointer(&arg);
               dumper->dumpSourceRange({arg.loc, arg.if_loc});
             } else if constexpr (std::is_same_v<T, directive_endif>) {
+              add_pp_if(arg.loc, tok::pp_endif);
               out << "EndifDirective";
               dumper->dumpPointer(&arg);
               dumper->dumpSourceRange({arg.loc, arg.if_loc});
             } else if constexpr (std::derived_from<T, directive_ifxdef>) {
-              if constexpr (std::is_same_v<T, operator_defined>)
+              if constexpr (std::is_same_v<T, operator_defined>) {
+                add_pp_defined(arg.loc);
                 out << "DefinedOperator";
-              else if constexpr (std::is_same_v<T, directive_ifdef>)
+              } else if constexpr (std::is_same_v<T, directive_ifdef>) {
+                add_pp_if(arg.loc, tok::pp_ifdef);
                 out << "IfdefDirective";
-              else if constexpr (std::is_same_v<T, directive_elifdef_taken>)
+              } else if constexpr (std::is_same_v<T, directive_elifdef_taken>) {
+                add_pp_if(arg.loc, tok::pp_elifdef);
                 out << "ElifdefDirective";
-              else if constexpr (std::is_same_v<T, directive_ifndef>)
+              } else if constexpr (std::is_same_v<T, directive_ifndef>) {
+                add_pp_if(arg.loc, tok::pp_ifndef);
                 out << "IfndefDirective";
-              else if constexpr (std::is_same_v<T, directive_elifndef_taken>)
+              } else if constexpr (std::is_same_v<T,
+                                                  directive_elifndef_taken>) {
+                add_pp_if(arg.loc, tok::pp_elifndef);
                 out << "ElifndefDirective";
-              else
+              } else {
                 assert("Never reach here");
+              }
 
               dumper->dumpPointer(&arg);
               // Simulate the SourceRange of the expression being tested in
@@ -1000,12 +1154,16 @@ private:
                 out << ' ' << arg.id->getName();
             } else if constexpr (std::is_same_v<T, directive_elifdef_skiped> ||
                                  std::is_same_v<T, directive_elifndef_skiped>) {
-              if constexpr (std::is_same_v<T, directive_elifdef_skiped>)
+              if constexpr (std::is_same_v<T, directive_elifdef_skiped>) {
+                add_pp_if(arg.loc, tok::pp_elifdef);
                 out << "ElifdefDirective";
-              else if constexpr (std::is_same_v<T, directive_elifndef_skiped>)
+              } else if constexpr (std::is_same_v<T,
+                                                  directive_elifndef_skiped>) {
+                add_pp_if(arg.loc, tok::pp_elifndef);
                 out << "ElifndefDirective";
-              else
+              } else {
                 assert("Never reach here");
+              }
 
               dumper->dumpPointer(&arg);
               dumper->dumpSourceRange(arg.range);
@@ -1018,6 +1176,7 @@ private:
                 dump_macro_expansion(*child);
               }
             } else if constexpr (std::is_same_v<T, directive_inclusion>) {
+              add_pp_include(arg.hash_loc, arg.loc);
               out << "InclusionDirective";
               dumper->dumpPointer(&arg);
               dumper->dumpSourceRange(arg.range);
@@ -1055,33 +1214,32 @@ private:
       syntax::Token token(tokens[i]);
       auto loc = token.location();
       auto kind = token.kind();
+      bool indexed = false;
 
       if (kind == tok::identifier) {
         ++indexable_tokens;
 
         if (loc.isFileID()) {
           auto v = find(loc, FIND_OPTION_EQUAL);
-
-          out << "#TOK-DECL:";
-          dumper->dumpLocation(loc);
-
           auto d = v ? v->get_decl() : nullptr;
-          if (d)
-            ++indexed_tokens;
-          dumper->dumpPointer(d);
-          out << '\n';
+          if (d) {
+            indexed = ++indexed_tokens;
+            out << "#TOK-DECL:";
+            dumper->dumpLocation(loc);
+            dumper->dumpPointer(d);
+            out << '\n';
+          }
         }
-      } else if (loc.isFileID() && kind != tok::eof) {
-        static std::pair<const char *, const char *> token_names[] = {
-#define TOK(X) {"UNKNOWN", #X},
-#define KEYWORD(X, Y) {"KEYWORD", #X},
-#define PUNCTUATOR(X, Y) {"PUNCTUATOR", #X},
-#include "clang/Basic/TokenKinds.def"
-            {nullptr, nullptr}};
+      }
+
+      if (!indexed && loc.isFileID() && kind != tok::eof) {
         out << "#TOK-KIND:";
         dumper->dumpSourceRange({loc, token.endLocation()});
         out << " \""
-            << (tok::isLiteral(kind) ? "LITERAL" : token_names[kind].first)
+            << (tok::isLiteral(kind)
+                    ? "LITERAL"
+                    : kind == tok::identifier ? "IDENTIFIER"
+                                              : token_names[kind].first)
             << ' ' << token_names[kind].second << "\"\n";
       }
 
@@ -1396,6 +1554,7 @@ private:
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<unsigned, 8> inclusion_stack;
   llvm::SmallVector<operator_defined, 8> defined_queue;
+  std::vector<std::pair<SourceRange, int>> pp_tokens;
   std::vector<expansion_decl> macros;
   std::vector<std::pair<unsigned, Token>> expansions;
   std::pair<unsigned, unsigned> last_macro_expansion;

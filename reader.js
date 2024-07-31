@@ -128,11 +128,14 @@ const extensions = [
           ".ParmVarDecl": {
             color: "#808080",
           },
+          ".FieldDecl": {
+            color: "#0451a5",
+          },
           ".TypedefDecl": {
             color: "#267f99",
           },
           ".ExpansionDecl": {
-            color: "#BD63C5",
+            color: "#0000ff",
           },
         }),
       ],
@@ -164,16 +167,12 @@ const extensions = [
           const from = doc.line(beginRow).from + beginCol - 1;
           const to = doc.line(endRow).from + endCol - 1;
 
-          ranges.push([from, to, kind]);
+          ranges.push(
+            Decoration.mark({ class: `semantics ${kind}` }).range(from, to)
+          );
         }
 
-        return Decoration.set(
-          ranges
-            .sort((a, b) => a[0] - b[0])
-            .map(([from, to, kind]) =>
-              Decoration.mark({ class: `semantics ${kind}` }).range(from, to)
-            )
-        );
+        return Decoration.set(ranges);
       },
       update(value, tr) {
         return value;
@@ -181,11 +180,78 @@ const extensions = [
       provide: (f) => [
         EditorView.decorations.from(f),
         EditorView.baseTheme({
+          ".LITERAL": {
+            color: "#A31515",
+          },
+          ".IDENTIFIER": {
+            color: "#000000",
+          },
           ".KEYWORD": {
             color: "#0000ff",
           },
-          ".PUNCTUATOR": {
+          ".KEYWORD.int": {
+            color: "#2B91AF",
+          },
+          ".KEYWORD.long": {
+            color: "#2B91AF",
+          },
+          ".KEYWORD.short": {
+            color: "#2B91AF",
+          },
+          ".KEYWORD.char": {
+            color: "#2B91AF",
+          },
+          ".KEYWORD._Bool": {
+            color: "#2B91AF",
+          },
+          ".KEYWORD.if": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.else": {
+            color: "#8F08C4",
+          },
+          ".PPKEYWORD": {
+            color: "#0000ff",
+          },
+          ".PPKEYWORD.if": {
+            color: "#808080",
+          },
+          ".PPKEYWORD.else": {
+            color: "#808080",
+          },
+          ".PPKEYWORD.endif": {
+            color: "#808080",
+          },
+          ".PPKEYWORD.ifdef": {
+            color: "#808080",
+          },
+          ".PPKEYWORD.ifndef": {
+            color: "#808080",
+          },
+          ".PPKEYWORD.elifdef": {
+            color: "#808080",
+          },
+          ".PPKEYWORD.elifndef": {
+            color: "#808080",
+          },
+          ".PUNCTUATION": {
             color: "#A31515",
+          },
+          ".numeric_constant": {
+            color: "#098658",
+          },
+          ".macro": {
+            color: "#0000ff",
+          },
+          ".function_like_macro": {
+            color: "#8A1BFF",
+          },
+          ".EXPANSION": {
+            textDecorationStyle: "dotted !important",
+            textDecoration: "underline 1px",
+          },
+          ".INACTIVE": {
+            color: "#E5EBF1",
           },
         }),
       ],

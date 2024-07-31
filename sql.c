@@ -34,10 +34,9 @@ enum semantics {
   SEMANTIC_INACTIVE,
   SEMANTIC_LITERAL,
   SEMANTIC_IDENTIFIER,
-  SEMANTIC_TYPE,
   SEMANTIC_KEYWORD,
   SEMANTIC_COMMENT,
-  SEMANTIC_PUNCTUATOR,
+  SEMANTIC_PUNCTUATION,
 };
 
 static sqlite3 *db;
@@ -100,7 +99,7 @@ static int examine_semantics(const char *s) {
   } while (0)
 
   EXAMINE_SEMANTICS(s, KEYWORD);
-  EXAMINE_SEMANTICS(s, PUNCTUATOR);
+  EXAMINE_SEMANTICS(s, PUNCTUATION);
   return -1;
 }
 
@@ -468,8 +467,12 @@ static int dump_loc() {
            " semantics INTEGER,"
            " kind TEXT)");
 
+#ifndef VALUES8
+#define VALUES8() "?,?,?,?,?,?,?,?"
+#endif // !VALUES8
+
   struct {
-    struct srange *data;
+    const void *data;
     unsigned i;
     enum semantics semantics;
   } inputs[] = {
@@ -487,23 +490,52 @@ static int dump_loc() {
 
   for (unsigned k = 0; k < sizeof(inputs) / sizeof(*inputs); ++k) {
     for (unsigned i = 0; i < inputs[k].i; ++i) {
-      struct srange *srange = &inputs[k].data[i];
-      int begin_src = src_number(srange->begin.file);
-      int end_src = src_number(srange->end.file);
+      struct srange loc;
+      const char *kind = NULL;
+      int semantics = inputs[k].semantics;
 
-#ifndef VALUES7
-#define VALUES7() "?,?,?,?,?,?,?"
-#endif // !VALUES7
+#define EXPANSION(x) "EXPANSION " #x
+      switch (semantics) {
+      case SEMANTIC_EXPANSION:
+        loc = ((const struct loc_exp_pair *)inputs[k].data)[i].loc;
+        switch (((const struct loc_exp_pair *)inputs[k].data)[i].exp) {
+        case 0:
+          kind = EXPANSION(macro);
+          break;
+        case 1:
+          kind = EXPANSION(built_in_macro);
+          break;
+        case 2:
+          kind = EXPANSION(function_like_macro);
+          break;
+        case 3:
+          kind = EXPANSION(built_in_function_like_macro);
+          break;
+        }
+        break;
+      case SEMANTIC_INACTIVE:
+        loc = ((const struct srange *)inputs[k].data)[i];
+        kind = "INACTIVE region";
+        break;
+      default:
+        break;
+      }
+
+      int begin_src = src_number(loc.begin.file);
+      int end_src = src_number(loc.end.file);
+
+      assert(begin_src != -1 && end_src != -1);
 
       INSERT_INTO(loc, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW,
-                  END_COL, SEMANTICS);
+                  END_COL, SEMANTICS, KIND);
       FILL_INT(BEGIN_SRC, begin_src);
-      FILL_INT(BEGIN_ROW, srange->begin.line);
-      FILL_INT(BEGIN_COL, srange->begin.col);
+      FILL_INT(BEGIN_ROW, loc.begin.line);
+      FILL_INT(BEGIN_COL, loc.begin.col);
       FILL_INT(END_SRC, end_src);
-      FILL_INT(END_ROW, srange->end.line);
-      FILL_INT(END_COL, srange->end.col);
-      FILL_INT(SEMANTICS, inputs[k].semantics);
+      FILL_INT(END_ROW, loc.end.line);
+      FILL_INT(END_COL, loc.end.col);
+      FILL_INT(SEMANTICS, semantics);
+      FILL_TEXT(KIND, kind);
       END_INSERT_INTO();
     }
   }
@@ -516,10 +548,6 @@ static int dump_loc() {
     const char *kind = tok_kind_set.data[i].kind;
     assert(strchr(kind, ' '));
     int semantics = examine_semantics(kind);
-
-#ifndef VALUES8
-#define VALUES8() "?,?,?,?,?,?,?,?"
-#endif // !VALUES8
 
     INSERT_INTO(loc, BEGIN_SRC, BEGIN_ROW, BEGIN_COL, END_SRC, END_ROW, END_COL,
                 SEMANTICS, KIND);
