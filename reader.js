@@ -73,14 +73,7 @@ const extensions = [
       update(value, tr) {
         return value;
       },
-      provide: (f) => [
-        EditorView.decorations.from(f),
-        EditorView.baseTheme({
-          ".link": {
-            textDecoration: "underline 1px",
-          },
-        }),
-      ],
+      provide: (f) => [EditorView.decorations.from(f)],
     });
   },
 
@@ -133,9 +126,6 @@ const extensions = [
           },
           ".TypedefDecl": {
             color: "#267f99",
-          },
-          ".ExpansionDecl": {
-            color: "#0000ff",
           },
         }),
       ],
@@ -233,27 +223,6 @@ const extensions = [
           },
 
           ".PPKEYWORD": {
-            color: "#0000ff",
-          },
-          ".PPKEYWORD.if": {
-            color: "#808080",
-          },
-          ".PPKEYWORD.else": {
-            color: "#808080",
-          },
-          ".PPKEYWORD.endif": {
-            color: "#808080",
-          },
-          ".PPKEYWORD.ifdef": {
-            color: "#808080",
-          },
-          ".PPKEYWORD.ifndef": {
-            color: "#808080",
-          },
-          ".PPKEYWORD.elifdef": {
-            color: "#808080",
-          },
-          ".PPKEYWORD.elifndef": {
             color: "#808080",
           },
 
@@ -292,6 +261,14 @@ const extensions = [
 
           ".PUNCTUATION": {
             color: "#A31515",
+          },
+
+          ".TOKEN": {
+            color: "#000000",
+          },
+          ".header_name": {
+            color: "#a31515",
+            textDecoration: "underline 1px",
           },
         }),
       ],

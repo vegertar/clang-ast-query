@@ -17,13 +17,6 @@ namespace {
 
 using namespace clang;
 
-static std::pair<const char *, const char *> token_names[] = {
-#define TOK(X) {"UNKNOWN", #X},
-#define KEYWORD(X, Y) {"KEYWORD", #X},
-#define PUNCTUATOR(X, Y) {"PUNCTUATION", #X},
-#include "clang/Basic/TokenKinds.def"
-    {nullptr, nullptr}};
-
 static int not_space(int c) { return !std::isspace(c); }
 
 class expanded_decl {
@@ -128,6 +121,42 @@ private:
   static const std::uintptr_t mask = 3;
 };
 
+struct semantic_token {
+  SourceRange range;
+  int kind;
+  bool is_pp;
+
+  static constexpr std::pair<const char *, const char *> token_names[] = {
+#define TOK(X) {"TOKEN", #X},
+#define KEYWORD(X, Y) {"KEYWORD", #X},
+#define PUNCTUATOR(X, Y) {"PUNCTUATION", #X},
+#include "clang/Basic/TokenKinds.def"
+      {nullptr, nullptr}};
+
+  static std::pair<const char *, const char *> token_name(int kind) {
+    std::pair<const char *, const char *> v = semantic_token::token_names[kind];
+
+    if (tok::isLiteral(static_cast<tok::TokenKind>(kind)))
+      v.first = "LITERAL";
+    else if (kind == tok::identifier)
+      v.first = "IDENTIFIER";
+
+    return v;
+  }
+
+  std::pair<const char *, const char *> token_name() {
+    std::pair<const char *, const char *> v = {};
+    if (!is_pp) {
+      v = semantic_token::token_name(kind);
+    } else {
+      v.first = "PPKEYWORD";
+      v.second =
+          tok::getPPKeywordSpelling(static_cast<tok::PPKeywordKind>(kind));
+    }
+    return v;
+  }
+};
+
 class raw_line_ostream : public raw_ostream {
 public:
   explicit raw_line_ostream(int (*parse)(char *line, size_t n, size_t cap,
@@ -225,21 +254,12 @@ protected:
       out << '\n';
     }
 
-    for (auto &token : pp_tokens) {
-      std::pair<const char *, const char *> kind = {};
-      if (token.second == tok::hash) {
-        kind = token_names[token.second];
-      } else {
-        kind.first = "PPKEYWORD";
-        kind.second = tok::getPPKeywordSpelling(
-            static_cast<tok::PPKeywordKind>(token.second));
-      }
-
-      assert(kind.first && kind.second);
+    for (auto &token : semantic_tokens) {
+      std::pair<const char *, const char *> name = token.token_name();
 
       out << "#TOK-KIND:";
-      dumper->dumpSourceRange(token.first);
-      out << " \"" << kind.first << ' ' << kind.second << "\"\n";
+      dumper->dumpSourceRange(token.range);
+      out << " \"" << name.first << ' ' << name.second << "\"\n";
     }
 
     // Dump all root macro expansion ranges to make their locations indexable.
@@ -1037,15 +1057,16 @@ private:
       hash_loc = rfind(define_loc.getLocWithOffset(-1), not_space);
     }
 
-    pp_tokens.emplace_back(SourceRange{hash_loc, hash_loc.getLocWithOffset(1)},
-                           tok::hash);
-    pp_tokens.emplace_back(SourceRange{define_loc, define_end}, tok::pp_define);
+    semantic_tokens.emplace_back(
+        SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
+    semantic_tokens.emplace_back(SourceRange{define_loc, define_end},
+                                 tok::pp_define, true);
   }
 
   void add_pp_defined(SourceLocation loc) {
-    pp_tokens.emplace_back(
+    semantic_tokens.emplace_back(
         SourceRange{loc, loc.getLocWithOffset(7) /* defined */},
-        tok::pp_defined);
+        tok::pp_defined, true);
   }
 
   void add_pp_if(SourceLocation loc, tok::PPKeywordKind kind) {
@@ -1058,20 +1079,24 @@ private:
     else
       assert(prev == '#');
 
-    pp_tokens.emplace_back(SourceRange{hash_loc, hash_loc.getLocWithOffset(1)},
-                           tok::hash);
-    pp_tokens.emplace_back(
+    semantic_tokens.emplace_back(
+        SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
+    semantic_tokens.emplace_back(
         SourceRange{loc, find(loc.getLocWithOffset(2) /* if/elif/else/endif */,
                               std::isspace)},
-        kind);
+        kind, true);
   }
 
   void add_pp_include(SourceLocation hash_loc, SourceLocation loc) {
-    pp_tokens.emplace_back(SourceRange{hash_loc, hash_loc.getLocWithOffset(1)},
-                           tok::hash);
-    pp_tokens.emplace_back(
+    semantic_tokens.emplace_back(
+        SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
+    semantic_tokens.emplace_back(
         SourceRange{loc, loc.getLocWithOffset(7) /* include */},
-        tok::pp_include);
+        tok::pp_include, true);
+  }
+
+  void add_tok(SourceRange range, int kind) {
+    semantic_tokens.emplace_back(range, kind);
   }
 
   bool is_written_internally(SourceLocation loc) {
@@ -1203,6 +1228,7 @@ private:
               }
             } else if constexpr (std::is_same_v<T, directive_inclusion>) {
               add_pp_include(arg.hash_loc, arg.loc);
+              add_tok(arg.range, tok::header_name);
               out << "InclusionDirective";
               dumper->dumpPointer(&arg);
               dumper->dumpSourceRange(arg.range);
@@ -1258,15 +1284,11 @@ private:
         }
       }
 
-      if (!indexed && loc.isFileID() && kind != tok::eof) {
+      if (loc.isFileID() && kind != tok::eof) {
         out << "#TOK-KIND:";
         dumper->dumpSourceRange({loc, token.endLocation()});
-        out << " \""
-            << (tok::isLiteral(kind)
-                    ? "LITERAL"
-                    : kind == tok::identifier ? "IDENTIFIER"
-                                              : token_names[kind].first)
-            << ' ' << token_names[kind].second << "\"\n";
+        auto name = semantic_token::token_name(kind);
+        out << " \"" << name.first << ' ' << name.second << "\"\n";
       }
 
       auto expansion_loc = sm.getExpansionLoc(loc);
@@ -1516,7 +1538,7 @@ private:
 
     out << '/';
     out.escape('/');
-    dump_token_content(token);
+    auto token_length = dump_token_content(token);
     out.escape(0);
     out << '/';
 
@@ -1552,8 +1574,10 @@ private:
     else if (loc != raw_loc)
       out << " paste";
 
-    if (is_arg)
+    if (is_arg) {
       out << " arg";
+      add_tok({loc, loc.getLocWithOffset(token_length)}, token.getKind());
+    }
   }
 
   unsigned dump_token_content(const Token &token) {
@@ -1580,7 +1604,6 @@ private:
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<unsigned, 8> inclusion_stack;
   llvm::SmallVector<operator_defined, 8> defined_queue;
-  std::vector<std::pair<SourceRange, int>> pp_tokens;
   std::vector<expansion_decl> macros;
   std::vector<std::pair<unsigned, Token>> expansions;
   std::pair<unsigned, unsigned> last_macro_expansion;
@@ -1597,6 +1620,7 @@ private:
   std::vector<Token> tokens;
   std::vector<SourceRange> inactive_regions;
   std::vector<const void *> exported_symbols;
+  std::vector<semantic_token> semantic_tokens;
 };
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
