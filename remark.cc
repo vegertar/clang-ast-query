@@ -276,6 +276,33 @@ protected:
       out << '\n';
     }
 
+    if (!ctx.Comments.empty()) {
+      static const char *comment_names[] = {
+          "invalid",           "bcpl_comment",
+          "c_comment",         "bcpl_slash_comment",
+          "bcpl_excl_comment", "java_doc_comment",
+          "qt_comment",        "merged_comment",
+      };
+
+      for (auto begin = sm.fileinfo_begin(), end = sm.fileinfo_end();
+           begin != end; ++begin) {
+        auto fid = sm.translateFile(begin->first);
+        if (auto comments = ctx.Comments.getCommentsInFile(fid)) {
+          for (auto &item : *comments) {
+            auto raw_comment = item.second;
+            assert(raw_comment);
+            out << "#TOK-KIND:";
+            dumper->dumpSourceRange(raw_comment->getSourceRange());
+
+            assert(static_cast<int>(raw_comment->getKind()) <
+                   sizeof(comment_names) / sizeof(*comment_names));
+            out << " \"COMMENT " << comment_names[raw_comment->getKind()]
+                << "\"\n";
+          }
+        }
+      }
+    }
+
     dump_token_expansion();
   }
 
@@ -1034,9 +1061,8 @@ private:
     pp_tokens.emplace_back(SourceRange{hash_loc, hash_loc.getLocWithOffset(1)},
                            tok::hash);
     pp_tokens.emplace_back(
-        SourceRange{
-            loc, find(loc.getLocWithOffset(2) /* if/elif/else/endif */,
-                      std::isspace)},
+        SourceRange{loc, find(loc.getLocWithOffset(2) /* if/elif/else/endif */,
+                              std::isspace)},
         kind);
   }
 
@@ -1600,6 +1626,9 @@ public:
   std::unique_ptr<ASTConsumer>
   CreateASTConsumer(CompilerInstance &compiler,
                     llvm::StringRef in_file) override {
+    compiler.getLangOpts().CommentOpts.ParseAllComments = true;
+    compiler.getLangOpts().RetainCommentsFromSystemHeaders = true;
+
     std::vector<std::unique_ptr<ASTConsumer>> v;
     v.push_back(
         make_ast_dumper(std::make_unique<raw_line_ostream>(parse_line, data),

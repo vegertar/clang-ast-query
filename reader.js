@@ -180,12 +180,6 @@ const extensions = [
       provide: (f) => [
         EditorView.decorations.from(f),
         EditorView.baseTheme({
-          ".LITERAL": {
-            color: "#A31515",
-          },
-          ".IDENTIFIER": {
-            color: "#000000",
-          },
           ".KEYWORD": {
             color: "#0000ff",
           },
@@ -210,6 +204,34 @@ const extensions = [
           ".KEYWORD.else": {
             color: "#8F08C4",
           },
+          ".KEYWORD.return": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.for": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.while": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.goto": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.continue": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.break": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.switch": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.case": {
+            color: "#8F08C4",
+          },
+          ".KEYWORD.default": {
+            color: "#8F08C4",
+          },
+
           ".PPKEYWORD": {
             color: "#0000ff",
           },
@@ -234,11 +256,20 @@ const extensions = [
           ".PPKEYWORD.elifndef": {
             color: "#808080",
           },
-          ".PUNCTUATION": {
+
+          ".LITERAL": {
             color: "#A31515",
           },
           ".numeric_constant": {
             color: "#098658",
+          },
+          ".char_constant": {
+            color: "#0000ff",
+          },
+
+          ".EXPANSION": {
+            textDecorationStyle: "dotted !important",
+            textDecoration: "underline 1px",
           },
           ".macro": {
             color: "#0000ff",
@@ -246,12 +277,21 @@ const extensions = [
           ".function_like_macro": {
             color: "#8A1BFF",
           },
-          ".EXPANSION": {
-            textDecorationStyle: "dotted !important",
-            textDecoration: "underline 1px",
-          },
+
           ".INACTIVE": {
             color: "#E5EBF1",
+          },
+
+          ".COMMENT": {
+            color: "#008000",
+          },
+
+          ".IDENTIFIER": {
+            color: "#000000",
+          },
+
+          ".PUNCTUATION": {
+            color: "#A31515",
           },
         }),
       ],

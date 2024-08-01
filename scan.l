@@ -99,6 +99,12 @@ OPERATOR ("','"|"'%'"|"'/'"|"'*'"|"'-'"|"'+'"|"'&'"|"'|'"|"'^'"|"'!'"|"'>'"|"'<'
   return TOK_ENUM;
 }
 
+"Text=\"".+ {
+  if (yytext[yyleng-1] != '"') return TOK_YYUNDEF;
+  yylval->TOK_TEXT_COMMENT = strndup(yytext + 6, yyleng - 7);
+  return TOK_TEXT_COMMENT;
+}
+
 ^##.+ {
   return TOK_REMARK;
 }
