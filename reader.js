@@ -12,6 +12,7 @@ import {
   RangeSetBuilder,
   RangeValue as BaseRangeValue,
 } from "https://cdn.jsdelivr.net/npm/@codemirror/state@6.4.1/+esm";
+import isEqual from "https://cdn.jsdelivr.net/npm/lodash.isequal@4.5.0/+esm";
 
 export class ReaderView {
   constructor({ doc, data, parent }) {
@@ -23,7 +24,10 @@ export class ReaderView {
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
-        extensions.map((f) => f(data)),
+        link(data),
+        decl(data),
+        macroDecl(data),
+        semantics(data),
       ],
     });
   }
@@ -32,10 +36,10 @@ export class ReaderView {
 class RangeValue extends BaseRangeValue {
   #eq;
 
-  constructor(value, eq) {
+  constructor(value, eq = isEqual) {
     super();
     this.value = value;
-    this.#eq = eq || ((a, b) => a === b);
+    this.#eq = eq;
   }
 
   eq(other) {
@@ -58,283 +62,506 @@ function validate(data, s) {
     : i < data.length && typeof data[i] !== "symbol";
 }
 
-const extensions = [
-  /**
-   *
-   * @param {any[]} data
-   * @returns
-   */
-  function link(data) {
-    if (!validate(data, "link")) return nul;
+/**
+ *
+ * @param {any[]} data
+ * @returns
+ */
+function link(data) {
+  if (!validate(data, "link")) return nul;
 
-    const first = ++i;
-    while (validate(data)) i += 5;
-    const last = i;
+  const first = ++i;
+  while (validate(data)) i += 5;
+  const last = i;
 
-    return StateField.define({
-      create({ doc }) {
-        const builder = new RangeSetBuilder();
+  return StateField.define({
+    create({ doc }) {
+      const builder = new RangeSetBuilder();
 
-        for (let j = first; j < last; ) {
-          const beginRow = data[j++];
-          const beginCol = data[j++];
-          const endRow = data[j++];
-          const endCol = data[j++];
-          const file = data[j++];
+      for (let j = first; j < last; ) {
+        const beginRow = data[j++];
+        const beginCol = data[j++];
+        const endRow = data[j++];
+        const endCol = data[j++];
+        const file = data[j++];
 
-          const from = doc.line(beginRow).from + beginCol - 1;
-          const to = doc.line(endRow).from + endCol - 1;
+        const from = doc.line(beginRow).from + beginCol - 1;
+        const to = doc.line(endRow).from + endCol - 1;
 
-          builder.add(from, to, new RangeValue(file));
-        }
-        return builder.finish();
-      },
-      update(value, tr) {
-        return value;
-      },
-      provide: (f) => [
-        hoverTooltip((view, pos, side) => {
-          const ranges = view.state.field(f);
-          let tooltip;
-          ranges.between(pos, pos, (from, to, { value }) => {
-            tooltip = {
-              pos: from,
-              end: to,
-              create(view) {
-                const dom = document.createElement("div");
-                dom.className = "link";
-                const dir = dom.appendChild(document.createElement("span"));
-                dir.className = "directive";
-                dir.textContent = "include";
-                dom.append(" ");
-                const file = dom.appendChild(document.createElement("span"));
-                file.className = "file";
-                file.textContent = value;
-                return { dom };
-              },
-            };
-          });
-          return tooltip;
-        }),
-        EditorView.baseTheme({
-          ".link": {
-            fontFamily: "monospace",
-            margin: "5px",
-          },
-          ".link .directive": {
-            color: "#808080",
-            fontStyle: "italic",
-          },
-          ".link .directive::before": {
-            content: `"#"`,
-          },
-          ".link .file": {
-            color: "#A31515",
-            fontWeight: "bold",
-            quotes: `'"' '"' "<" ">"`,
-          },
-          ".link .file::before": {
-            content: "open-quote",
-          },
-          ".link .file::after": {
-            content: "close-quote",
-          },
-        }),
-      ],
-    });
-  },
+        builder.add(from, to, new RangeValue(file));
+      }
+      return builder.finish();
+    },
+    update(value, tr) {
+      return value;
+    },
+    provide: (f) => [
+      hoverTooltip((view, pos, side) => {
+        let tooltip;
+        view.state.field(f).between(pos, pos, (from, to, { value }) => {
+          tooltip = {
+            pos: from,
+            end: to,
+            create(view) {
+              const dom = document.createElement("div");
+              dom.className = "link";
+              const file = dom.appendChild(document.createElement("span"));
+              file.className = "file";
+              file.textContent = value;
+              return { dom };
+            },
+          };
+        });
+        return tooltip;
+      }),
+      EditorView.baseTheme({
+        ".link": {
+          fontFamily: "monospace",
+          margin: "5px",
+        },
 
-  /**
-   *
-   * @param {any[]} data
-   * @returns
-   */
-  function decl(data) {
-    if (!validate(data, "decl")) return nul;
+        ".link::before": {
+          color: "#808080",
+          fontStyle: "italic",
+          content: `"#include "`,
+        },
+        ".link .file": {
+          color: "#A31515",
+          fontWeight: "bold",
+          quotes: `'"' '"' "<" ">"`,
+        },
+        ".link .file::before": {
+          content: "open-quote",
+        },
+        ".link .file::after": {
+          content: "close-quote",
+        },
+      }),
+    ],
+  });
+}
 
-    const first = ++i;
-    while (validate(data)) i += 4;
-    const last = i;
+/**
+ *
+ * @param {any[]} data
+ * @returns
+ */
+function decl(data) {
+  if (!validate(data, "decl")) return nul;
 
-    return StateField.define({
-      create({ doc }) {
-        const ranges = [];
-        for (let j = first; j < last; ) {
-          const tokBeginRow = data[j++];
-          const tokBeginCol = data[j++];
-          const name = data[j++];
-          const kind = data[j++];
+  const first = ++i;
+  while (validate(data)) i += 8;
+  const last = i;
 
-          const from = doc.line(tokBeginRow).from + tokBeginCol - 1;
-          const to = from + name.length;
-          ranges.push(
-            Decoration.mark({ class: `decl ${kind}` }).range(from, to)
+  return StateField.define({
+    create({ doc }) {
+      const builder = new RangeSetBuilder();
+
+      for (let j = first; j < last; ) {
+        const tokBeginRow = data[j++];
+        const tokBeginCol = data[j++];
+        const name = data[j++];
+        const kind = data[j++];
+        const specs = data[j++];
+        const elaboratedType = data[j++];
+        const qualifiedType = data[j++];
+        const desugaredType = data[j++];
+
+        const from = doc.line(tokBeginRow).from + tokBeginCol - 1;
+        const to = from + name.length;
+
+        builder.add(
+          from,
+          to,
+          new RangeValue({
+            name,
+            kind,
+            specs,
+            elaboratedType,
+            qualifiedType,
+            desugaredType,
+          })
+        );
+      }
+      return builder.finish();
+    },
+    update(value, tr) {
+      return value;
+    },
+    provide: (f) => [
+      hoverTooltip((view, pos, side) => {
+        const specNames = {
+          1: "extern",
+          2: "static",
+          4: "inline",
+          8: "const",
+          16: "volatile",
+        };
+        const elaboratedNames = ["", "struct", "union", "enum"];
+
+        let tooltip;
+        view.state
+          .field(f)
+          .between(
+            pos,
+            pos,
+            (
+              from,
+              to,
+              {
+                value: {
+                  name,
+                  kind,
+                  specs,
+                  elaboratedType,
+                  qualifiedType,
+                  desugaredType,
+                },
+              }
+            ) => {
+              tooltip = {
+                pos: from,
+                end: to,
+                create(view) {
+                  const dom = document.createElement("div");
+                  dom.className = "decl";
+
+                  const sp = dom.appendChild(document.createElement("span"));
+                  sp.className = "specifier";
+                  for (const k in specNames)
+                    if (specs & k) sp.append(specNames[k], " ");
+
+                  sp.append(elaboratedNames[elaboratedType]);
+
+                  const id = dom.appendChild(document.createElement("span"));
+                  id.className = `identifier ${kind}`;
+                  id.textContent = name;
+
+                  dom.append(": ");
+
+                  const t = dom.appendChild(document.createElement("span"));
+                  t.className = "type";
+                  t.textContent = qualifiedType;
+
+                  if (desugaredType && desugaredType !== qualifiedType) {
+                    const t = dom.appendChild(document.createElement("span"));
+                    t.className = "desugared type";
+                    t.textContent = desugaredType;
+                  }
+
+                  return { dom };
+                },
+              };
+            }
           );
-        }
-        return Decoration.set(ranges);
-      },
-      update(value, tr) {
-        return value;
-      },
-      provide: (f) => [EditorView.decorations.from(f)],
-    });
-  },
+        return tooltip;
+      }),
+      EditorView.baseTheme({
+        ".decl": {
+          fontFamily: "monospace",
+          margin: "5px",
+        },
 
-  /**
-   *
-   * @param {any[]} data
-   * @returns
-   */
-  function semantics(data) {
-    if (!validate(data, "semantics")) return nul;
+        ".decl .specifier": {
+          color: "#0000ff",
+        },
+        ".decl .specifier::after": {
+          content: `" "`,
+        },
 
-    const first = ++i;
-    while (validate(data)) i += 5;
-    const last = i;
+        ".decl .identifier": {
+          fontWeight: "bold",
+        },
+        // Set common styles for func/var/type tag.
+        ".decl .identifier::before": {
+          color: "#808080",
+          fontStyle: "italic",
+          fontWeight: "normal",
+        },
+        ".FunctionDecl::before": {
+          content: `"func "`,
+        },
+        ".FunctionDecl": {
+          color: "#795E26",
+        },
 
-    return StateField.define({
-      create({ doc }) {
-        const ranges = [];
-        for (let j = first; j < last; ) {
-          const beginRow = data[j++];
-          const beginCol = data[j++];
-          const endRow = data[j++];
-          const endCol = data[j++];
-          const kind = data[j++];
+        ".VarDecl::before": {
+          content: `"var "`,
+        },
+        ".VarDecl": {
+          color: "#001080",
+        },
 
-          const from = doc.line(beginRow).from + beginCol - 1;
-          const to = doc.line(endRow).from + endCol - 1;
+        ".ParmVarDecl::before": {
+          content: `"param "`,
+        },
+        ".ParmVarDecl": {
+          color: "#808080",
+        },
 
-          ranges.push(
-            Decoration.mark({ class: `semantics ${kind}` }).range(from, to)
+        ".FieldDecl::before": {
+          content: `"param "`,
+        },
+        ".FieldDecl": {
+          color: "#0451a5",
+        },
+
+        ".TypedefDecl::before": {
+          content: `"type "`,
+        },
+        ".TypedefDecl": {
+          color: "#267f99",
+        },
+
+        ".decl .type": {
+          color: "#267f99",
+        },
+        ".decl .desugared.type::before": {
+          content: `":"`,
+        },
+        ".decl .desugared.type": {
+          backgroundColor: "#E5EBF1",
+          borderRadius: "4px",
+        },
+      }),
+    ],
+  });
+}
+
+/**
+ *
+ * @param {any[]} data
+ * @returns
+ */
+function macroDecl(data) {
+  if (!validate(data, "macro_decl")) return nul;
+
+  const first = ++i;
+  while (validate(data)) i += 5;
+  const last = i;
+
+  return StateField.define({
+    create({ doc }) {
+      const builder = new RangeSetBuilder();
+
+      for (let j = first; j < last; ) {
+        const tokBeginRow = data[j++];
+        const tokBeginCol = data[j++];
+        const name = data[j++];
+        const parameters = data[j++];
+        const body = data[j++];
+
+        const from = doc.line(tokBeginRow).from + tokBeginCol - 1;
+        const to = from + name.length;
+
+        builder.add(from, to, new RangeValue({ name, parameters, body }));
+      }
+      return builder.finish();
+    },
+    update(value, tr) {
+      return value;
+    },
+    provide: (f) => [
+      hoverTooltip((view, pos, side) => {
+        let tooltip;
+        view.state
+          .field(f)
+          .between(
+            pos,
+            pos,
+            (from, to, { value: { name, parameters, body } }) => {
+              tooltip = {
+                pos: from,
+                end: to,
+                create(view) {
+                  const dom = document.createElement("div");
+                  dom.className = "macro_decl";
+                  const id = dom.appendChild(document.createElement("span"));
+                  id.className = "identifier";
+                  id.textContent = name;
+                  dom.append(parameters, " ", body);
+                  return { dom };
+                },
+              };
+            }
           );
-        }
+        return tooltip;
+      }),
+      EditorView.baseTheme({
+        ".macro_decl": {
+          fontFamily: "monospace",
+          margin: "5px",
+        },
 
-        return Decoration.set(ranges);
-      },
-      update(value, tr) {
-        return value;
-      },
-      provide: (f) => [
-        EditorView.decorations.from(f),
-        EditorView.baseTheme({
-          ".KEYWORD": {
-            color: "#0000ff",
-          },
-          ".KEYWORD.int": {
-            color: "#2B91AF",
-          },
-          ".KEYWORD.long": {
-            color: "#2B91AF",
-          },
-          ".KEYWORD.short": {
-            color: "#2B91AF",
-          },
-          ".KEYWORD.char": {
-            color: "#2B91AF",
-          },
-          ".KEYWORD._Bool": {
-            color: "#2B91AF",
-          },
-          ".KEYWORD.if": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.else": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.return": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.for": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.while": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.goto": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.continue": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.break": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.switch": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.case": {
-            color: "#8F08C4",
-          },
-          ".KEYWORD.default": {
-            color: "#8F08C4",
-          },
+        ".macro_decl::before": {
+          color: "#808080",
+          fontStyle: "italic",
+          content: `"#define "`,
+        },
 
-          ".PPKEYWORD": {
-            color: "#808080",
-          },
+        ".macro_decl .identifier": {
+          fontWeight: "bold",
+          color: "#0000ff",
+        },
+      }),
+    ],
+  });
+}
 
-          ".LITERAL": {
-            color: "#A31515",
-          },
-          ".numeric_constant": {
-            color: "#098658",
-          },
-          ".char_constant": {
-            color: "#0000ff",
-          },
+/**
+ *
+ * @param {any[]} data
+ * @returns
+ */
+function semantics(data) {
+  if (!validate(data, "semantics")) return nul;
 
-          ".EXPANSION": {
-            textDecorationStyle: "dotted !important",
-            textDecoration: "underline 1px",
-          },
-          ".macro": {
-            color: "#0000ff",
-          },
-          ".function_like_macro": {
-            color: "#8A1BFF",
-          },
+  const first = ++i;
+  while (validate(data)) i += 5;
+  const last = i;
 
-          ".INACTIVE": {
-            color: "#E5EBF1",
-          },
+  return StateField.define({
+    create({ doc }) {
+      const ranges = [];
+      for (let j = first; j < last; ) {
+        const beginRow = data[j++];
+        const beginCol = data[j++];
+        const endRow = data[j++];
+        const endCol = data[j++];
+        const kind = data[j++];
 
-          ".COMMENT": {
-            color: "#008000",
-          },
+        const from = doc.line(beginRow).from + beginCol - 1;
+        const to = doc.line(endRow).from + endCol - 1;
 
-          ".IDENTIFIER": {
-            color: "#000000",
-          },
-          ".Function": {
-            color: "#795E26",
-          },
-          ".Var": {
-            color: "#001080",
-          },
-          ".ParmVar": {
-            color: "#808080",
-          },
-          ".Field": {
-            color: "#0451a5",
-          },
-          ".Typedef": {
-            color: "#267f99",
-          },
+        ranges.push(
+          Decoration.mark({ class: `semantics ${kind}` }).range(from, to)
+        );
+      }
 
-          ".PUNCTUATION": {
-            color: "#A31515",
-          },
+      return Decoration.set(ranges);
+    },
+    update(value, tr) {
+      return value;
+    },
+    provide: (f) => [
+      EditorView.decorations.from(f),
+      EditorView.baseTheme({
+        ".KEYWORD": {
+          color: "#0000ff",
+        },
+        ".KEYWORD.int": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD.long": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD.short": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD.char": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD._Bool": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD.if": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.else": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.return": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.for": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.while": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.goto": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.continue": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.break": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.switch": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.case": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.default": {
+          color: "#8F08C4",
+        },
 
-          ".TOKEN": {
-            color: "#000000",
-          },
-          ".header_name": {
-            color: "#a31515",
-            textDecoration: "underline 1px",
-          },
-        }),
-      ],
-    });
-  },
-];
+        ".PPKEYWORD": {
+          color: "#808080",
+        },
+
+        ".LITERAL": {
+          color: "#A31515",
+        },
+        ".numeric_constant": {
+          color: "#098658",
+        },
+        ".char_constant": {
+          color: "#0000ff",
+        },
+
+        ".EXPANSION": {
+          textDecorationStyle: "dotted !important",
+          textDecoration: "underline 1px",
+        },
+        ".macro": {
+          color: "#0000ff",
+        },
+        ".function_like_macro": {
+          color: "#8A1BFF",
+        },
+
+        ".INACTIVE": {
+          color: "#E5EBF1",
+        },
+
+        ".COMMENT": {
+          color: "#008000",
+        },
+
+        ".IDENTIFIER": {
+          color: "#000000",
+        },
+        ".Function": {
+          color: "#795E26",
+        },
+        ".Var": {
+          color: "#001080",
+        },
+        ".ParmVar": {
+          color: "#808080",
+        },
+        ".Field": {
+          color: "#0451a5",
+        },
+        ".Typedef": {
+          color: "#267f99",
+        },
+
+        ".PUNCTUATION": {
+          color: "#A31515",
+        },
+
+        ".TOKEN": {
+          color: "#000000",
+        },
+        ".header_name": {
+          color: "#a31515",
+          textDecoration: "underline 1px",
+        },
+      }),
+    ],
+  });
+}

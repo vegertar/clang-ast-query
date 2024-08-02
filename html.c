@@ -69,6 +69,7 @@ static int add_source(const char *path) {
 
 static void dump_link(FILE *fp, struct source *source);
 static void dump_decl(FILE *fp, struct source *source);
+static void dump_macro_decl(FILE *fp, struct source *source);
 static void dump_semantics(FILE *fp, struct source *source);
 
 int html(const char *db_file) {
@@ -109,6 +110,11 @@ int html(const char *db_file) {
 
     dump_link(fp, &source);
     dump_decl(fp, &source);
+    dump_macro_decl(fp, &source);
+
+    // Specifically, we place the semantic data at the end to make it easier to
+    // detect input errors. At that moment, semantic highlighting would not
+    // work.
     dump_semantics(fp, &source);
 
     fprintf(fp, "\
@@ -170,16 +176,51 @@ static void dump_decl(FILE *fp, struct source *source) {
   require_src(source);
   DUMP(decl);
 
-  QUERY("SELECT tok.begin_row, tok.begin_col, name, kind"
+  QUERY("SELECT tok.begin_row, tok.begin_col, name, kind, specs,"
+        "  class elaborated_type, qualified_type, desugared_type"
         " FROM ast"
         " JOIN tok"
         " ON ast.number = tok.decl"
         " WHERE tok.src = ?"
-        " AND offset = 0");
+        " AND offset IS NULL");
   FILL_INT(1, source->src);
   QUERY_END({
-    fprintf(fp, "%d,%d,'%s','%s',", COL_INT(0), COL_INT(1), COL_TEXT(2),
-            COL_TEXT(3));
+    fprintf(fp, "%d,%d,'%s','%s',%d,%d,'%s','%s',", COL_INT(0), /* begin_row */
+            COL_INT(1),                                         /* begin_col */
+            COL_TEXT(2),                                        /* name */
+            COL_TEXT(3),                                        /* kind */
+            COL_INT(4),                                         /* specs */
+            COL_INT(5),           /* elaboratetd_type */
+            ALT(COL_TEXT(6), ""), /* qualified_type */
+            ALT(COL_TEXT(7), "")  /* desugared_type */
+    );
+  });
+}
+
+static void dump_macro_decl(FILE *fp, struct source *source) {
+  require_src(source);
+  DUMP(macro_decl);
+
+  QUERY("SELECT tok.begin_row, tok.begin_col, name,"
+        "  qualified_type parameters, desugared_type body"
+        " FROM ast"
+        " JOIN ("
+        "   SELECT tok.begin_row, tok.begin_col, ref_ptr ptr"
+        "   FROM ast"
+        "   JOIN tok"
+        "   ON ast.number = tok.decl"
+        "   WHERE tok.src = ?"
+        "   AND offset = 0"
+        " ) tok"
+        " USING (ptr)");
+  FILL_INT(1, source->src);
+  QUERY_END({
+    fprintf(fp, "%d,%d,'%s','%s','%s',", COL_INT(0), /* begin_row */
+            COL_INT(1),                              /* begin_col */
+            COL_TEXT(2),                             /* name */
+            COL_TEXT(3),                             /* parameters */
+            COL_TEXT(4)                              /* body */
+    );
   });
 }
 

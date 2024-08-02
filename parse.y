@@ -585,7 +585,7 @@ remark_exported: REMARK_EXPORTED symbols
 symbols: POINTER { array_push((struct array *)memset(&$$, 0, sizeof(struct array)), $1); }
  | symbols POINTER { $$ = *array_push(&$1, $2); }
 
-tok: sloc { $$ = (struct tok){$1}; }
+tok: sloc { $$ = (struct tok){$1, UINT_MAX}; }
  | sloc INTEGER
   {
     char *end;
@@ -595,8 +595,8 @@ tok: sloc { $$ = (struct tok){$1}; }
       yyerror(&@$, uctx, "strtoll(%s) failed: %s", $2, (errno ? strerror(errno) : ""));
       YYERROR;
     }
-    if (offset < 0 || offset > UINT_MAX) {
-      yyerror(&@$, uctx, "expected a [0, %u] offset: %s", UINT_MAX, $2);
+    if (offset < 0 || offset >= UINT_MAX) {
+      yyerror(&@$, uctx, "expected a [0, %u) offset: %s", UINT_MAX, $2);
       YYERROR;
     }
     $$ = (struct tok){$1, offset};
