@@ -4,10 +4,13 @@ import {
   lineNumbers,
   highlightActiveLineGutter,
   highlightActiveLine,
+  hoverTooltip,
 } from "https://cdn.jsdelivr.net/npm/@codemirror/view@6.29.0/+esm";
 import {
   EditorState,
   StateField,
+  RangeSetBuilder,
+  RangeValue as BaseRangeValue,
 } from "https://cdn.jsdelivr.net/npm/@codemirror/state@6.4.1/+esm";
 
 export class ReaderView {
@@ -23,6 +26,20 @@ export class ReaderView {
         extensions.map((f) => f(data)),
       ],
     });
+  }
+}
+
+class RangeValue extends BaseRangeValue {
+  #eq;
+
+  constructor(value, eq) {
+    super();
+    this.value = value;
+    this.#eq = eq || ((a, b) => a === b);
+  }
+
+  eq(other) {
+    return this.#eq(this.value, other.value);
   }
 }
 
@@ -56,24 +73,74 @@ const extensions = [
 
     return StateField.define({
       create({ doc }) {
-        const ranges = [];
+        const builder = new RangeSetBuilder();
+
         for (let j = first; j < last; ) {
           const beginRow = data[j++];
           const beginCol = data[j++];
           const endRow = data[j++];
           const endCol = data[j++];
-          const uri = data[j++];
+          const file = data[j++];
 
           const from = doc.line(beginRow).from + beginCol - 1;
           const to = doc.line(endRow).from + endCol - 1;
-          ranges.push(Decoration.mark({ class: "link", uri }).range(from, to));
+
+          builder.add(from, to, new RangeValue(file));
         }
-        return Decoration.set(ranges);
+        return builder.finish();
       },
       update(value, tr) {
         return value;
       },
-      provide: (f) => [EditorView.decorations.from(f)],
+      provide: (f) => [
+        hoverTooltip((view, pos, side) => {
+          const ranges = view.state.field(f);
+          let tooltip;
+          ranges.between(pos, pos, (from, to, { value }) => {
+            tooltip = {
+              pos: from,
+              end: to,
+              create(view) {
+                const dom = document.createElement("div");
+                dom.className = "link";
+                const dir = dom.appendChild(document.createElement("span"));
+                dir.className = "directive";
+                dir.textContent = "include";
+                dom.append(" ");
+                const file = dom.appendChild(document.createElement("span"));
+                file.className = "file";
+                file.textContent = value;
+                return { dom };
+              },
+            };
+          });
+          return tooltip;
+        }),
+        EditorView.baseTheme({
+          ".link": {
+            fontFamily: "monospace",
+            margin: "5px",
+          },
+          ".link .directive": {
+            color: "#808080",
+            fontStyle: "italic",
+          },
+          ".link .directive::before": {
+            content: `"#"`,
+          },
+          ".link .file": {
+            color: "#A31515",
+            fontWeight: "bold",
+            quotes: `'"' '"' "<" ">"`,
+          },
+          ".link .file::before": {
+            content: "open-quote",
+          },
+          ".link .file::after": {
+            content: "close-quote",
+          },
+        }),
+      ],
     });
   },
 
@@ -109,26 +176,7 @@ const extensions = [
       update(value, tr) {
         return value;
       },
-      provide: (f) => [
-        EditorView.decorations.from(f),
-        EditorView.baseTheme({
-          ".FunctionDecl": {
-            color: "#795E26",
-          },
-          ".VarDecl": {
-            color: "#001080",
-          },
-          ".ParmVarDecl": {
-            color: "#808080",
-          },
-          ".FieldDecl": {
-            color: "#0451a5",
-          },
-          ".TypedefDecl": {
-            color: "#267f99",
-          },
-        }),
-      ],
+      provide: (f) => [EditorView.decorations.from(f)],
     });
   },
 
@@ -257,6 +305,21 @@ const extensions = [
 
           ".IDENTIFIER": {
             color: "#000000",
+          },
+          ".Function": {
+            color: "#795E26",
+          },
+          ".Var": {
+            color: "#001080",
+          },
+          ".ParmVar": {
+            color: "#808080",
+          },
+          ".Field": {
+            color: "#0451a5",
+          },
+          ".Typedef": {
+            color: "#267f99",
           },
 
           ".PUNCTUATION": {
