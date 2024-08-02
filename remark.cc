@@ -1266,16 +1266,15 @@ private:
       syntax::Token token(tokens[i]);
       auto loc = token.location();
       auto kind = token.kind();
-      bool indexed = false;
+      const Decl *d = nullptr;
 
       if (kind == tok::identifier) {
         ++indexable_tokens;
 
         if (loc.isFileID()) {
           auto v = find(loc, FIND_OPTION_EQUAL);
-          auto d = v ? v->get_decl() : nullptr;
-          if (d) {
-            indexed = ++indexed_tokens;
+          if ((d = v ? v->get_decl() : nullptr)) {
+            ++indexed_tokens;
             out << "#TOK-DECL:";
             dumper->dumpLocation(loc);
             dumper->dumpPointer(d);
@@ -1288,7 +1287,8 @@ private:
         out << "#TOK-KIND:";
         dumper->dumpSourceRange({loc, token.endLocation()});
         auto name = semantic_token::token_name(kind);
-        out << " \"" << name.first << ' ' << name.second << "\"\n";
+        out << " \"" << name.first << ' '
+            << (d ? d->getDeclKindName() : name.second) << "\"\n";
       }
 
       auto expansion_loc = sm.getExpansionLoc(loc);
