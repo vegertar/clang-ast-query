@@ -212,7 +212,8 @@ static void dump_macro_decl(FILE *fp, struct source *source) {
         "   WHERE tok.src = ?"
         "   AND offset = 0"
         " ) tok"
-        " USING (ptr)");
+        " USING (ptr)"
+        " ORDER BY tok.begin_row, tok.begin_col");
   FILL_INT(1, source->src);
   QUERY_END({
     fprintf(fp, "%d,%d,'%s','%s','%s',", COL_INT(0), /* begin_row */

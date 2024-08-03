@@ -323,6 +323,17 @@ protected:
       }
     }
 
+    if (!trivial_expansions.empty()) {
+      for (auto i : trivial_expansions) {
+        auto &macro = macros[i];
+        out << "#TOK-DECL:";
+        dumper->dumpLocation(macro.token.getLocation());
+        out << " 0";
+        dumper->dumpPointer(&macro);
+        out << '\n';
+      }
+    }
+
     dump_token_expansion();
   }
 
@@ -864,7 +875,7 @@ private:
   };
 
   struct directive_expansion {
-    macro_expansion_node root;
+    macro_expansion_node root; // only root.children is available
     std::vector<macro_expansion_node> pool;
 
     directive_expansion() = default;
@@ -1370,18 +1381,21 @@ private:
     assert(expanding_stack.empty());
 
     unsigned k = last_macro_expansion.second;
+    auto expected_macro_size = macros.size() - last_macro_expansion.first;
+    auto expected_token_size = expansions.size() - last_macro_expansion.second;
+
     directive_expansion exp;
-    exp.pool.reserve(macros.size() - last_macro_expansion.first +
-                     expansions.size() - last_macro_expansion.second);
+    exp.pool.reserve(expected_macro_size + expected_token_size);
 
     index_macro(last_macro_expansion.first, macros.size());
     make_macro_expansion(-1, last_macro_expansion.first, macros.size(), k,
                          exp.root, exp.pool);
-    assert(exp.pool.size() == macros.size() - last_macro_expansion.first +
-                                  expansions.size() -
-                                  last_macro_expansion.second);
+    assert(exp.pool.size() == expected_macro_size + expected_token_size);
 
     if (!exp.pool.empty()) {
+      if (expected_token_size == 0)
+        trivial_expansions.push_back(exp.pool.front().i);
+
       directives.emplace_back(std::move(exp));
       last_macro_expansion.first = macros.size();
       last_macro_expansion.second = expansions.size();
@@ -1606,6 +1620,7 @@ private:
   llvm::SmallVector<operator_defined, 8> defined_queue;
   std::vector<expansion_decl> macros;
   std::vector<std::pair<unsigned, Token>> expansions;
+  std::vector<unsigned> trivial_expansions; // without replacements
   std::pair<unsigned, unsigned> last_macro_expansion;
   std::vector<std::variant<directive_def, directive_if, directive_elif,
                            directive_else, directive_endif, operator_defined,
