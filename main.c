@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
   int c, n, err = 0;
   char tmp[PATH_MAX];
 
-  while ((c = getopt(argc, argv, "ht::T::dCcx:i:o:")) != -1)
+  while ((c = getopt(argc, argv, "ht::T::dCcx::i:o:")) != -1)
     switch (c) {
     case 'h':
       fprintf(stderr, "Usage: %s [OPTION]... [-- [CLANG OPTION]...] [FILE]\n",
@@ -179,6 +179,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "\t-d         enable debug\n");
       fprintf(stderr, "\t-C         treat the default input file as C code\n");
       fprintf(stderr, "\t-c         the alias of -xt if no -xh given\n");
+      fprintf(stderr, "\t-x         the alias of -xh\n");
       fprintf(stderr, "\t-xt[ext]   output as TEXT\n");
       fprintf(stderr, "\t-xh[tml]   output as HTML\n");
       fprintf(stderr, "\t-i NAME    name the input TU if possible\n");
@@ -203,7 +204,9 @@ int main(int argc, char **argv) {
       c_flag = 1;
       break;
     case 'x':
-      if (strcmp(optarg, "text") == 0 || strcmp(optarg, "t") == 0)
+      if (!optarg)
+        of_kind = OF_HTML;
+      else if (strcmp(optarg, "text") == 0 || strcmp(optarg, "t") == 0)
         of_kind = OF_TEXT;
       else if (strcmp(optarg, "html") == 0 || strcmp(optarg, "h") == 0)
         of_kind = OF_HTML;

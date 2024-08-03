@@ -19,6 +19,28 @@ using namespace clang;
 
 static int not_space(int c) { return !std::isspace(c); }
 
+static inline const char *get_macro_kind(MacroInfo *info) {
+  if (!info)
+    return "identifier";
+
+  unsigned kind = 0;
+  if (info->isBuiltinMacro())
+    kind |= 1;
+  if (info->isFunctionLike())
+    kind |= 2;
+
+  switch (kind) {
+  case 1:
+    return "built_in_macro";
+  case 2:
+    return "function_like_macro";
+  case 3:
+    return "built_in_function_like_macro";
+  default:
+    return "macro";
+  }
+}
+
 class expanded_decl {
 public:
   expanded_decl(SourceLocation loc, const Decl *decl)
@@ -45,6 +67,17 @@ private:
   SourceLocation loc;
   const Decl *decl;
   expanded_decl *prev;
+};
+
+struct test_decl {
+  IdentifierInfo *ii;
+  MacroInfo *mi;
+  SourceRange sr;
+
+  test_decl(const Token &token, const MacroDefinition &md)
+      : ii(token.getIdentifierInfo()), mi(md.getMacroInfo()),
+        sr(token.getLocation(),
+           token.getLocation().getLocWithOffset(token.getLength())) {}
 };
 
 struct expansion_decl {
@@ -238,6 +271,20 @@ protected:
   }
 
   void HandleTranslationUnit(ASTContext &ctx) override {
+    // Some macros are built-in and do not trigger callbacks,
+    // so we explicitly define them.
+    for (auto &macro : tests) {
+      if (macro.mi) {
+        if (auto iter = defined_map.find(macro.mi); iter == defined_map.end()) {
+          assert(macro.mi->isBuiltinMacro());
+          auto md = pp.getLocalMacroDirective(macro.ii);
+          assert(md->getMacroInfo() == macro.mi);
+          directives.emplace_back(directive_def{macro.ii, md});
+          add_directive();
+        }
+      }
+    }
+
     dump_preprocessor_directives();
     auto &sm = ctx.getSourceManager();
     const auto file = sm.getFileEntryRefForID(sm.getMainFileID());
@@ -262,24 +309,37 @@ protected:
       out << " \"" << name.first << ' ' << name.second << "\"\n";
     }
 
+    for (auto &macro : tests) {
+      out << "#TOK-KIND:";
+      dumper->dumpSourceRange(macro.sr);
+      out << " \"IDENTIFIER " << get_macro_kind(macro.mi) << "\"\n";
+
+      if (macro.mi) {
+        out << "#TOK-DECL:";
+        dumper->dumpLocation(macro.sr.getBegin());
+        out << ' ' << UINT_MAX - 1; // use UINT_MAX-1 for testing only macros
+        dumper->dumpPointer(macro.mi);
+        out << '\n';
+      }
+    }
+
     // Dump all root macro expansion ranges to make their locations indexable.
     for (auto &macro : macros) {
       if (macro.parent == -1) {
         SourceLocation loc = sm.getExpansionLoc(macro.token.getLocation());
+        SourceLocation tok_end = loc.getLocWithOffset(macro.token.getLength());
         SourceLocation end =
             macro.range.getBegin() == macro.range.getEnd()
-                ? loc.getLocWithOffset(macro.token.getLength())
+                ? tok_end
                 : sm.getExpansionLoc(macro.range.getEnd()).getLocWithOffset(1);
 
-        unsigned kind = 0;
-        if (macro.info->isBuiltinMacro())
-          kind |= 1;
-        if (macro.info->isFunctionLike())
-          kind |= 2;
+        out << "#TOK-KIND:";
+        dumper->dumpSourceRange({loc, tok_end});
+        out << " \"IDENTIFIER " << get_macro_kind(macro.info) << "\"\n";
 
         out << "#LOC-EXP:";
         dumper->dumpSourceRange({loc, end});
-        out << ' ' << kind << '\n';
+        out << '\n';
 
         // Index the macro to be used by #TOK-DECL in
         // dump_token_expansion().
@@ -581,6 +641,7 @@ private:
     explicit pp_callback(ast_consumer &ast) : ast(ast) {}
 
     void MacroDefined(const Token &token, const MacroDirective *md) override {
+      ast.defined_map[md->getMacroInfo()] = token.getIdentifierInfo();
       ast.directives.emplace_back(directive_def{token.getIdentifierInfo(), md});
       ast.add_directive();
     }
@@ -638,6 +699,7 @@ private:
 
     void Ifdef(SourceLocation loc, const Token &token,
                const MacroDefinition &md) override {
+      ast.tests.emplace_back(token, md);
       ast.directives.emplace_back(directive_ifdef{loc, token.getLocation(),
                                                   token.getIdentifierInfo(),
                                                   md.getMacroInfo()});
@@ -646,6 +708,7 @@ private:
 
     void Ifndef(SourceLocation loc, const Token &token,
                 const MacroDefinition &md) override {
+      ast.tests.emplace_back(token, md);
       ast.directives.emplace_back(directive_ifndef{loc, token.getLocation(),
                                                    token.getIdentifierInfo(),
                                                    md.getMacroInfo()});
@@ -654,6 +717,7 @@ private:
 
     void Elifdef(SourceLocation loc, const Token &token,
                  const MacroDefinition &md) override {
+      ast.tests.emplace_back(token, md);
       ast.lift_directive();
       ast.directives.emplace_back(directive_elifdef_taken{
           loc, token.getLocation(), token.getIdentifierInfo(),
@@ -670,6 +734,7 @@ private:
 
     void Elifndef(SourceLocation loc, const Token &token,
                   const MacroDefinition &md) override {
+      ast.tests.emplace_back(token, md);
       ast.lift_directive();
       ast.directives.emplace_back(directive_elifndef_taken{
           loc, token.getLocation(), token.getIdentifierInfo(),
@@ -687,6 +752,7 @@ private:
 
     void Defined(const Token &token, const MacroDefinition &md,
                  SourceRange range) override {
+      ast.tests.emplace_back(token, md);
       ast.defined_queue.push_back({range.getBegin(), token.getLocation(),
                                    token.getIdentifierInfo(),
                                    md.getMacroInfo()});
@@ -1135,7 +1201,7 @@ private:
                 dumper->dumpPointer(prev);
               }
 
-              if (!is_written_internally(loc))
+              if (loc.isValid() && !is_written_internally(loc))
                 add_pp_define(loc);
 
               out << ' ';
@@ -1618,9 +1684,11 @@ private:
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<unsigned, 8> inclusion_stack;
   llvm::SmallVector<operator_defined, 8> defined_queue;
+  llvm::DenseMap<const MacroInfo *, const IdentifierInfo *> defined_map;
+  std::vector<test_decl> tests;
   std::vector<expansion_decl> macros;
-  std::vector<std::pair<unsigned, Token>> expansions;
-  std::vector<unsigned> trivial_expansions; // without replacements
+  std::vector<std::pair<unsigned, Token>> expansions; // with replacements
+  std::vector<unsigned> trivial_expansions;           // without replacements
   std::pair<unsigned, unsigned> last_macro_expansion;
   std::vector<std::variant<directive_def, directive_if, directive_elif,
                            directive_else, directive_endif, operator_defined,

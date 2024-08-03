@@ -7,6 +7,7 @@ import {
   hoverTooltip,
 } from "https://cdn.jsdelivr.net/npm/@codemirror/view@6.29.0/+esm";
 import {
+  Text,
   EditorState,
   StateField,
   RangeSetBuilder,
@@ -17,8 +18,8 @@ import isEqual from "https://cdn.jsdelivr.net/npm/lodash.isequal@4.5.0/+esm";
 export class ReaderView {
   constructor({ doc, data, parent }) {
     this.editor = new EditorView({
-      doc,
       parent,
+      doc: Text.of(doc),
       extensions: [
         EditorState.readOnly.of(true),
         lineNumbers(),
@@ -27,6 +28,7 @@ export class ReaderView {
         link(data),
         decl(data),
         macroDecl(data),
+        testMacroDecl(data),
         semantics(data),
       ],
     });
@@ -123,7 +125,7 @@ function link(data) {
         ".link::before": {
           color: "#808080",
           fontStyle: "italic",
-          content: `"#include "`,
+          content: `"header "`,
         },
         ".link .file": {
           color: "#A31515",
@@ -300,7 +302,7 @@ function decl(data) {
         },
 
         ".FieldDecl::before": {
-          content: `"param "`,
+          content: `"field "`,
         },
         ".FieldDecl": {
           color: "#0451a5",
@@ -379,7 +381,14 @@ function macroDecl(data) {
                   const id = dom.appendChild(document.createElement("span"));
                   id.className = "identifier";
                   id.textContent = name;
-                  dom.append(parameters, " ", body);
+                  if (parameters) dom.append(parameters);
+                  if (body) {
+                    dom.append(" ");
+                    const code = dom.appendChild(
+                      document.createElement("code")
+                    );
+                    code.textContent = body;
+                  }
                   return { dom };
                 },
               };
@@ -396,12 +405,16 @@ function macroDecl(data) {
         ".macro_decl::before": {
           color: "#808080",
           fontStyle: "italic",
-          content: `"#define "`,
+          content: `"macro "`,
         },
 
         ".macro_decl .identifier": {
           fontWeight: "bold",
           color: "#0000ff",
+        },
+
+        ".macro_decl code": {
+          whiteSpace: "pre",
         },
       }),
     ],
@@ -512,17 +525,6 @@ function semantics(data) {
           color: "#0000ff",
         },
 
-        ".EXPANSION": {
-          textDecorationStyle: "dotted !important",
-          textDecoration: "underline 1px",
-        },
-        ".macro": {
-          color: "#0000ff",
-        },
-        ".function_like_macro": {
-          color: "#8A1BFF",
-        },
-
         ".INACTIVE": {
           color: "#E5EBF1",
         },
@@ -533,6 +535,12 @@ function semantics(data) {
 
         ".IDENTIFIER": {
           color: "#000000",
+        },
+        ".macro": {
+          color: "#0000ff",
+        },
+        ".function_like_macro": {
+          color: "#8A1BFF",
         },
         ".Function": {
           color: "#795E26",
@@ -561,7 +569,14 @@ function semantics(data) {
           color: "#a31515",
           textDecoration: "underline 1px",
         },
+
+        ".EXPANSION": {
+          textDecorationStyle: "dotted !important",
+          textDecoration: "underline 1px",
+        },
       }),
     ],
   });
 }
+
+const testMacroDecl = macroDecl;

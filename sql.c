@@ -1,5 +1,6 @@
 #include "sql.h"
 #include "parse.h"
+#include "test.h"
 #include "util.h"
 
 #include <sqlite3.h>
@@ -153,6 +154,12 @@ static int decl_number(const char *decl) {
 
   unsigned i;
   _Bool found = decl_number_map_bsearch(&decl_number_map, &decl, &i);
+  TOGGLE(log_not_found_decl, {
+    if (!found)
+      fprintf(stderr, "%s:%s:%d: not found decl: %s\n", __FILE__, __func__,
+              __LINE__, decl);
+  });
+
   assert(found);
   unsigned number = decl_number_map.data[i].number;
   assert(number < INT_MAX);
@@ -490,32 +497,16 @@ static int dump_loc() {
 
   for (unsigned k = 0; k < sizeof(inputs) / sizeof(*inputs); ++k) {
     for (unsigned i = 0; i < inputs[k].i; ++i) {
-      struct srange loc;
-      const char *kind = NULL;
+      struct srange loc = ((const struct srange *)inputs[k].data)[i];
       int semantics = inputs[k].semantics;
+      const char *kind = NULL;
 
-#define EXPANSION(x) "EXPANSION " #x
       switch (semantics) {
       case SEMANTIC_EXPANSION:
-        loc = ((const struct loc_exp_pair *)inputs[k].data)[i].loc;
-        switch (((const struct loc_exp_pair *)inputs[k].data)[i].exp) {
-        case 0:
-          kind = EXPANSION(macro);
-          break;
-        case 1:
-          kind = EXPANSION(built_in_macro);
-          break;
-        case 2:
-          kind = EXPANSION(function_like_macro);
-          break;
-        case 3:
-          kind = EXPANSION(built_in_function_like_macro);
-          break;
-        }
+        kind = "EXPANSION";
         break;
       case SEMANTIC_INACTIVE:
-        loc = ((const struct srange *)inputs[k].data)[i];
-        kind = "INACTIVE region";
+        kind = "INACTIVE";
         break;
       default:
         break;
@@ -586,6 +577,7 @@ static int dump_tok() {
     FILL_INT(SRC, src);
     FILL_INT(BEGIN_ROW, tok->loc.line);
     FILL_INT(BEGIN_COL, tok->loc.col);
+    // write offset only for macros
     if (tok->offset != UINT_MAX)
       FILL_INT(OFFSET, tok->offset);
     FILL_INT(DECL, decl);
