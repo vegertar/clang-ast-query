@@ -90,6 +90,10 @@ void print_def(FILE *fp, const struct def *def) {
   fprintf(fp, " cast(%s)", def->cast ? def->cast : "");
 }
 
+void print_comment(FILE *fp, const struct comment *comment) {
+  fprintf(fp, "Text=\"%s\"", comment->text);
+}
+
 void print_decl(FILE *fp, const struct decl *decl) {
   fprintf(fp, "<%d>", decl->kind);
   switch (decl->kind) {
@@ -145,7 +149,9 @@ void print_decl(FILE *fp, const struct decl *decl) {
     fprintf(fp, ")");
     break;
   case DECL_KIND_V12:
-    fprintf(fp, " comment(%s)", decl->variants.v12.comment);
+    fprintf(fp, " comment(");
+    print_comment(fp, &decl->variants.v12.comment);
+    fprintf(fp, ")");
     break;
   }
 }

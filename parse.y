@@ -75,6 +75,10 @@
     const char *cast;
   };
 
+  struct comment {
+    const char *text;
+  };
+
   enum decl_kind {
     DECL_KIND_NIL,
     DECL_KIND_V1,
@@ -136,7 +140,7 @@
         struct array seq;
       } v11;
       struct {
-        const char *comment;
+        struct comment comment;
       } v12;
     } variants;
   };
@@ -186,7 +190,16 @@
 
   struct tok {
     struct sloc loc;
-    unsigned offset;
+
+    /*
+     * Offset is used to identify the situation of tokens.
+     *
+     * -2: Testing only macros, i.e., without expansion occurring. E.g., #ifdef MACRO
+     * -1: Non-macro identifiers; this is the default case.
+     *  0: Expandable macros. E.g., #if MACRO, int x = MACRO;
+     * >0: Expanded tokens from macro expansion, always accompanied by a 0-offset token.
+     */
+    int offset;
   };
 
   struct tok_decl_pair {
@@ -378,6 +391,7 @@
 %printer { print_op(yyo, &$$); } <struct op>;
 %printer { print_mem(yyo, &$$); } <struct mem>;
 %printer { print_def(yyo, &$$); } <struct def>;
+%printer { print_comment(yyo, &$$); } <struct comment>;
 %printer { print_decl(yyo, &$$); } <struct decl>;
 %printer { print_node(yyo, &$$); } <struct node>;
 
@@ -438,7 +452,6 @@
     macro
     value
     cast
-    comment
   <struct array>
     labels
     attrs
@@ -467,6 +480,8 @@
     ref
   <struct def>
     def
+  <struct comment>
+    comment
   <struct decl>
     decl
   <struct node>
@@ -572,7 +587,7 @@ remark_exported: REMARK_EXPORTED symbols
 symbols: POINTER { array_push((struct array *)memset(&$$, 0, sizeof(struct array)), $1); }
  | symbols POINTER { $$ = *array_push(&$1, $2); }
 
-tok: sloc { $$ = (struct tok){$1, UINT_MAX}; }
+tok: sloc { $$ = (struct tok){$1, -1}; }
  | sloc INTEGER
   {
     char *end;
@@ -582,8 +597,8 @@ tok: sloc { $$ = (struct tok){$1, UINT_MAX}; }
       yyerror(&@$, uctx, "strtoll(%s) failed: %s", $2, (errno ? strerror(errno) : ""));
       YYERROR;
     }
-    if (offset < 0 || offset >= UINT_MAX) {
-      yyerror(&@$, uctx, "expected a [0, %u) offset: %s", UINT_MAX, $2);
+    if (offset < -2 || offset > INT_MAX) {
+      yyerror(&@$, uctx, "expected a [-2, %d] offset: %s", INT_MAX, $2);
       YYERROR;
     }
     $$ = (struct tok){$1, offset};
@@ -736,7 +751,7 @@ def: type specs value op mem field ref cast
     };
   }
 
-comment: TEXT_COMMENT { $$ = $1; }
+comment: TEXT_COMMENT { $$ = (struct comment){$1}; }
 
 seq: INTEGER { array_push((struct array *)memset(&$$, 0, sizeof(struct array)), strdup($1)); }
  | seq INTEGER { $$ = *array_push(&$1, strdup($2)); }
@@ -1102,6 +1117,10 @@ static void def_destroy(struct def *def) {
   free((void *)def->cast);
 }
 
+static void comment_destroy(struct comment *comment) {
+  free((void *)comment->text);
+}
+
 static void decl_destroy(struct decl *decl) {
   switch (decl->kind) {
   case DECL_KIND_NIL:
@@ -1148,7 +1167,7 @@ static void decl_destroy(struct decl *decl) {
     array_clear(&decl->variants.v11.seq, 1);
     break;
   case DECL_KIND_V12:
-    free((void *)decl->variants.v12.comment);
+    comment_destroy(&decl->variants.v12.comment);
     break;
   default:
     fprintf(stderr, "%s:%s:%d: Invalid decl kind: %d\n",

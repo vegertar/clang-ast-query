@@ -202,7 +202,7 @@ static void dump_decl(FILE *fp, struct source *source) {
         " JOIN tok"
         " ON ast.number = tok.decl"
         " WHERE tok.src = ?"
-        " AND offset IS NULL"
+        " AND offset = -1"
         " ORDER BY tok.begin_row, tok.begin_col");
   FILL_INT(1, source->src);
   QUERY_END({
@@ -266,10 +266,9 @@ static void dump_test_macro_decl(FILE *fp, struct source *source) {
         " JOIN tok"
         " ON ast.number = tok.decl"
         " WHERE tok.src = ?"
-        " AND offset = ?"
+        " AND offset = -2"
         " ORDER BY tok.begin_row, tok.begin_col");
   FILL_INT(1, source->src);
-  FILL_INT(2, UINT_MAX - 1);
   QUERY_END({
     ESCAPE_COLUMN(JS_ESCAPE, 4);
     fprintf(fp, "%d,%d,'%s','%s','%s',", COL_INT(0), /* begin_row */

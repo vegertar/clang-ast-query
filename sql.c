@@ -577,9 +577,7 @@ static int dump_tok() {
     FILL_INT(SRC, src);
     FILL_INT(BEGIN_ROW, tok->loc.line);
     FILL_INT(BEGIN_COL, tok->loc.col);
-    // write offset only for macros
-    if (tok->offset != UINT_MAX)
-      FILL_INT(OFFSET, tok->offset);
+    FILL_INT(OFFSET, tok->offset);
     FILL_INT(DECL, decl);
     END_INSERT_INTO();
   }

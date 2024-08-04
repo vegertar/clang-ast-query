@@ -317,7 +317,7 @@ protected:
       if (macro.mi) {
         out << "#TOK-DECL:";
         dumper->dumpLocation(macro.sr.getBegin());
-        out << ' ' << UINT_MAX - 1; // use UINT_MAX-1 for testing only macros
+        out << " -2"; // use offset of -2 for testing only macros
         dumper->dumpPointer(macro.mi);
         out << '\n';
       }
@@ -1024,17 +1024,21 @@ private:
       auto i = mi->tokens_begin(), e = mi->tokens_end();
       dump_token_content(*i++);
 
-      if (pp.getSourceManager().isWrittenInBuiltinFile(
-              mi->getDefinitionLoc())) {
-        while (i != e) {
-          if (i->hasLeadingSpace())
-            out << ' ';
-          dump_token_content(*i++);
-        }
-      } else if (i != e) {
-        // Don't dump user defined macro content completely
-        out << "...";
+      // Don't dump user defined macro content completely
+      auto n =
+          (pp.getSourceManager().isWrittenInBuiltinFile(mi->getDefinitionLoc()))
+              ? std::numeric_limits<unsigned>::max()
+              : 3U;
+
+      while (i != e && n > 0) {
+        if (i->hasLeadingSpace())
+          out << ' ';
+        dump_token_content(*i++);
+        --n;
       }
+
+      if (i != e)
+        out << "...";
     }
     out.escape(0);
     out << "'";
