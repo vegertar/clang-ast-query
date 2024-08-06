@@ -4,8 +4,8 @@
 
 struct type;
 struct array;
-struct sloc;
-struct srange;
+struct loc;
+struct range;
 struct ref;
 struct op;
 struct mem;
@@ -16,8 +16,8 @@ struct node;
 
 void print_type(FILE *fp, const struct type *type);
 void print_array(FILE *fp, const struct array *array);
-void print_sloc(FILE *fp, const struct sloc *sloc);
-void print_srange(FILE *fp, const struct srange *srange);
+void print_loc(FILE *fp, const struct loc *loc);
+void print_range(FILE *fp, const struct range *range);
 void print_ref(FILE *fp, const struct ref *ref);
 void print_op(FILE *fp, const struct op *op);
 void print_mem(FILE *fp, const struct mem *mem);

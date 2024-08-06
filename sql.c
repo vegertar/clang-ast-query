@@ -497,7 +497,7 @@ static int dump_loc() {
 
   for (unsigned k = 0; k < sizeof(inputs) / sizeof(*inputs); ++k) {
     for (unsigned i = 0; i < inputs[k].i; ++i) {
-      struct srange loc = ((const struct srange *)inputs[k].data)[i];
+      struct range loc = ((const struct range *)inputs[k].data)[i];
       int semantics = inputs[k].semantics;
       const char *kind = NULL;
 
@@ -532,7 +532,7 @@ static int dump_loc() {
   }
 
   for (unsigned i = 0; i < tok_kind_set.i; ++i) {
-    struct srange tok = tok_kind_set.data[i].tok;
+    struct range tok = tok_kind_set.data[i].tok;
     int begin_src = src_number(tok.begin.file);
     int end_src = src_number(tok.end.file);
 

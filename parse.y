@@ -11,21 +11,19 @@
 // Emitted in the header file, before the definition of YYSTYPE.
 %code requires {
   #include "array.h"
-
-  typedef char * string;
-  typedef int integer;
+  #include <stdint.h>
 
   DECL_ARRAY(array, void *);
 
-  struct sloc {
+  struct loc {
     const char *file;
     unsigned line;
     unsigned col;
   };
 
-  struct srange {
-    struct sloc begin;
-    struct sloc end;
+  struct range {
+    struct loc begin;
+    struct loc end;
   };
 
   struct type {
@@ -160,12 +158,80 @@
     const char *parent;
     const char *prev;
     const char *macro;
-    struct srange range;
-    struct sloc loc;
+    struct range range;
+    struct loc loc;
     struct array attrs;
     struct array labels;
     struct decl decl;
     struct array opts;
+  };
+
+  #define DECL_BASE               \
+    unsigned short level;         \
+    unsigned short kind;
+
+  #define DECL_ATTR               \
+    DECL_BASE                     \
+    intptr_t pointer;             \
+    struct range range;           \
+    uint8_t is_inherited : 1;     \
+    uint8_t is_implicit : 1;
+
+  struct base {
+    DECL_BASE
+  };
+
+  struct ModeAttr {
+    DECL_ATTR
+
+    const char *name;
+  };
+
+  struct NoThrowAttr {
+    DECL_ATTR
+  };
+
+  struct NonNullAttr {
+    DECL_ATTR
+
+    unsigned arg_indices;
+  };
+
+  struct AsmLabelAttr {
+    DECL_ATTR
+
+    uint8_t is_literal_label : 1;
+    const char *name;
+  };
+
+  struct DeprecatedAttr {
+    DECL_ATTR
+
+    const char *msg;
+    const char *alt;
+  };
+
+  struct BuiltinAttr {
+    DECL_ATTR
+
+    unsigned id;
+  };
+
+  struct ReturnsTwiceAttr {
+    DECL_ATTR
+  };
+
+  struct Node {
+    union {
+      struct base base;
+      struct ModeAttr ModeAttr;
+      struct NoThrowAttr NoThrowAttr;
+      struct NonNullAttr NonNullAttr;
+      struct AsmLabelAttr AsmLabelAttr;
+      struct DeprecatedAttr DeprecatedAttr;
+      struct BuiltinAttr BuiltinAttr;
+      struct ReturnsTwiceAttr ReturnsTwiceAttr;
+    };
   };
 
   DECL_ARRAY(ast, struct node);
@@ -184,12 +250,12 @@
 
   DECL_ARRAY(src_set, struct src);
 
-  DECL_ARRAY(loc_exp_set, struct srange);
+  DECL_ARRAY(loc_exp_set, struct range);
 
-  DECL_ARRAY(inactive_set, struct srange);
+  DECL_ARRAY(inactive_set, struct range);
 
   struct tok {
-    struct sloc loc;
+    struct loc loc;
 
     /*
      * Offset is used to identify the situation of tokens.
@@ -210,14 +276,14 @@
   DECL_ARRAY(tok_decl_set, struct tok_decl_pair);
 
   struct tok_kind_pair {
-    struct srange tok;
+    struct range tok;
     const char *kind;
   };
 
   DECL_ARRAY(tok_kind_set, struct tok_kind_pair);
 
   struct exp_expr_pair {
-    struct sloc exp;
+    struct loc exp;
     const char *expr;
   };
 
@@ -321,10 +387,10 @@
 
   static DECL_METHOD(string_map, clear, int);
 
-  static DECL_METHOD(loc_exp_set, push, struct srange);
+  static DECL_METHOD(loc_exp_set, push, struct range);
   static DECL_METHOD(loc_exp_set, clear, int);
 
-  static DECL_METHOD(inactive_set, push, struct srange);
+  static DECL_METHOD(inactive_set, push, struct range);
   static DECL_METHOD(inactive_set, clear, int);
 
   static DECL_METHOD(tok_decl_set, push, struct tok_decl_pair);
@@ -374,433 +440,530 @@
 
 // Formatting semantic values in debug traces.
 %printer { fprintf(yyo, "%s", "\\n"); } EOL;
-%printer { fprintf(yyo, "%s", "<<<NULL>>>"); } NULL;
-%printer { fprintf(yyo, "%s", "<invalid sloc>"); } INVALID_SLOC;
+%printer { fprintf(yyo, "%s", "<invalid loc>"); } INVALID_SLOC;
 %printer { fprintf(yyo, "%s", "line"); } LINE;
 %printer { fprintf(yyo, "%s", "col"); } COL;
-%printer { fprintf(yyo, "%s", "value: Int"); } ENUM;
-%printer { fprintf(yyo, "%s", "field"); } FIELD;
-%printer { fprintf(yyo, "<%s,%s>", $$.k, $$.v); } <struct string_pair>;
-%printer { fprintf(yyo, "%d", $$); } <integer>;
-%printer { fprintf(yyo, "\"%s\"", $$); } <string>;
+%printer { fprintf(yyo, "%d", $$); } <int>;
+%printer { fprintf(yyo, "\"%s\"", $$); } <char *>;
 %printer { print_type(yyo, &$$); } <struct type>;
-%printer { print_array(yyo, &$$); } <struct array>;
-%printer { print_sloc(yyo, &$$); } <struct sloc>;
-%printer { print_srange(yyo, &$$); } <struct srange>;
-%printer { print_ref(yyo, &$$); } <struct ref>;
-%printer { print_op(yyo, &$$); } <struct op>;
-%printer { print_mem(yyo, &$$); } <struct mem>;
-%printer { print_def(yyo, &$$); } <struct def>;
-%printer { print_comment(yyo, &$$); } <struct comment>;
-%printer { print_decl(yyo, &$$); } <struct decl>;
+// %printer { print_array(yyo, &$$); } <struct array>;
+%printer { print_loc(yyo, &$$); } <struct loc>;
+%printer { print_range(yyo, &$$); } <struct range>;
 %printer { print_node(yyo, &$$); } <struct node>;
 
 %token
     EOL
-    NULL
     INVALID_SLOC
+    UNDESERIALIZED_DECLARATIONS
     LINE
     COL
-    ENUM
-    FIELD
-    REMARK
-    REMARK_EXPORTED
-    REMARK_INACTIVE
-    REMARK_TOK_DECL
-    REMARK_TOK_KIND
-    REMARK_LOC_EXP
-    REMARK_EXP_EXPR
-  <integer>
-    INDENT
-    REMARK_TS
-  <string>
-    HEAD
-    PARENT
+    NULL
     PREV
-    MACRO
+    PARENT
+    PREFIX
+    POSTFIX
+    CANNOT_OVERFLOW
+    PART_OF_EXPLICIT_CAST
+    SUGAR
+    IMPORTED
+    IMPLICIT
+    DEFINITION
+    IS_LITERAL_LABEL
+    IS_INHERITED
+    IS_IMPLICIT
+    HAS_ELSE
+    TEXT_TAG
+    COMPUTE_LHS_TY_TAG
+    COMPUTE_RESULT_TY_TAG
+  <int>
+    INDENT
+    TranslationUnitDecl
+    TypedefDecl
+    BuiltinType
+    RecordType
+    Record
+    PointerType
+    ConstantArrayType
+    ElaboratedType
+    TypedefType
+    Typedef
+    RecordDecl
+    FieldDecl
+    ModeAttr
+    FunctionDecl
+    ParmVarDecl
+    CompoundStmt
+    ReturnStmt
+    ParenExpr
+    CStyleCastExpr
+    BinaryOperator
+    ImplicitCastExpr
+    DeclRefExpr
+    IntegerLiteral
+    IndirectFieldDecl
+    Field
+    QualType
+    NoThrowAttr 
+    NonNullAttr
+    EnumDecl
+    EnumConstantDecl
+    ConstantExpr
+    IntValue
+    EnumType
+    Enum
+    AsmLabelAttr
+    DeprecatedAttr
+    VarDecl
+    BuiltinAttr
+    ReturnsTwiceAttr
+    ConstAttr
+    AlignedAttr
+    UnaryExprOrTypeTraitExpr
+    FunctionProtoType
+    RestrictAttr
+    FormatAttr
+    CallExpr
+    GNUInlineAttr
+    ConditionalOperator
+    MemberExpr
+    UnaryOperator
+    CharacterLiteral
+    PureAttr
+    AllocSizeAttr
+    WarnUnusedResultAttr
+    AllocAlignAttr
+    ParenType
+    DeclStmt
+    WhileStmt
+    IfStmt
+    ArraySubscriptExpr
+    TransparentUnionAttr
+    PackedAttr
+    FullComment
+    ParagraphComment
+    TextComment
+    ForStmt
+    CompoundAssignOperator
+    NullStmt
+    InitListExpr
+    StringLiteral
+    GotoStmt
+    SwitchStmt
+    CaseStmt
+    DefaultStmt
+    LabelStmt
+    ContinueStmt
+    BreakStmt
+    OffsetOfExpr
+    Comma
+    Remainder
+    Division
+    Multiplication
+    Subtraction
+    Addition
+    BitwiseAND
+    BitwiseOR
+    BitwiseXOR
+    BitwiseNOT
+    LogicalNOT
+    GreaterThan
+    GreaterThanOrEqual
+    LessThan
+    LessThanOrEqual
+    Equality
+    Inequality
+    Assignment
+    AdditionAssignment
+    SubtractionAssignment
+    MultiplicationAssignment
+    DivisionAssignment
+    RemainderAssignment
+    BitwiseXORAssignment
+    BitwiseORAssignment
+    BitwiseANDAssignment
+    RightShift
+    RightShiftAssignment
+    LeftShift
+    LeftShiftAssignment
+    Decrement
+    Increment
+    LogicalAND
+    LogicalOR
+    IntegralCast
+    LValueToRValue
+    FunctionToPointerDecay
+    BuiltinFnToFnPtr
+    BitCast
+    NullToPointer
+    NoOp
+    ToVoid
+    ArrayToPointerDecay
+    IntegralToFloating
+    IntegralToPointer
+    KW_alignof
+    KW_sizeof
+    KW_struct
+    KW_union
+    KW_enum
+    KW_extern
+    KW_static
+    KW_inline
+    KW_const
+    KW_volatile
+    OPT_cinit
+    OPT_callinit
+    OPT_listinit
+    OPT_parenlistinit
+    OPT_non_odr_use_unevaluated
+    OPT_non_odr_use_constant
+    OPT_non_odr_use_discarded
+    OPT_lvalue
+    OPT_bitfield
+    OPT_used
+    OPT_referenced
+  <intptr_t>
     POINTER
-    MEMBER
+  <long long>
+    INTEGER
+  <char *>
     NAME
     SQNAME
     DQNAME
-    BQNAME
-    TOKEN
     SRC
-    OPERATOR
-    OPTION
-    ATTR
-    SPEC
-    CLASS
-    TRAIT
-    TAG
-    STRING
-    NUMBER
-    INTEGER
-    REMARK_TU
-    REMARK_CWD
-    TEXT_COMMENT
-  <struct string_pair>
-    REMARK_VAR_TYPE
-    REMARK_DECL_DEF
-
+    MEMBER
 %nterm
-  <_Bool>
-    field
-  <string>
-    parent
-    prev
-    macro
-    value
-    cast
-  <struct array>
-    labels
-    attrs
-    specs
-    opts
-    seq
-    symbols
-  <struct tags>
-    tags
-  <struct op>
-    op
-  <struct sloc>
-    loc
-    sloc
-    file_sloc
-    line_sloc
-    col_sloc
-  <struct srange>
-    range
-    srange
+  <struct loc>
+    Loc
+    FileLoc
+    LineLoc
+    ColLoc
+  <struct range>
+    Range
+    LocRange
   <struct type>
-    type
-  <struct mem>
-    mem
-  <struct ref>
-    ref
-  <struct def>
-    def
-  <struct comment>
-    comment
-  <struct decl>
-    decl
+    BareType
   <struct node>
-    node
-  <struct tok>
-    tok
-
+    Node
+  <unsigned>
+    ArgIndices
 %%
 
-start: node EOL
+// Naming conventions:
+//  All lowercase names are optional non-terminal tokens.
+
+Start: Node EOL
   {
-    ast_push(&ast, $1);
+    // ast_push(&ast, $1);
   }
- | INDENT node EOL
+ | INDENT Node EOL
   {
     $2.level = $1 / 2;
-    ast_push(&ast, $2);
-  }
- | remark EOL
-
-node: HEAD parent prev range loc attrs labels decl opts
-  {
-    $$ = (struct node){
-      .kind = NODE_KIND_HEAD,
-      .name = $1,
-      .pointer = get_pointer($1),
-      .parent = $2,
-      .prev = $3,
-      .range = $4,
-      .loc = $5,
-      .attrs = $6,
-      .labels = $7,
-      .decl = $8,
-      .opts = $9,
-    };
-  }
- | ENUM INTEGER
-  {
-    $$ = (struct node){
-      .kind = NODE_KIND_ENUM,
-      .name = strdup($2),
-    };
-  }
- | NULL
-  {
-    $$ = (struct node){
-      .kind = NODE_KIND_NULL,
-    };
-  }
- | TOKEN macro range loc attrs
-  {
-    $$ = (struct node){
-      .kind = NODE_KIND_TOKEN,
-      .name = $1,
-      .macro = $2,
-      .range = $3,
-      .loc = $4,
-      .attrs = $5,
-    };
+    // ast_push(&ast, $2);
   }
 
-remark: REMARK
- | REMARK_TU
- | REMARK_TS
- | REMARK_CWD
- | REMARK_VAR_TYPE
- | REMARK_DECL_DEF
- | remark_loc_exp
- | remark_exp_expr
- | remark_tok_decl
- | remark_tok_kind
- | remark_inactive
- | remark_exported
+Node: NULL {}
+ | AttrNode {}
+ | CommentNode {}
+ | DeclNode {}
+ | TypeNode {}
+ | StmtNode {}
+ | Record POINTER BareType {}
+ | Typedef POINTER BareType {}
+ | Field POINTER SQNAME BareType {}
+ | IntValue INTEGER {}
+ | Enum POINTER SQNAME {}
 
-remark_loc_exp: REMARK_LOC_EXP '<' srange '>'
-  {
-    loc_exp_set_push(&loc_exp_set, $3);
-  }
+AttrNode: ModeAttr Attr NAME {}
+ | NoThrowAttr Attr {}
+ | NonNullAttr Attr ArgIndices {}
+ | AsmLabelAttr Attr DQNAME is_literal_label {}
+ | DeprecatedAttr Attr DQNAME DQNAME {}
+ | BuiltinAttr Attr INTEGER {}
+ | ReturnsTwiceAttr Attr {}
+ | ConstAttr Attr {}
+ | AlignedAttr Attr NAME {}
+ | RestrictAttr Attr NAME {}
+ | FormatAttr Attr NAME Indices {}
+ | GNUInlineAttr Attr {}
+ | AllocSizeAttr Attr Indices {}
+ | WarnUnusedResultAttr Attr NAME DQNAME {}
+ | AllocAlignAttr Attr INTEGER {}
+ | TransparentUnionAttr Attr {}
+ | PackedAttr Attr {}
+ | PureAttr Attr {}
 
-remark_exp_expr: REMARK_EXP_EXPR sloc POINTER
-  {
-    exp_expr_set_push(&exp_expr_set, (struct exp_expr_pair){$2, $3});
-  }
+CommentNode: FullComment Comment {}
+ | ParagraphComment Comment {}
+ | TextComment Comment TEXT_TAG DQNAME {}
 
-remark_tok_decl: REMARK_TOK_DECL tok POINTER
-  {
-    tok_decl_set_push(&tok_decl_set, (struct tok_decl_pair){$2, $3});
-  }
+DeclNode: TranslationUnitDecl Decl {}
+ | TypedefDecl Decl NAME BareType {}
+ | RecordDecl Decl Class name definition {}
+ | FieldDecl Decl name BareType {}
+ | FunctionDecl Decl NAME BareType storage inline {}
+ | ParmVarDecl Decl name BareType {}
+ | IndirectFieldDecl Decl NAME BareType {}
+ | EnumDecl Decl name {}
+ | EnumConstantDecl Decl NAME BareType {}
+ | VarDecl Decl NAME BareType storage init_style {}
 
-remark_tok_kind: REMARK_TOK_KIND '<' srange '>' DQNAME
-  {
-    tok_kind_set_push(&tok_kind_set, (struct tok_kind_pair){$3, $5});
-  }
+TypeNode: BuiltinType Type {}
+ | RecordType Type {} 
+ | PointerType Type {}
+ | ConstantArrayType Type INTEGER {}
+ | ElaboratedType Type {}
+ | TypedefType Type {}
+ | QualType Type const volatile {}
+ | EnumType Type {}
+ | FunctionProtoType Type NAME {}
+ | ParenType Type {}
 
-remark_inactive: REMARK_INACTIVE '<' srange '>'
-  {
-    inactive_set_push(&inactive_set, $3);
-  }
+StmtNode: ExprNode {}
+ | CompoundStmt Stmt {}
+ | ReturnStmt Stmt {}
+ | DeclStmt Stmt {}
+ | WhileStmt Stmt {}
+ | IfStmt Stmt has_else {}
+ | ForStmt Stmt {}
+ | NullStmt Stmt {}
+ | GotoStmt Stmt Label {}
+ | SwitchStmt Stmt {}
+ | CaseStmt Stmt {}
+ | DefaultStmt Stmt {}
+ | LabelStmt Stmt SQNAME {}
+ | ContinueStmt Stmt {}
+ | BreakStmt Stmt {}
 
-remark_exported: REMARK_EXPORTED symbols
-  { exported_symbols = $2; }
+ExprNode: LiteralNode {}
+ | OperatorNode {}
+ | ParenExpr Expr {}
+ | CStyleCastExpr CastExpr {}
+ | ImplicitCastExpr CastExpr part_of_explicit_cast {}
+ | DeclRefExpr Expr Ref non_odr_use {}
+ | ConstantExpr Expr {}
+ | CallExpr Expr {}
+ | MemberExpr Expr Member {}
+ | ArraySubscriptExpr Expr {}
+ | InitListExpr Expr {}
+ | OffsetOfExpr Expr {}
+ | UnaryExprOrTypeTraitExpr Expr Trait argument_type {}
 
-symbols: POINTER { array_push((struct array *)memset(&$$, 0, sizeof(struct array)), $1); }
- | symbols POINTER { $$ = *array_push(&$1, $2); }
+LiteralNode: IntegerLiteral Expr INTEGER {}
+ | CharacterLiteral Expr INTEGER {} 
+ | StringLiteral Expr DQNAME {}
 
-tok: sloc { $$ = (struct tok){$1, -1}; }
- | sloc INTEGER
-  {
-    char *end;
-    errno = 0;
-    long long offset = strtoll($2, &end, 10);
-    if (errno || *end) {
-      yyerror(&@$, uctx, "strtoll(%s) failed: %s", $2, (errno ? strerror(errno) : ""));
-      YYERROR;
-    }
-    if (offset < -2 || offset > INT_MAX) {
-      yyerror(&@$, uctx, "expected a [-2, %d] offset: %s", INT_MAX, $2);
-      YYERROR;
-    }
-    $$ = (struct tok){$1, offset};
-  }
+OperatorNode: UnaryOperator Expr PrefixPostfix Operator cannot_overflow {}
+ | BinaryOperator Expr Operator {}
+ | ConditionalOperator Expr {}
+ | CompoundAssignOperator Expr Operator COMPUTE_LHS_TY_TAG BareType COMPUTE_RESULT_TY_TAG BareType {}
 
-parent: { $$ = NULL; }
- | PARENT { $$ = $1; }
+Attr: POINTER Range is_inherited is_implicit
 
-prev: { $$ = NULL; }
- | PREV { $$ = $1; }
+Comment: POINTER Range
 
-macro: { $$ = NULL; }
- | MACRO { $$ = $1; }
+Decl: POINTER parent prev Range Loc imported implicit used_or_referenced undeserialized_declarations
 
-range: { $$ = (struct srange){}; }
- | '<' srange '>' { $$ = $2; }
+Type: POINTER BareType sugar imported
 
-loc: { $$ = (struct sloc){}; }
- | sloc
+Stmt: POINTER Range
 
-attrs: { $$ = (struct array){}; }
- | attrs ATTR { $$ = *array_push(&$1, $2); }
+Expr: Stmt BareType value_kind object_kind
 
-labels: { $$ = (struct array){}; }
- | labels DQNAME { $$ = *array_push(&$1, $2); }
+CastExpr: Expr Cast
 
-decl: { $$ = (struct decl){}; }
- | CLASS
-  {
-    $$ = (struct decl){
-      DECL_KIND_V1,
-      {.v1 = {$1}},
-    };
-  }
- | NAME
-  {
-    $$ = (struct decl){
-      DECL_KIND_V2,
-      {.v2 = {$1}},
-    };
-  }
- | CLASS NAME
-  {
-    $$ = (struct decl){
-      DECL_KIND_V3,
-      {.v3 = {$1, $2}},
-    };
-  }
- | SQNAME POINTER
-  {
-    $$ = (struct decl){
-      DECL_KIND_V4,
-      {.v4 = {$1, $2}},
-    };
-  }
- | SQNAME TRAIT
-  {
-    $$ = (struct decl){
-      DECL_KIND_V5,
-      {.v5 = {$1, $2}},
-    };
-  }
- | SQNAME TRAIT def
-  {
-    $$ = (struct decl){
-      DECL_KIND_V6,
-      {.v6 = {$1, $2, $3}},
-    };
-  }
- | SQNAME def
-  {
-    $$ = (struct decl){
-      DECL_KIND_V7,
-      {.v7 = {$1, $2}},
-    };
-  }
- | def
-  {
-    $$ = (struct decl){
-      DECL_KIND_V8,
-      {.v8 = {$1}},
-    };
-  }
- | NAME def
-  {
-    $$ = (struct decl){
-      DECL_KIND_V9,
-      {.v9 = {$1, $2}},
-    };
-  }
- | seq
-  {
-    $$ = (struct decl){
-      DECL_KIND_V10,
-      {.v10 = {$1}},
-    };
-  }
- | NAME seq
-  {
-    $$ = (struct decl){
-      DECL_KIND_V11,
-      {.v11 = {$1, $2}},
-    };
-  }
- | comment
-  {
-    $$ = (struct decl){
-      DECL_KIND_V12,
-      {.v12 = {$1}},
-    };
-  }
+Member: MEMBER POINTER
 
-srange: sloc { $$ = (struct srange){$1, $1}; }
- | sloc ',' sloc { $$ = (struct srange){$1, $3}; }
+Operator: Comma
+ | Remainder
+ | Division
+ | Multiplication
+ | Subtraction
+ | Addition
+ | BitwiseAND
+ | BitwiseOR
+ | BitwiseXOR
+ | BitwiseNOT
+ | LogicalNOT
+ | GreaterThan
+ | GreaterThanOrEqual
+ | LessThan
+ | LessThanOrEqual
+ | Equality
+ | Inequality
+ | Assignment
+ | AdditionAssignment
+ | SubtractionAssignment
+ | MultiplicationAssignment
+ | DivisionAssignment
+ | RemainderAssignment
+ | BitwiseXORAssignment
+ | BitwiseORAssignment
+ | BitwiseANDAssignment
+ | RightShift
+ | RightShiftAssignment
+ | LeftShift
+ | LeftShiftAssignment
+ | Decrement
+ | Increment
+ | LogicalAND
+ | LogicalOR
 
-sloc: INVALID_SLOC { $$ = (struct sloc){}; }
- | file_sloc
- | line_sloc
- | col_sloc
+Cast: IntegralCast
+ | LValueToRValue
+ | FunctionToPointerDecay
+ | BuiltinFnToFnPtr
+ | BitCast
+ | NullToPointer
+ | NoOp
+ | ToVoid
+ | ArrayToPointerDecay
+ | IntegralToFloating
+ | IntegralToPointer
 
-file_sloc: SRC ':' INTEGER ':' INTEGER
+Trait: KW_alignof
+ | KW_sizeof
+
+Class: KW_struct
+ | KW_union
+ | KW_enum
+
+Label: SQNAME POINTER
+
+Ref: NAME POINTER SQNAME BareType
+
+Range: '<' LocRange '>' { $$ = $2; }
+
+LocRange: Loc { $$ = (struct range){$1, $1}; }
+ | Loc ',' Loc { $$ = (struct range){$1, $3}; }
+
+Loc: INVALID_SLOC { $$ = (struct loc){}; }
+ | FileLoc
+ | LineLoc
+ | ColLoc
+
+FileLoc: SRC ':' INTEGER ':' INTEGER
   {
     last_loc_src = $1;
-    last_loc_line = strtoul($3, NULL, 10);
-    $$ = (struct sloc){last_loc_src, last_loc_line, strtoul($5, NULL, 10)};
+    last_loc_line = $3;
+    $$ = (struct loc){last_loc_src, last_loc_line, $5};
   }
 
-line_sloc: LINE ':' INTEGER ':' INTEGER
+LineLoc: LINE ':' INTEGER ':' INTEGER
   {
-    last_loc_line = strtoul($3, NULL, 10);
-    $$ = (struct sloc){last_loc_src, last_loc_line, strtoul($5, NULL, 10)};
+    last_loc_line = $3;
+    $$ = (struct loc){last_loc_src, last_loc_line, $5};
   }
 
-col_sloc: COL ':' INTEGER
+ColLoc: COL ':' INTEGER
   {
-    $$ = (struct sloc){last_loc_src, last_loc_line, strtoul($3, NULL, 10)};
+    $$ = (struct loc){last_loc_src, last_loc_line, $3};
   }
 
-def: type specs value op mem field ref cast
-  {
-    $$ = (struct def){
-      .type = $1,
-      .specs = $2,
-      .value = $3,
-      .op = $4,
-      .mem = $5,
-      .field = $6,
-      .ref = $7,
-      .cast = $8,
-    };
-  }
-
-comment: TEXT_COMMENT { $$ = (struct comment){$1}; }
-
-seq: INTEGER { array_push((struct array *)memset(&$$, 0, sizeof(struct array)), strdup($1)); }
- | seq INTEGER { $$ = *array_push(&$1, strdup($2)); }
-
-type: SQNAME { $$ = (struct type){$1}; }
+BareType: SQNAME { $$ = (struct type){$1}; }
  | SQNAME ':' SQNAME  { $$ = (struct type){$1, $3}; }
 
-specs: { $$ = (struct array){}; }
- | specs SPEC { $$ = *array_push(&$1, $2); }
-
-value: { $$ = NULL; }
- | NUMBER
- | STRING
-
-op: { $$ = (struct op){}; }
- | OPERATOR tags { $$ = (struct op){$1, $2}; }
-
-tags: { $$ = (struct tags){}; }
- | tags TAG '=' type { $$ = *tags_push(&$1, (struct tag){$2, $4}); }
-
-opts: { $$ = (struct array){}; }
- | opts OPTION { $$ = *array_push(&$1, $2); }
-
-mem: { $$ = (struct mem){}; }
- | MEMBER
+ArgIndices: INTEGER
   {
-    $$ = (struct mem){
-      .kind = $1[0] == '.' ? MEM_KIND_DOT : MEM_KIND_ARROW,
-      .name = $1[0] == '.' ? $1 + 1 : $1 + 2,
-      .pointer = get_pointer($1),
-    };
+    if ($1 < 1 || $1 > sizeof($$) * 8) {
+      yyerror(&@$, uctx, "expected a [1, %lu] index: %lld", sizeof($$) * 8, $1);
+      YYERROR;
+    }
+    $$ = 0U << $1;
+  }
+ | ArgIndices INTEGER
+  {
+    if ($2 < 1 || $2 > sizeof($$) * 8) {
+      yyerror(&@$, uctx, "expected a [1, %lu] index: %lld", sizeof($$) * 8, $2);
+      YYERROR;
+    }
+    $$ = $1 | (0U << $2);
   }
 
-field: { $$ = 0; }
- | FIELD { $$ = 1; }
+Indices: INTEGER
+ | Indices INTEGER
 
-ref: { $$ = (struct ref){}; }
- | HEAD SQNAME type
-  {
-    $$ = (struct ref){
-      .name = $1,
-      .pointer = get_pointer($1),
-      .sqname = $2,
-      .type = $3,
-    };
-  }
+PrefixPostfix: PREFIX
+ | POSTFIX
 
-cast: { $$ = NULL; }
- | BQNAME
+sugar:
+ | SUGAR
+
+imported:
+ | IMPORTED
+
+implicit:
+ | IMPLICIT
+
+has_else:
+ | HAS_ELSE
+
+storage:
+ | KW_extern
+ | KW_static
+
+inline:
+ | KW_inline
+
+const:
+ | KW_const
+
+volatile:
+ | KW_volatile
+
+init_style:
+ | OPT_cinit
+ | OPT_callinit
+ | OPT_listinit
+ | OPT_parenlistinit
+
+used_or_referenced:
+ | OPT_used
+ | OPT_referenced
+
+prev:
+ | PREV POINTER
+
+parent:
+ | PARENT POINTER
+
+cannot_overflow:
+ | CANNOT_OVERFLOW
+
+part_of_explicit_cast:
+ | PART_OF_EXPLICIT_CAST
+
+non_odr_use:
+ | OPT_non_odr_use_unevaluated
+ | OPT_non_odr_use_constant
+ | OPT_non_odr_use_discarded
+
+value_kind:
+ | OPT_lvalue
+
+object_kind:
+ | OPT_bitfield
+
+definition:
+ | DEFINITION
+
+is_literal_label:
+ | IS_LITERAL_LABEL
+
+is_inherited:
+ | IS_INHERITED
+
+is_implicit:
+ | IS_IMPLICIT
+
+undeserialized_declarations:
+ | UNDESERIALIZED_DECLARATIONS
+
+name:
+ | NAME
+
+argument_type:
+ | BareType
+
 
 %%
 
@@ -997,27 +1160,27 @@ const char *find_string_map(struct string_map *map, const char *k) {
   return found ? map->data[i].v : NULL;
 }
 
-static void sloc_destroy(struct sloc *sloc) {
-  // the sloc->file is owned by the global src_set
+static void sloc_destroy(struct loc *loc) {
+  // the loc->file is owned by the global src_set
 }
 
-static void srange_destroy(struct srange *srange) {
-  sloc_destroy(&srange->begin);
-  sloc_destroy(&srange->end);
+static void srange_destroy(struct range *range) {
+  sloc_destroy(&range->begin);
+  sloc_destroy(&range->end);
 }
 
 static void free_loc_exp(void *p) {
-  srange_destroy((struct srange *)p);
+  srange_destroy((struct range *)p);
 }
 
-static IMPL_ARRAY_PUSH(loc_exp_set, struct srange);
+static IMPL_ARRAY_PUSH(loc_exp_set, struct range);
 static IMPL_ARRAY_CLEAR(loc_exp_set, free_loc_exp);
 
 static void free_inactive(void *p) {
-  srange_destroy((struct srange *)p);
+  srange_destroy((struct range *)p);
 }
 
-static IMPL_ARRAY_PUSH(inactive_set, struct srange);
+static IMPL_ARRAY_PUSH(inactive_set, struct range);
 static IMPL_ARRAY_CLEAR(inactive_set, free_inactive);
 
 static void free_tok_decl(void *p) {

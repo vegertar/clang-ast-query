@@ -19,17 +19,17 @@ void print_array(FILE *fp, const struct array *array) {
   }
 }
 
-void print_sloc(FILE *fp, const struct sloc *sloc) {
-  if (sloc->file || sloc->line || sloc->col) {
-    fprintf(fp, "%s:%u:%u", sloc->file, sloc->line, sloc->col);
+void print_loc(FILE *fp, const struct loc *loc) {
+  if (loc->file || loc->line || loc->col) {
+    fprintf(fp, "%s:%u:%u", loc->file, loc->line, loc->col);
   }
 }
 
-void print_srange(FILE *fp, const struct srange *srange) {
-  print_sloc(fp, &srange->begin);
-  if (srange->end.file || srange->end.line || srange->end.col) {
+void print_range(FILE *fp, const struct range *range) {
+  print_loc(fp, &range->begin);
+  if (range->end.file || range->end.line || range->end.col) {
     fprintf(fp, ", ");
-    print_sloc(fp, &srange->end);
+    print_loc(fp, &range->end);
   }
 }
 
@@ -163,9 +163,9 @@ void print_node(FILE *fp, const struct node *node) {
     fprintf(fp, "name(%s) pointer(%s) parent(%s) prev(%s)", node->name,
             node->pointer, node->parent, node->prev);
     fprintf(fp, " range(");
-    print_srange(fp, &node->range);
+    print_range(fp, &node->range);
     fprintf(fp, ") loc(");
-    print_sloc(fp, &node->loc);
+    print_loc(fp, &node->loc);
     fprintf(fp, ") attrs(");
     print_array(fp, &node->attrs);
     fprintf(fp, ") labels(");
@@ -184,9 +184,9 @@ void print_node(FILE *fp, const struct node *node) {
   case NODE_KIND_TOKEN:
     fprintf(fp, " name(%s)", node->name);
     fprintf(fp, " range(");
-    print_srange(fp, &node->range);
+    print_range(fp, &node->range);
     fprintf(fp, ") loc(");
-    print_sloc(fp, &node->loc);
+    print_loc(fp, &node->loc);
     fprintf(fp, ") attrs(");
     print_array(fp, &node->attrs);
     fprintf(fp, ")");
