@@ -2,17 +2,14 @@
 
 // Emitted on top of the implementation file.
 %code top {
-  #include <stdlib.h>
-  #include <string.h>
-  #include <stdarg.h>
-  #include <ctype.h>
+  #include "top.h"
 }
 
 // Emitted in the header file, before the definition of YYSTYPE.
 %code requires {
   #include "array.h"
-  #include <stdint.h>
-
+  #include "requires.h"
+ 
   DECL_ARRAY(array, void *);
 
   struct loc {
@@ -164,74 +161,6 @@
     struct array labels;
     struct decl decl;
     struct array opts;
-  };
-
-  #define DECL_BASE               \
-    unsigned short level;         \
-    unsigned short kind;
-
-  #define DECL_ATTR               \
-    DECL_BASE                     \
-    intptr_t pointer;             \
-    struct range range;           \
-    uint8_t is_inherited : 1;     \
-    uint8_t is_implicit : 1;
-
-  struct base {
-    DECL_BASE
-  };
-
-  struct ModeAttr {
-    DECL_ATTR
-
-    const char *name;
-  };
-
-  struct NoThrowAttr {
-    DECL_ATTR
-  };
-
-  struct NonNullAttr {
-    DECL_ATTR
-
-    unsigned arg_indices;
-  };
-
-  struct AsmLabelAttr {
-    DECL_ATTR
-
-    uint8_t is_literal_label : 1;
-    const char *name;
-  };
-
-  struct DeprecatedAttr {
-    DECL_ATTR
-
-    const char *msg;
-    const char *alt;
-  };
-
-  struct BuiltinAttr {
-    DECL_ATTR
-
-    unsigned id;
-  };
-
-  struct ReturnsTwiceAttr {
-    DECL_ATTR
-  };
-
-  struct Node {
-    union {
-      struct base base;
-      struct ModeAttr ModeAttr;
-      struct NoThrowAttr NoThrowAttr;
-      struct NonNullAttr NonNullAttr;
-      struct AsmLabelAttr AsmLabelAttr;
-      struct DeprecatedAttr DeprecatedAttr;
-      struct BuiltinAttr BuiltinAttr;
-      struct ReturnsTwiceAttr ReturnsTwiceAttr;
-    };
   };
 
   DECL_ARRAY(ast, struct node);
@@ -447,14 +376,13 @@
 %printer { fprintf(yyo, "\"%s\"", $$); } <char *>;
 %printer { print_type(yyo, &$$); } <struct type>;
 // %printer { print_array(yyo, &$$); } <struct array>;
-%printer { print_loc(yyo, &$$); } <struct loc>;
-%printer { print_range(yyo, &$$); } <struct range>;
+// %printer { print_loc(yyo, &$$); } <Loc>;
+// %printer { print_range(yyo, &$$); } <Range>;
 %printer { print_node(yyo, &$$); } <struct node>;
 
 %token
     EOL
     INVALID_SLOC
-    UNDESERIALIZED_DECLARATIONS
     LINE
     COL
     NULL
@@ -462,21 +390,9 @@
     PARENT
     PREFIX
     POSTFIX
-    CANNOT_OVERFLOW
-    PART_OF_EXPLICIT_CAST
-    SUGAR
-    IMPORTED
-    IMPLICIT
-    DEFINITION
-    IS_LITERAL_LABEL
-    IS_INHERITED
-    IS_IMPLICIT
-    HAS_ELSE
-    TEXT_TAG
-    COMPUTE_LHS_TY_TAG
-    COMPUTE_RESULT_TY_TAG
   <int>
     INDENT
+  <enum yytokentype>
     TranslationUnitDecl
     TypedefDecl
     BuiltinType
@@ -621,6 +537,20 @@
     OPT_bitfield
     OPT_used
     OPT_referenced
+    OPT_part_of_explicit_cast
+    OPT_sugar
+    OPT_imported
+    OPT_implicit
+    OPT_definition
+    OPT_IsLiteralLabel
+    OPT_Inherited
+    OPT_Implicit
+    OPT_has_else
+    OPT_cannot_overflow
+    OPT_undeserialized_declarations
+    OPT_Text
+    OPT_ComputeLHSTy
+    OPT_ComputeResultTy
   <intptr_t>
     POINTER
   <long long>
@@ -632,19 +562,19 @@
     SRC
     MEMBER
 %nterm
-  <struct loc>
+  <Loc>
     Loc
     FileLoc
     LineLoc
     ColLoc
-  <struct range>
+  <Range>
     Range
-    LocRange
+    AngledRange
   <struct type>
     BareType
   <struct node>
     Node
-  <unsigned>
+  <ArgIndices>
     ArgIndices
 %%
 
@@ -683,9 +613,9 @@ AttrNode: ModeAttr Attr NAME {}
  | ConstAttr Attr {}
  | AlignedAttr Attr NAME {}
  | RestrictAttr Attr NAME {}
- | FormatAttr Attr NAME Indices {}
+ | FormatAttr Attr NAME INTEGER INTEGER {}
  | GNUInlineAttr Attr {}
- | AllocSizeAttr Attr Indices {}
+ | AllocSizeAttr Attr INTEGER integer {}
  | WarnUnusedResultAttr Attr NAME DQNAME {}
  | AllocAlignAttr Attr INTEGER {}
  | TransparentUnionAttr Attr {}
@@ -694,7 +624,7 @@ AttrNode: ModeAttr Attr NAME {}
 
 CommentNode: FullComment Comment {}
  | ParagraphComment Comment {}
- | TextComment Comment TEXT_TAG DQNAME {}
+ | TextComment Comment WithText {}
 
 DeclNode: TranslationUnitDecl Decl {}
  | TypedefDecl Decl NAME BareType {}
@@ -755,17 +685,17 @@ LiteralNode: IntegerLiteral Expr INTEGER {}
 OperatorNode: UnaryOperator Expr PrefixPostfix Operator cannot_overflow {}
  | BinaryOperator Expr Operator {}
  | ConditionalOperator Expr {}
- | CompoundAssignOperator Expr Operator COMPUTE_LHS_TY_TAG BareType COMPUTE_RESULT_TY_TAG BareType {}
+ | CompoundAssignOperator Expr Operator WithComputeLHSTy WithComputeResultTy {}
 
-Attr: POINTER Range is_inherited is_implicit
+Attr: POINTER AngledRange is_inherited is_implicit
 
-Comment: POINTER Range
+Comment: POINTER AngledRange
 
-Decl: POINTER parent prev Range Loc imported implicit used_or_referenced undeserialized_declarations
+Decl: POINTER parent prev AngledRange Loc imported implicit used_or_referenced undeserialized_declarations
 
 Type: POINTER BareType sugar imported
 
-Stmt: POINTER Range
+Stmt: POINTER AngledRange
 
 Expr: Stmt BareType value_kind object_kind
 
@@ -831,12 +761,12 @@ Label: SQNAME POINTER
 
 Ref: NAME POINTER SQNAME BareType
 
-Range: '<' LocRange '>' { $$ = $2; }
+AngledRange: '<' Range '>' { $$ = $2; }
 
-LocRange: Loc { $$ = (struct range){$1, $1}; }
- | Loc ',' Loc { $$ = (struct range){$1, $3}; }
+Range: Loc { $$ = (Range){$1, $1}; }
+ | Loc ',' Loc { $$ = (Range){$1, $3}; }
 
-Loc: INVALID_SLOC { $$ = (struct loc){}; }
+Loc: INVALID_SLOC { $$ = (Loc){}; }
  | FileLoc
  | LineLoc
  | ColLoc
@@ -845,18 +775,18 @@ FileLoc: SRC ':' INTEGER ':' INTEGER
   {
     last_loc_src = $1;
     last_loc_line = $3;
-    $$ = (struct loc){last_loc_src, last_loc_line, $5};
+    $$ = (Loc){last_loc_src, last_loc_line, $5};
   }
 
 LineLoc: LINE ':' INTEGER ':' INTEGER
   {
     last_loc_line = $3;
-    $$ = (struct loc){last_loc_src, last_loc_line, $5};
+    $$ = (Loc){last_loc_src, last_loc_line, $5};
   }
 
 ColLoc: COL ':' INTEGER
   {
-    $$ = (struct loc){last_loc_src, last_loc_line, $3};
+    $$ = (Loc){last_loc_src, last_loc_line, $3};
   }
 
 BareType: SQNAME { $$ = (struct type){$1}; }
@@ -864,38 +794,29 @@ BareType: SQNAME { $$ = (struct type){$1}; }
 
 ArgIndices: INTEGER
   {
-    if ($1 < 1 || $1 > sizeof($$) * 8) {
-      yyerror(&@$, uctx, "expected a [1, %lu] index: %lld", sizeof($$) * 8, $1);
+    if ($1 < 1 || $1 > ARG_INDICES_MAX) {
+      yyerror(&@$, uctx, "require a [1, %lu] index: %lld", ARG_INDICES_MAX, $1);
       YYERROR;
     }
     $$ = 0U << $1;
   }
  | ArgIndices INTEGER
   {
-    if ($2 < 1 || $2 > sizeof($$) * 8) {
-      yyerror(&@$, uctx, "expected a [1, %lu] index: %lld", sizeof($$) * 8, $2);
+    if ($2 < 1 || $2 > ARG_INDICES_MAX) {
+      yyerror(&@$, uctx, "require a [1, %lu] index: %lld", ARG_INDICES_MAX, $2);
       YYERROR;
     }
     $$ = $1 | (0U << $2);
   }
 
-Indices: INTEGER
- | Indices INTEGER
+WithText: OPT_Text DQNAME
+
+WithComputeLHSTy: OPT_ComputeLHSTy BareType
+
+WithComputeResultTy: OPT_ComputeResultTy BareType
 
 PrefixPostfix: PREFIX
  | POSTFIX
-
-sugar:
- | SUGAR
-
-imported:
- | IMPORTED
-
-implicit:
- | IMPLICIT
-
-has_else:
- | HAS_ELSE
 
 storage:
  | KW_extern
@@ -920,17 +841,23 @@ used_or_referenced:
  | OPT_used
  | OPT_referenced
 
-prev:
- | PREV POINTER
-
-parent:
- | PARENT POINTER
-
 cannot_overflow:
- | CANNOT_OVERFLOW
+ | OPT_cannot_overflow
 
 part_of_explicit_cast:
- | PART_OF_EXPLICIT_CAST
+ | OPT_part_of_explicit_cast
+
+sugar:
+ | OPT_sugar
+
+imported:
+ | OPT_imported
+
+implicit:
+ | OPT_implicit
+
+has_else:
+ | OPT_has_else
 
 non_odr_use:
  | OPT_non_odr_use_unevaluated
@@ -944,26 +871,34 @@ object_kind:
  | OPT_bitfield
 
 definition:
- | DEFINITION
+ | OPT_definition
 
 is_literal_label:
- | IS_LITERAL_LABEL
+ | OPT_IsLiteralLabel
 
 is_inherited:
- | IS_INHERITED
+ | OPT_Inherited
 
 is_implicit:
- | IS_IMPLICIT
+ | OPT_Implicit
 
 undeserialized_declarations:
- | UNDESERIALIZED_DECLARATIONS
+ | OPT_undeserialized_declarations
 
 name:
  | NAME
 
+integer:
+ | INTEGER
+
 argument_type:
  | BareType
 
+prev:
+ | PREV POINTER
+
+parent:
+ | PARENT POINTER
 
 %%
 

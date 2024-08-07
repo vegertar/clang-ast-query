@@ -4,6 +4,10 @@
 !/Makefile
 !/scan.l
 !/parse.y
+!/top.h
+!/requires.h
+!/provides.h
+!/pp.h
 !/main.c
 !/test.c
 !/test.h

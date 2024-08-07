@@ -43,6 +43,8 @@
     return tok;                                                               \
   } while (0)
 
+#define KW(X) RET(KW_##X)
+#define OPT(X, ...) RET(OPT_##X)
 #define RET(X) SET(X, TOK_##X)
 
 #define SET(X, value)                                                         \
@@ -100,83 +102,92 @@ DQNAME (\"((?:[^"\\]|\\.)*)\")
 %}
 
 TranslationUnitDecl             RET(TranslationUnitDecl);
-TypedefDecl                     RET(TypedefDecl);
-BuiltinType                     RET(BuiltinType);
-RecordType                      RET(RecordType);
-Record                          RET(Record);
-PointerType                     RET(PointerType);
-ConstantArrayType               RET(ConstantArrayType);
-ElaboratedType                  RET(ElaboratedType);
-TypedefType                     RET(TypedefType);
-Typedef                         RET(Typedef);
-RecordDecl                      RET(RecordDecl);
-FieldDecl                       RET(FieldDecl);
-ModeAttr                        RET(ModeAttr);
+IndirectFieldDecl               RET(IndirectFieldDecl);
+EnumConstantDecl                RET(EnumConstantDecl);
 FunctionDecl                    RET(FunctionDecl);
 ParmVarDecl                     RET(ParmVarDecl);
-CompoundStmt                    RET(CompoundStmt);
-ReturnStmt                      RET(ReturnStmt);
-ParenExpr                       RET(ParenExpr);
-CStyleCastExpr                  RET(CStyleCastExpr);
-BinaryOperator                  RET(BinaryOperator);
-ImplicitCastExpr                RET(ImplicitCastExpr);
-DeclRefExpr                     RET(DeclRefExpr);
-IntegerLiteral                  RET(IntegerLiteral);
-IndirectFieldDecl               RET(IndirectFieldDecl);
-Field                           RET(Field);
+TypedefDecl                     RET(TypedefDecl);
+RecordDecl                      RET(RecordDecl);
+FieldDecl                       RET(FieldDecl);
+EnumDecl                        RET(EnumDecl);
+VarDecl                         RET(VarDecl);
+
+ConstantArrayType               RET(ConstantArrayType);
+FunctionProtoType               RET(FunctionProtoType);
+ElaboratedType                  RET(ElaboratedType);
+BuiltinType                     RET(BuiltinType);
+PointerType                     RET(PointerType);
+TypedefType                     RET(TypedefType);
+RecordType                      RET(RecordType);
+ParenType                       RET(ParenType);
 QualType                        RET(QualType);
+EnumType                        RET(EnumType);
+
+TransparentUnionAttr            RET(TransparentUnionAttr);
+WarnUnusedResultAttr            RET(WarnUnusedResultAttr);
+ReturnsTwiceAttr                RET(ReturnsTwiceAttr);
+AllocAlignAttr                  RET(AllocAlignAttr);
+DeprecatedAttr                  RET(DeprecatedAttr);
+GNUInlineAttr                   RET(GNUInlineAttr);
+AllocSizeAttr                   RET(AllocSizeAttr);
+RestrictAttr                    RET(RestrictAttr);
+AsmLabelAttr                    RET(AsmLabelAttr);
+AlignedAttr                     RET(AlignedAttr);
 NoThrowAttr                     RET(NoThrowAttr);
 NonNullAttr                     RET(NonNullAttr);
-EnumDecl                        RET(EnumDecl);
-EnumConstantDecl                RET(EnumConstantDecl);
-ConstantExpr                    RET(ConstantExpr);
-IntValue                        RET(IntValue);
-EnumType                        RET(EnumType);
-Enum                            RET(Enum);
-AsmLabelAttr                    RET(AsmLabelAttr);
-DeprecatedAttr                  RET(DeprecatedAttr);
-VarDecl                         RET(VarDecl);
 BuiltinAttr                     RET(BuiltinAttr);
-ReturnsTwiceAttr                RET(ReturnsTwiceAttr);
-ConstAttr                       RET(ConstAttr);
-AlignedAttr                     RET(AlignedAttr);
-UnaryExprOrTypeTraitExpr        RET(UnaryExprOrTypeTraitExpr);
-FunctionProtoType               RET(FunctionProtoType);
-RestrictAttr                    RET(RestrictAttr);
-FormatAttr                      RET(FormatAttr);
-CallExpr                        RET(CallExpr);
-GNUInlineAttr                   RET(GNUInlineAttr);
-ConditionalOperator             RET(ConditionalOperator);
-MemberExpr                      RET(MemberExpr);
-UnaryOperator                   RET(UnaryOperator);
-CharacterLiteral                RET(CharacterLiteral);
-PureAttr                        RET(PureAttr);
-AllocSizeAttr                   RET(AllocSizeAttr);
-WarnUnusedResultAttr            RET(WarnUnusedResultAttr);
-AllocAlignAttr                  RET(AllocAlignAttr);
-ParenType                       RET(ParenType);
-DeclStmt                        RET(DeclStmt);
-WhileStmt                       RET(WhileStmt);
-IfStmt                          RET(IfStmt);
-ArraySubscriptExpr              RET(ArraySubscriptExpr);
-TransparentUnionAttr            RET(TransparentUnionAttr);
 PackedAttr                      RET(PackedAttr);
-FullComment                     RET(FullComment);
-ParagraphComment                RET(ParagraphComment);
-TextComment                     RET(TextComment);
-ForStmt                         RET(ForStmt);
-CompoundAssignOperator          RET(CompoundAssignOperator);
-NullStmt                        RET(NullStmt);
-InitListExpr                    RET(InitListExpr);
-StringLiteral                   RET(StringLiteral);
-GotoStmt                        RET(GotoStmt);
-SwitchStmt                      RET(SwitchStmt);
-CaseStmt                        RET(CaseStmt);
-DefaultStmt                     RET(DefaultStmt);
-LabelStmt                       RET(LabelStmt);
+FormatAttr                      RET(FormatAttr);
+ConstAttr                       RET(ConstAttr);
+PureAttr                        RET(PureAttr);
+ModeAttr                        RET(ModeAttr);
+
+CompoundStmt                    RET(CompoundStmt);
 ContinueStmt                    RET(ContinueStmt);
+DefaultStmt                     RET(DefaultStmt);
+SwitchStmt                      RET(SwitchStmt);
+ReturnStmt                      RET(ReturnStmt);
+LabelStmt                       RET(LabelStmt);
 BreakStmt                       RET(BreakStmt);
+WhileStmt                       RET(WhileStmt);
+DeclStmt                        RET(DeclStmt);
+CaseStmt                        RET(CaseStmt);
+NullStmt                        RET(NullStmt);
+GotoStmt                        RET(GotoStmt);
+ForStmt                         RET(ForStmt);
+IfStmt                          RET(IfStmt);
+
+UnaryExprOrTypeTraitExpr        RET(UnaryExprOrTypeTraitExpr);
+ArraySubscriptExpr              RET(ArraySubscriptExpr);
+ImplicitCastExpr                RET(ImplicitCastExpr);
+CStyleCastExpr                  RET(CStyleCastExpr);
+ConstantExpr                    RET(ConstantExpr);
+InitListExpr                    RET(InitListExpr);
 OffsetOfExpr                    RET(OffsetOfExpr);
+DeclRefExpr                     RET(DeclRefExpr);
+MemberExpr                      RET(MemberExpr);
+ParenExpr                       RET(ParenExpr);
+CallExpr                        RET(CallExpr);
+
+CompoundAssignOperator          RET(CompoundAssignOperator);
+ConditionalOperator             RET(ConditionalOperator);
+BinaryOperator                  RET(BinaryOperator);
+UnaryOperator                   RET(UnaryOperator);
+
+CharacterLiteral                RET(CharacterLiteral);
+IntegerLiteral                  RET(IntegerLiteral);
+StringLiteral                   RET(StringLiteral);
+
+ParagraphComment                RET(ParagraphComment);
+FullComment                     RET(FullComment);
+TextComment                     RET(TextComment);
+
+Typedef                         RET(Typedef);
+Record                          RET(Record);
+Field                           RET(Field);
+Enum                            RET(Enum);
+
+"value: Int"                    RET(IntValue);
 
 "','"                           RET(Comma);
 "'%'"                           RET(Remainder);
@@ -225,51 +236,63 @@ OffsetOfExpr                    RET(OffsetOfExpr);
 "<IntegralToFloating>"          RET(IntegralToFloating);
 "<IntegralToPointer>"           RET(IntegralToPointer);
 
-__alignof|alignof               RET(KW_alignof);
-sizeof                          RET(KW_sizeof);
-struct                          RET(KW_struct);
-union                           RET(KW_union);
-enum                            RET(KW_enum);
-extern                          RET(KW_extern);
-static                          RET(KW_static);
-inline                          RET(KW_inline);
-const                           RET(KW_const);
-volatile                        RET(KW_volatile);
+__alignof|alignof               KW(alignof);
+sizeof                          KW(sizeof);
 
-cinit                           RET(OPT_cinit);
-callinit                        RET(OPT_callinit);
-listinit                        RET(OPT_listinit);
-parenlistinit                   RET(OPT_parenlistinit);
+volatile                        KW(volatile);
+const                           KW(const);
 
-non_odr_use_unevaluated         RET(OPT_non_odr_use_unevaluated);
-non_odr_use_constant            RET(OPT_non_odr_use_constant);
-non_odr_use_discarded           RET(OPT_non_odr_use_discarded);
+inline                          KW(inline);
 
-lvalue                          RET(OPT_lvalue);
+extern                          KW(extern);
+static                          KW(static);
 
-bitfield                        RET(OPT_bitfield);
+struct                          KW(struct);
+union                           KW(union);
+enum                            KW(enum);
 
-used                            RET(OPT_used);
-referenced                      RET(OPT_referenced);
+"<undeserialized declarations>" OPT(undeserialized_declarations, Decl);
 
-":"|","|"<"|">"                 return(yytext[0]);
-"<<<NULL>>>"                    return(TOK_NULL);
+implicit                        OPT(implicit, Decl);
+
+referenced                      OPT(referenced, Decl);
+used                            OPT(used, Decl);
+
+parenlistinit                   OPT(parenlistinit, VarDecl);
+callinit                        OPT(callinit, VarDecl);
+listinit                        OPT(listinit, VarDecl);
+cinit                           OPT(cinit, VarDecl);
+
+definition                      OPT(definition, RecordDecl);
+
+non_odr_use_unevaluated         OPT(non_odr_use_unevaluated, DeclRefExpr);
+non_odr_use_discarded           OPT(non_odr_use_discarded, DeclRefExpr);
+non_odr_use_constant            OPT(non_odr_use_constant, DeclRefExpr);
+
+has_else                        OPT(has_else, IfStmt);
+
+bitfield                        OPT(bitfield, Stmt);
+lvalue                          OPT(lvalue, Stmt);
+
+part_of_explicit_cast           OPT(part_of_explicit_cast, Cast);
+
+sugar                           OPT(sugar, Type);
+imported                        OPT(imported, Type);
+
+IsLiteralLabel                  OPT(IsLiteralLabel, AsmLabelAttr);
+
+Inherited                       OPT(Inherited, Attr);
+Implicit                        OPT(Implicit, Attr);
+
+"cannot overflow"               OPT(cannot_overflow, UnaryOperator);
+
+"Text="                         OPT(Text, FullComment);
+
+"ComputeResultTy="              OPT(ComputeResultTy, CompoundAssignOperator);
+"ComputeLHSTy="                 OPT(ComputeLHSTy, CompoundAssignOperator);
+
 "<invalid sloc>"                return(TOK_INVALID_SLOC);
-"value: Int"                    return(TOK_IntValue);
-"Text="                         return(TOK_TEXT_TAG);
-"ComputeLHSTy="                 return(TOK_COMPUTE_LHS_TY_TAG);
-"ComputeResultTy="              return(TOK_COMPUTE_RESULT_TY_TAG);
-"cannot overflow"               return(TOK_CANNOT_OVERFLOW);
-"<undeserialized declarations>" return(TOK_UNDESERIALIZED_DECLARATIONS);
-part_of_explicit_cast           return(TOK_PART_OF_EXPLICIT_CAST);
-sugar                           return(TOK_SUGAR);
-imported                        return(TOK_IMPORTED);
-implicit                        return(TOK_IMPLICIT);
-definition                      return(TOK_DEFINITION);
-IsLiteralLabel                  return(TOK_IS_LITERAL_LABEL);
-Inherited                       return(TOK_IS_INHERITED);
-Implicit                        return(TOK_IS_IMPLICIT);
-has_else                        return(TOK_HAS_ELSE);
+"<<<NULL>>>"                    return(TOK_NULL);
 prev/" "{POINTER}               return(TOK_PREV);
 parent/" "{POINTER}             return(TOK_PARENT);
 prefix/" "{UNARY_PREFIX}        return(TOK_PREFIX);
@@ -277,17 +300,19 @@ postfix/" "{INC_DEC}            return(TOK_POSTFIX);
 line/:[0-9]+:[0-9]+             return(TOK_LINE);
 col/:[0-9]+                     return(TOK_COL);
 
-{INDENT}/[^ \n]                 SET(INDENT, yyleng);
 {POINTER}                       ATOI(POINTER, 16);
 {INTEGER}                       ATOI(INTEGER, 10);
-{MEMBER}                        SET(MEMBER, strdup(yytext));
+
 {SRC}/:[0-9]+:[0-9]+            SET(SRC, (char *)add_src(yytext));
+{INDENT}/[^ \n]                 SET(INDENT, yyleng);
+{MEMBER}                        SET(MEMBER, strdup(yytext));
 {SQNAME}                        SET(SQNAME, qname());
 {DQNAME}                        SET(DQNAME, qname());
 "\xC2\xA0"{NAME}                SET(NAME, strdup(yytext + 2));
 {NAME}                          SET(NAME, strdup(yytext));
 
-[ \t]
+":"|","|"<"|">"                 return(yytext[0]);
+" "
 \n                              LINE_STEP();
 .                               return(TOK_YYUNDEF);
 
