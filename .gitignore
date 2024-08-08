@@ -6,6 +6,7 @@
 !/parse.y
 !/top.h
 !/requires.h
+!/options.h
 !/provides.h
 !/pp.h
 !/main.c

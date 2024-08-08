@@ -5,7 +5,7 @@
   #include "top.h"
 }
 
-// Emitted in the header file, before the definition of YYSTYPE.
+// Emitted in the header file, before the opt_definition of YYSTYPE.
 %code requires {
   #include "array.h"
   #include "requires.h"
@@ -227,7 +227,7 @@
   } user_context;
 }
 
-// Emitted in the header file, after the definition of YYSTYPE.
+// Emitted in the header file, after the opt_definition of YYSTYPE.
 %code provides {
   // Tell Flex the expected prototype of yylex.
   #define YY_DECL \
@@ -388,179 +388,229 @@
     NULL
     PREV
     PARENT
-    PREFIX
-    POSTFIX
   <int>
     INDENT
   <enum yytokentype>
     TranslationUnitDecl
-    TypedefDecl
-    BuiltinType
-    RecordType
-    Record
-    PointerType
-    ConstantArrayType
-    ElaboratedType
-    TypedefType
-    Typedef
-    RecordDecl
-    FieldDecl
-    ModeAttr
+    IndirectFieldDecl
+    EnumConstantDecl
     FunctionDecl
     ParmVarDecl
-    CompoundStmt
-    ReturnStmt
-    ParenExpr
-    CStyleCastExpr
-    BinaryOperator
-    ImplicitCastExpr
-    DeclRefExpr
-    IntegerLiteral
-    IndirectFieldDecl
-    Field
-    QualType
-    NoThrowAttr 
-    NonNullAttr
+    TypedefDecl
+    RecordDecl
+    FieldDecl
     EnumDecl
-    EnumConstantDecl
-    ConstantExpr
-    IntValue
-    EnumType
-    Enum
-    AsmLabelAttr
-    DeprecatedAttr
     VarDecl
-    BuiltinAttr
-    ReturnsTwiceAttr
-    ConstAttr
-    AlignedAttr
-    UnaryExprOrTypeTraitExpr
+
+    ConstantArrayType
     FunctionProtoType
-    RestrictAttr
-    FormatAttr
-    CallExpr
-    GNUInlineAttr
-    ConditionalOperator
-    MemberExpr
-    UnaryOperator
-    CharacterLiteral
-    PureAttr
-    AllocSizeAttr
-    WarnUnusedResultAttr
-    AllocAlignAttr
+    ElaboratedType
+    BuiltinType
+    PointerType
+    TypedefType
+    RecordType
     ParenType
-    DeclStmt
-    WhileStmt
-    IfStmt
-    ArraySubscriptExpr
+    QualType
+    EnumType
+
     TransparentUnionAttr
+    WarnUnusedResultAttr
+    ReturnsTwiceAttr
+    AllocAlignAttr
+    DeprecatedAttr
+    GNUInlineAttr
+    AllocSizeAttr
+    RestrictAttr
+    AsmLabelAttr
+    AlignedAttr
+    NoThrowAttr
+    NonNullAttr
+    BuiltinAttr
     PackedAttr
-    FullComment
-    ParagraphComment
-    TextComment
-    ForStmt
-    CompoundAssignOperator
-    NullStmt
-    InitListExpr
-    StringLiteral
-    GotoStmt
-    SwitchStmt
-    CaseStmt
-    DefaultStmt
-    LabelStmt
+    FormatAttr
+    ConstAttr
+    PureAttr
+    ModeAttr
+
+    CompoundStmt
     ContinueStmt
+    DefaultStmt
+    SwitchStmt
+    ReturnStmt
+    LabelStmt
     BreakStmt
+    WhileStmt
+    DeclStmt
+    CaseStmt
+    NullStmt
+    GotoStmt
+    ForStmt
+    IfStmt
+
+    UnaryExprOrTypeTraitExpr
+    ArraySubscriptExpr
+    ImplicitCastExpr
+    CStyleCastExpr
+    ConstantExpr
+    InitListExpr
     OffsetOfExpr
-    Comma
-    Remainder
-    Division
-    Multiplication
-    Subtraction
-    Addition
-    BitwiseAND
-    BitwiseOR
-    BitwiseXOR
-    BitwiseNOT
-    LogicalNOT
-    GreaterThan
-    GreaterThanOrEqual
-    LessThan
-    LessThanOrEqual
-    Equality
-    Inequality
-    Assignment
-    AdditionAssignment
-    SubtractionAssignment
-    MultiplicationAssignment
-    DivisionAssignment
-    RemainderAssignment
-    BitwiseXORAssignment
-    BitwiseORAssignment
-    BitwiseANDAssignment
-    RightShift
-    RightShiftAssignment
-    LeftShift
-    LeftShiftAssignment
-    Decrement
-    Increment
-    LogicalAND
-    LogicalOR
-    IntegralCast
-    LValueToRValue
-    FunctionToPointerDecay
-    BuiltinFnToFnPtr
-    BitCast
-    NullToPointer
-    NoOp
-    ToVoid
-    ArrayToPointerDecay
-    IntegralToFloating
-    IntegralToPointer
-    KW_alignof
-    KW_sizeof
-    KW_struct
-    KW_union
-    KW_enum
-    KW_extern
-    KW_static
-    KW_inline
-    KW_const
-    KW_volatile
-    OPT_cinit
+    DeclRefExpr
+    MemberExpr
+    ParenExpr
+    CallExpr
+
+    CompoundAssignOperator
+    ConditionalOperator
+    BinaryOperator
+    UnaryOperator
+
+    CharacterLiteral
+    IntegerLiteral
+    StringLiteral
+
+    ParagraphComment
+    FullComment
+    TextComment
+
+    Typedef
+    Record
+    Field
+    Enum
+
+    IntValue
+
+    /* Operator */
+    OPT_Comma
+    OPT_Remainder
+    OPT_Division
+    OPT_Multiplication
+    OPT_Subtraction
+    OPT_Addition
+    OPT_BitwiseAND
+    OPT_BitwiseOR
+    OPT_BitwiseXOR
+    OPT_BitwiseNOT
+    OPT_LogicalAND
+    OPT_LogicalOR
+    OPT_LogicalNOT
+    OPT_GreaterThan
+    OPT_GreaterThanOrEqual
+    OPT_LessThan
+    OPT_LessThanOrEqual
+    OPT_Equality
+    OPT_Inequality
+    OPT_Assignment
+    OPT_AdditionAssignment
+    OPT_SubtractionAssignment
+    OPT_MultiplicationAssignment
+    OPT_DivisionAssignment
+    OPT_RemainderAssignment
+    OPT_BitwiseXORAssignment
+    OPT_BitwiseORAssignment
+    OPT_BitwiseANDAssignment
+    OPT_RightShift
+    OPT_RightShiftAssignment
+    OPT_LeftShift
+    OPT_LeftShiftAssignment
+    OPT_Decrement
+    OPT_Increment
+
+    /* MemberExpr */
+    OPT_arrow
+    OPT_dot
+
+    /* Cast */
+    OPT_IntegralCast
+    OPT_LValueToRValue
+    OPT_FunctionToPointerDecay
+    OPT_BuiltinFnToFnPtr
+    OPT_BitCast
+    OPT_NullToPointer
+    OPT_NoOp
+    OPT_ToVoid
+    OPT_ArrayToPointerDecay
+    OPT_IntegralToFloating
+    OPT_IntegralToPointer
+
+    /* UnaryExprOrTypeTraitExpr */
+    OPT_alignof
+    OPT_sizeof
+    
+    /* QualType */
+    OPT_volatile
+    OPT_const
+
+    /* Type */
+    OPT_imported
+    OPT_sugar
+
+    /* FunctionDecl */
+    OPT_inline
+    OPT_extern
+    OPT_static
+
+    /* RecordDecl */
+    OPT_definition
+    OPT_struct
+    OPT_union
+    OPT_enum
+
+    /* Decl */
+    OPT_undeserialized_declarations
+    OPT_referenced
+    OPT_implicit
+    OPT_used
+
+    /* VarDecl */
+    OPT_parenlistinit
     OPT_callinit
     OPT_listinit
-    OPT_parenlistinit
+    OPT_cinit
+
+    /* DeclRefExpr */
     OPT_non_odr_use_unevaluated
-    OPT_non_odr_use_constant
     OPT_non_odr_use_discarded
-    OPT_lvalue
+    OPT_non_odr_use_constant
+
+    /* IfStmt */
+    OPT_has_else
+
+    /* Stmt */
     OPT_bitfield
-    OPT_used
-    OPT_referenced
+    OPT_lvalue
+
+    /* ImplicitCastExpr */
     OPT_part_of_explicit_cast
-    OPT_sugar
-    OPT_imported
-    OPT_implicit
-    OPT_definition
+
+    /* AsmLabelAttr */
     OPT_IsLiteralLabel
+
+    /* Attr */
     OPT_Inherited
     OPT_Implicit
-    OPT_has_else
+
+    /* UnaryOperator */
+    OPT_prefix
+    OPT_postfix
     OPT_cannot_overflow
-    OPT_undeserialized_declarations
+
+    /* FullComment */
     OPT_Text
-    OPT_ComputeLHSTy
+
+    /* CompoundAssignOperator */
     OPT_ComputeResultTy
+    OPT_ComputeLHSTy
+
   <intptr_t>
     POINTER
   <long long>
     INTEGER
   <char *>
     NAME
+    ANAME
     SQNAME
     DQNAME
     SRC
-    MEMBER
 %nterm
   <Loc>
     Loc
@@ -579,7 +629,8 @@
 %%
 
 // Naming conventions:
-//  All lowercase names are optional non-terminal tokens.
+// - All lowercase leading names are optional non-terminal tokens.
+// - All "opt_" leading names are both optional and represent options.
 
 Start: Node EOL
   {
@@ -592,21 +643,21 @@ Start: Node EOL
   }
 
 Node: NULL {}
+ | IntValue INTEGER {}
+ | Record POINTER BareType {}
+ | Typedef POINTER BareType {}
+ | Field POINTER SQNAME BareType {}
+ | Enum POINTER SQNAME {}
  | AttrNode {}
  | CommentNode {}
  | DeclNode {}
  | TypeNode {}
- | StmtNode {}
- | Record POINTER BareType {}
- | Typedef POINTER BareType {}
- | Field POINTER SQNAME BareType {}
- | IntValue INTEGER {}
- | Enum POINTER SQNAME {}
+ | StmtNode {} 
 
 AttrNode: ModeAttr Attr NAME {}
  | NoThrowAttr Attr {}
  | NonNullAttr Attr ArgIndices {}
- | AsmLabelAttr Attr DQNAME is_literal_label {}
+ | AsmLabelAttr Attr DQNAME opt_IsLiteralLabel {}
  | DeprecatedAttr Attr DQNAME DQNAME {}
  | BuiltinAttr Attr INTEGER {}
  | ReturnsTwiceAttr Attr {}
@@ -624,18 +675,18 @@ AttrNode: ModeAttr Attr NAME {}
 
 CommentNode: FullComment Comment {}
  | ParagraphComment Comment {}
- | TextComment Comment WithText {}
+ | TextComment Comment Text {}
 
 DeclNode: TranslationUnitDecl Decl {}
  | TypedefDecl Decl NAME BareType {}
- | RecordDecl Decl Class name definition {}
+ | RecordDecl Decl Class name opt_definition {}
  | FieldDecl Decl name BareType {}
- | FunctionDecl Decl NAME BareType storage inline {}
+ | FunctionDecl Decl NAME BareType opt_storage opt_inline {}
  | ParmVarDecl Decl name BareType {}
  | IndirectFieldDecl Decl NAME BareType {}
  | EnumDecl Decl name {}
  | EnumConstantDecl Decl NAME BareType {}
- | VarDecl Decl NAME BareType storage init_style {}
+ | VarDecl Decl NAME BareType opt_storage opt_init_style {}
 
 TypeNode: BuiltinType Type {}
  | RecordType Type {} 
@@ -643,7 +694,7 @@ TypeNode: BuiltinType Type {}
  | ConstantArrayType Type INTEGER {}
  | ElaboratedType Type {}
  | TypedefType Type {}
- | QualType Type const volatile {}
+ | QualType Type opt_const opt_volatile {}
  | EnumType Type {}
  | FunctionProtoType Type NAME {}
  | ParenType Type {}
@@ -653,7 +704,7 @@ StmtNode: ExprNode {}
  | ReturnStmt Stmt {}
  | DeclStmt Stmt {}
  | WhileStmt Stmt {}
- | IfStmt Stmt has_else {}
+ | IfStmt Stmt opt_has_else {}
  | ForStmt Stmt {}
  | NullStmt Stmt {}
  | GotoStmt Stmt Label {}
@@ -666,10 +717,9 @@ StmtNode: ExprNode {}
 
 ExprNode: LiteralNode {}
  | OperatorNode {}
+ | CastExprNode {}
  | ParenExpr Expr {}
- | CStyleCastExpr CastExpr {}
- | ImplicitCastExpr CastExpr part_of_explicit_cast {}
- | DeclRefExpr Expr Ref non_odr_use {}
+ | DeclRefExpr Expr DeclRef opt_non_odr_use {}
  | ConstantExpr Expr {}
  | CallExpr Expr {}
  | MemberExpr Expr Member {}
@@ -682,84 +732,93 @@ LiteralNode: IntegerLiteral Expr INTEGER {}
  | CharacterLiteral Expr INTEGER {} 
  | StringLiteral Expr DQNAME {}
 
-OperatorNode: UnaryOperator Expr PrefixPostfix Operator cannot_overflow {}
+OperatorNode: UnaryOperator Expr PrefixPostfix Operator opt_cannot_overflow {}
  | BinaryOperator Expr Operator {}
  | ConditionalOperator Expr {}
- | CompoundAssignOperator Expr Operator WithComputeLHSTy WithComputeResultTy {}
+ | CompoundAssignOperator Expr Operator ComputeLHSTy ComputeResultTy {}
 
-Attr: POINTER AngledRange is_inherited is_implicit
+CastExprNode: CStyleCastExpr CastExpr {}
+ | ImplicitCastExpr CastExpr opt_part_of_explicit_cast {}
+
+Attr: POINTER AngledRange opt_Inherited opt_Implicit
 
 Comment: POINTER AngledRange
 
-Decl: POINTER parent prev AngledRange Loc imported implicit used_or_referenced undeserialized_declarations
+Decl: POINTER parent prev AngledRange Loc opt_imported opt_implicit opt_used_or_referenced opt_undeserialized_declarations
 
-Type: POINTER BareType sugar imported
+Type: POINTER BareType opt_sugar opt_imported
 
 Stmt: POINTER AngledRange
 
-Expr: Stmt BareType value_kind object_kind
+Expr: Stmt BareType opt_value_kind opt_object_kind
 
 CastExpr: Expr Cast
 
-Member: MEMBER POINTER
+Member: MemberAccess MemberDecl POINTER
 
-Operator: Comma
- | Remainder
- | Division
- | Multiplication
- | Subtraction
- | Addition
- | BitwiseAND
- | BitwiseOR
- | BitwiseXOR
- | BitwiseNOT
- | LogicalNOT
- | GreaterThan
- | GreaterThanOrEqual
- | LessThan
- | LessThanOrEqual
- | Equality
- | Inequality
- | Assignment
- | AdditionAssignment
- | SubtractionAssignment
- | MultiplicationAssignment
- | DivisionAssignment
- | RemainderAssignment
- | BitwiseXORAssignment
- | BitwiseORAssignment
- | BitwiseANDAssignment
- | RightShift
- | RightShiftAssignment
- | LeftShift
- | LeftShiftAssignment
- | Decrement
- | Increment
- | LogicalAND
- | LogicalOR
+MemberAccess: OPT_arrow
+ | OPT_dot
 
-Cast: IntegralCast
- | LValueToRValue
- | FunctionToPointerDecay
- | BuiltinFnToFnPtr
- | BitCast
- | NullToPointer
- | NoOp
- | ToVoid
- | ArrayToPointerDecay
- | IntegralToFloating
- | IntegralToPointer
+MemberDecl: NAME
+ | ANAME
 
-Trait: KW_alignof
- | KW_sizeof
+Operator: OPT_Comma
+ | OPT_Remainder
+ | OPT_Division
+ | OPT_Multiplication
+ | OPT_Subtraction
+ | OPT_Addition
+ | OPT_BitwiseAND
+ | OPT_BitwiseOR
+ | OPT_BitwiseXOR
+ | OPT_BitwiseNOT
+ | OPT_LogicalAND
+ | OPT_LogicalOR
+ | OPT_LogicalNOT
+ | OPT_GreaterThan
+ | OPT_GreaterThanOrEqual
+ | OPT_LessThan
+ | OPT_LessThanOrEqual
+ | OPT_Equality
+ | OPT_Inequality
+ | OPT_Assignment
+ | OPT_AdditionAssignment
+ | OPT_SubtractionAssignment
+ | OPT_MultiplicationAssignment
+ | OPT_DivisionAssignment
+ | OPT_RemainderAssignment
+ | OPT_BitwiseXORAssignment
+ | OPT_BitwiseORAssignment
+ | OPT_BitwiseANDAssignment
+ | OPT_RightShift
+ | OPT_RightShiftAssignment
+ | OPT_LeftShift
+ | OPT_LeftShiftAssignment
+ | OPT_Decrement
+ | OPT_Increment
 
-Class: KW_struct
- | KW_union
- | KW_enum
+Cast: OPT_IntegralCast
+ | OPT_LValueToRValue
+ | OPT_FunctionToPointerDecay
+ | OPT_BuiltinFnToFnPtr
+ | OPT_BitCast
+ | OPT_NullToPointer
+ | OPT_NoOp
+ | OPT_ToVoid
+ | OPT_ArrayToPointerDecay
+ | OPT_IntegralToFloating
+ | OPT_IntegralToPointer
+
+Trait: OPT_alignof
+ | OPT_sizeof
+
+Class: OPT_struct
+ | OPT_union
+ | OPT_enum
 
 Label: SQNAME POINTER
 
-Ref: NAME POINTER SQNAME BareType
+DeclRef: NAME POINTER SQNAME BareType
 
 AngledRange: '<' Range '>' { $$ = $2; }
 
@@ -809,80 +868,80 @@ ArgIndices: INTEGER
     $$ = $1 | (0U << $2);
   }
 
-WithText: OPT_Text DQNAME
+Text: OPT_Text DQNAME
 
-WithComputeLHSTy: OPT_ComputeLHSTy BareType
+ComputeLHSTy: OPT_ComputeLHSTy BareType
 
-WithComputeResultTy: OPT_ComputeResultTy BareType
+ComputeResultTy: OPT_ComputeResultTy BareType
 
-PrefixPostfix: PREFIX
- | POSTFIX
+PrefixPostfix: OPT_prefix
+ | OPT_postfix
 
-storage:
- | KW_extern
- | KW_static
+opt_storage:
+ | OPT_extern
+ | OPT_static
 
-inline:
- | KW_inline
+opt_inline:
+ | OPT_inline
 
-const:
- | KW_const
+opt_const:
+ | OPT_const
 
-volatile:
- | KW_volatile
+opt_volatile:
+ | OPT_volatile
 
-init_style:
+opt_init_style:
  | OPT_cinit
  | OPT_callinit
  | OPT_listinit
  | OPT_parenlistinit
 
-used_or_referenced:
+opt_used_or_referenced:
  | OPT_used
  | OPT_referenced
 
-cannot_overflow:
+opt_cannot_overflow:
  | OPT_cannot_overflow
 
-part_of_explicit_cast:
+opt_part_of_explicit_cast:
  | OPT_part_of_explicit_cast
 
-sugar:
+opt_sugar:
  | OPT_sugar
 
-imported:
+opt_imported:
  | OPT_imported
 
-implicit:
+opt_implicit:
  | OPT_implicit
 
-has_else:
+opt_has_else:
  | OPT_has_else
 
-non_odr_use:
+opt_non_odr_use:
  | OPT_non_odr_use_unevaluated
  | OPT_non_odr_use_constant
  | OPT_non_odr_use_discarded
 
-value_kind:
+opt_value_kind:
  | OPT_lvalue
 
-object_kind:
+opt_object_kind:
  | OPT_bitfield
 
-definition:
+opt_definition:
  | OPT_definition
 
-is_literal_label:
+opt_IsLiteralLabel:
  | OPT_IsLiteralLabel
 
-is_inherited:
+opt_Inherited:
  | OPT_Inherited
 
-is_implicit:
+opt_Implicit:
  | OPT_Implicit
 
-undeserialized_declarations:
+opt_undeserialized_declarations:
  | OPT_undeserialized_declarations
 
 name:

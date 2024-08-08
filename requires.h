@@ -19,31 +19,31 @@ typedef struct {
   const char *desugared;
 } BareType;
 
+typedef struct {
+  const char *decl;
+  intptr_t pointer;
+  const char *name;
+  BareType type;
+} DeclRef;
+
+typedef struct {
+  intptr_t pointer;
+} Member;
+
 typedef unsigned ArgIndices;
 typedef Range AngledRange;
 
 #define ARG_INDICES_MAX (sizeof(ArgIndices) * 8)
 
-#define Options_I1(n) Options_I2(n)
-#define Options_I2(n) Options##n
-#define Options(...) Options_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+#define Inclusive(...) OPTIONS(__VA_ARGS__)
+#define Exclusive(...) OPTIONS(__VA_ARGS__)
 
-#define Inclusive(...) Options(__VA_ARGS__)
-#define Exclusive(...) Options(__VA_ARGS__)
+#define OPTIONS_I1(n) OPTIONS_I2(n)
+#define OPTIONS_I2(n) OPTIONS##n
+#define OPTIONS(...) OPTIONS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 
-#define Options1(a, ...) uint32_t is_##a : 1
-
-#define Options2(a, ...)                                                       \
-  Options1(a);                                                                 \
-  Options1(__VA_ARGS__)
-
-#define Options3(a, ...)                                                       \
-  Options1(a);                                                                 \
-  Options2(__VA_ARGS__)
-
-#define Options4(a, ...)                                                       \
-  Options1(a);                                                                 \
-  Options3(__VA_ARGS__)
+#define OPTIONS1(a, ...) uint32_t opt_##a : 1
+#include "options.h"
 
 #define IS_WITHOUT_BODY(base)                                                  \
   { IS_##base }
@@ -81,15 +81,79 @@ typedef Range AngledRange;
   Inclusive(imported, implicit, is_undeserialized_declarations);               \
   Exclusive(used, referenced);
 
-#define Attr(X, ...) struct X##Attr IS(ATTR, ##__VA_ARGS__) X##Attr
-#define Comment(X, ...) struct X##Comment IS(COMMENT, ##__VA_ARGS__) X##Comment
-#define Decl(X, ...) struct X##Decl IS(DECL, ##__VA_ARGS__) X##Decl
+#define IS_TYPE                                                                \
+  IS_BASE                                                                      \
+                                                                               \
+  BareType type;                                                               \
+  Inclusive(sugar, imported);
+
+#define IS_STMT                                                                \
+  IS_BASE                                                                      \
+                                                                               \
+  AngledRange range;
+
+#define IS_EXPR                                                                \
+  IS_STMT                                                                      \
+                                                                               \
+  BareType type;                                                               \
+  Inclusive(lvalue, bitfield);
+
+#define IS_OPERATOR                                                            \
+  IS_EXPR                                                                      \
+                                                                               \
+  Exclusive(Comma, Remainder, Division, Multiplication, Subtraction, Addition, \
+            BitwiseAND, BitwiseOR, BitwiseXOR, BitwiseNOT, LogicalAND,         \
+            LogicalOR, LogicalNOT, GreaterThan, GreaterThanOrEqual, LessThan,  \
+            LessThanOrEqual, Equality, Inequality, Assignment,                 \
+            AdditionAssignment, SubtractionAssignment,                         \
+            MultiplicationAssignment, DivisionAssignment, RemainderAssignment, \
+            BitwiseXORAssignment, BitwiseORAssignment, BitwiseANDAssignment,   \
+            RightShift, RightShiftAssignment, LeftShift, LeftShiftAssignment,  \
+            Decrement, Increment);
+
+#define IS_CAST_EXPR                                                           \
+  IS_EXPR                                                                      \
+                                                                               \
+  Inclusive(IntegralCast, LValueToRValue, FunctionToPointerDecay,              \
+            BuiltinFnToFnPtr, BitCast, NullToPointer, NoOp, ToVoid,            \
+            ArrayToPointerDecay, IntegralToFloating, IntegralToPointer);
+
+#define Attr(X, ...) struct IS(ATTR, ##__VA_ARGS__) X##Attr
+#define Comment(X, ...) struct IS(COMMENT, ##__VA_ARGS__) X##Comment
+#define Decl(X, ...) struct IS(DECL, ##__VA_ARGS__) X##Decl
+#define Type(X, ...) struct IS(TYPE, ##__VA_ARGS__) X##Type
+#define Stmt(X, ...) struct IS(STMT, ##__VA_ARGS__) X##Stmt
+#define Expr(X, ...) struct IS(EXPR, ##__VA_ARGS__) X##Expr
+#define Literal(X, ...) struct IS(EXPR, ##__VA_ARGS__) X##Literal
+#define Operator(X, ...) struct IS(OPERATOR, ##__VA_ARGS__) X##Operator
+#define CastExpr(X, ...) struct IS(CAST_EXPR, ##__VA_ARGS__) X##CastExpr
 
 struct Node {
   union {
     struct {
       IS_BASE
     };
+
+    union {
+      long long i;
+      unsigned long long u;
+    } IntValue;
+
+    struct {
+      intptr_t pointer;
+      BareType type;
+    } Record, Typedef;
+
+    struct {
+      intptr_t pointer;
+      const char *name;
+      BareType type;
+    } Field;
+
+    struct {
+      intptr_t pointer;
+      const char *name;
+    } Enum;
 
     Attr(Mode, { const char *name; });
     Attr(NoThrow);
@@ -169,5 +233,81 @@ struct Node {
       const char *name;
       BareType type;
     });
+
+    Type(Builtin);
+    Type(Record);
+    Type(Pointer);
+    Type(ConstantArray, { uint64_t size; });
+    Type(Elaborated);
+    Type(Typedef);
+    Type(Qual, { Inclusive(const, volatile); });
+    Type(Enum);
+    Type(FunctionProto, { const char *name; });
+    Type(Paren);
+
+    Stmt(Compound);
+    Stmt(Return);
+    Stmt(Decl);
+    Stmt(While);
+    Stmt(If, { Inclusive(has_else); });
+    Stmt(For);
+    Stmt(Null);
+    Stmt(Goto);
+    Stmt(Switch);
+    Stmt(Case);
+    Stmt(Default);
+    Stmt(Label);
+    Stmt(Continue);
+    Stmt(Break);
+
+    Expr(Paren);
+    Expr(DeclRef, {
+      Exclusive(non_odr_use_unevaluated, non_odr_use_constant,
+                non_odr_use_discarded);
+      DeclRef ref;
+    });
+    Expr(ConstantExpr);
+    Expr(Call);
+    Expr(Member, { Member member; });
+    Expr(ArraySubscript);
+    Expr(InitList);
+    Expr(OffsetOf);
+    Expr(UnaryExprOrTypeTrait, {
+      Exclusive(alignof, sizeof);
+      BareType argument_type;
+    });
+
+    Literal(Integer, {
+      union {
+        long long i;
+        unsigned long long u;
+      };
+    });
+    Literal(Character, { char c; });
+    Literal(String, { const char *s; });
+
+    Operator(Unary, {
+      Exclusive(prefix, postfix);
+      Inclusive(cannot_overflow);
+    });
+    Operator(Binary);
+    Operator(Conditional);
+    Operator(CompoundAssign, {
+      BareType computation_lhs_type;
+      BareType computation_result_type;
+    });
+
+    CastExpr(CStyle);
+    CastExpr(Implicit, { Inclusive(part_of_explicit_cast); });
   };
 };
+
+#undef Attr
+#undef Comment
+#undef Decl
+#undef Type
+#undef Stmt
+#undef Expr
+#undef Literal
+#undef Operator
+#undef CastExpr
