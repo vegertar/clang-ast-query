@@ -45,7 +45,7 @@ endif
 
 GENHDRS+= parse.h scan.h
 GENSRCS+= parse.c scan.c
-SRCS+= print.c array.c sql.c html.c util.c murmur3.c main.c ${GENSRCS}
+SRCS+= print.c array.c string.c sql.c html.c util.c murmur3.c main.c ${GENSRCS}
 
 build: ${GENHDRS} caq
 

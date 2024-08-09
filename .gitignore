@@ -16,6 +16,8 @@
 !/print.h
 !/array.h
 !/array.c
+!/string.h
+!/string.c
 !/sql.h
 !/sql.c
 !/html.h

@@ -6,15 +6,10 @@
 #define ARRAY_SIZE_TYPE unsigned
 #endif // ARRAY_SIZE_TYPE
 
-#ifndef ARRAY_SSIZE_TYPE
-#define ARRAY_SSIZE_TYPE signed
-#endif // ARRAY_SIZE_TYPE
-
 #define DECL_ARRAY(name, type)                                                 \
   struct name {                                                                \
-    ARRAY_size_t n;                                                            \
-    ARRAY_size_t i;                                                            \
     type *data;                                                                \
+    ARRAY_size_t n, i;                                                         \
   }
 
 #define IMPL_ARRAY_RESERVE(name, type)                                         \
@@ -24,7 +19,7 @@
   }
 
 #define IMPL_ARRAY_SET(name, type)                                             \
-  struct name *name##_set(struct name *p, ARRAY_ssize_t i, type item) {        \
+  struct name *name##_set(struct name *p, ARRAY_size_t i, type item) {         \
     return (struct name *)ARRAY_set((struct ARRAY_base *)p, sizeof(type), i,   \
                                     &item, 1, NULL);                           \
   }
@@ -68,7 +63,6 @@
   }
 
 typedef ARRAY_SIZE_TYPE ARRAY_size_t;
-typedef ARRAY_SSIZE_TYPE ARRAY_ssize_t;
 typedef int (*ARRAY_compare_t)(const void *v, const void *element, size_t n);
 typedef void *(*ARRAY_init_t)(void *dst, const void *v, size_t n);
 typedef void *(*ARRAY_move_t)(void *dst, const void *v, size_t n);
@@ -82,13 +76,15 @@ enum array_destroy_option {
 
 DECL_ARRAY(ARRAY_base, void);
 
+size_t proper_capacity(size_t n);
+
 struct ARRAY_base *ARRAY_reserve(struct ARRAY_base *p, ARRAY_size_t size,
                                  ARRAY_size_t n);
 struct ARRAY_base *ARRAY_set(struct ARRAY_base *p, ARRAY_size_t size,
-                             ARRAY_ssize_t at, const void *src,
+                             ARRAY_size_t at, const void *src,
                              ARRAY_size_t nmem, ARRAY_move_t init);
 struct ARRAY_base *ARRAY_insert(struct ARRAY_base *p, ARRAY_size_t size,
-                                ARRAY_ssize_t at, const void *src,
+                                ARRAY_size_t at, const void *src,
                                 ARRAY_size_t nmem, ARRAY_init_t init,
                                 ARRAY_move_t move);
 struct ARRAY_base *ARRAY_clear(struct ARRAY_base *p, ARRAY_size_t size,

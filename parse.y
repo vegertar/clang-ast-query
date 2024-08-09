@@ -374,11 +374,11 @@
 %printer { fprintf(yyo, "%s", "col"); } COL;
 %printer { fprintf(yyo, "%d", $$); } <int>;
 %printer { fprintf(yyo, "\"%s\"", $$); } <char *>;
-%printer { print_type(yyo, &$$); } <struct type>;
+// %printer { print_type(yyo, &$$); } <struct type>;
 // %printer { print_array(yyo, &$$); } <struct array>;
 // %printer { print_loc(yyo, &$$); } <Loc>;
 // %printer { print_range(yyo, &$$); } <Range>;
-%printer { print_node(yyo, &$$); } <struct node>;
+// %printer { print_node(yyo, &$$); } <struct node>;
 
 %token
     EOL
@@ -620,9 +620,9 @@
   <Range>
     Range
     AngledRange
-  <struct type>
+  <BareType>
     BareType
-  <struct node>
+  <Node>
     Node
   <ArgIndices>
     ArgIndices
@@ -848,8 +848,8 @@ ColLoc: COL ':' INTEGER
     $$ = (Loc){last_loc_src, last_loc_line, $3};
   }
 
-BareType: SQNAME { $$ = (struct type){$1}; }
- | SQNAME ':' SQNAME  { $$ = (struct type){$1, $3}; }
+BareType: SQNAME { $$ = (BareType){$1}; }
+ | SQNAME ':' SQNAME { $$ = (BareType){$1, $3}; }
 
 ArgIndices: INTEGER
   {

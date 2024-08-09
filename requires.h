@@ -135,7 +135,7 @@ typedef Range AngledRange;
     };                                                                         \
   }
 
-struct Node {
+typedef struct {
   union {
     struct {
       IS_BASE();
@@ -290,7 +290,7 @@ struct Node {
     CastExpr(CStyle, {});
     CastExpr(Implicit, {}, part_of_explicit_cast);
   };
-};
+} Node;
 
 #undef Raw
 #undef Attr

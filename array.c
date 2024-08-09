@@ -5,14 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline ARRAY_size_t proper_capacity(ARRAY_size_t n) {
+size_t proper_capacity(size_t n) {
   if (!n)
     return 0;
-  ARRAY_size_t lower_bits = 0;
-  ARRAY_size_t m = n;
+  size_t lower_bits = 0;
+  size_t m = n;
   while ((m >>= 1))
     ++lower_bits;
-  ARRAY_size_t lower = 1 << lower_bits;
+  size_t lower = 1 << lower_bits;
   return lower == n ? lower : (lower << 1);
 }
 
@@ -45,9 +45,8 @@ TEST(ARRAY_reserve, {
 })
 
 struct ARRAY_base *ARRAY_set(struct ARRAY_base *p, ARRAY_size_t size,
-                             ARRAY_ssize_t at, const void *src,
+                             ARRAY_size_t at, const void *src,
                              ARRAY_size_t nmem, ARRAY_move_t init) {
-  assert(at >= 0);
   ARRAY_size_t i = at + nmem;
 
   if (p->n < i)
@@ -84,10 +83,9 @@ TEST(ARRAY_set, {
 })
 
 struct ARRAY_base *ARRAY_insert(struct ARRAY_base *p, ARRAY_size_t size,
-                                ARRAY_ssize_t at, const void *src,
+                                ARRAY_size_t at, const void *src,
                                 ARRAY_size_t nmem, ARRAY_init_t init,
                                 ARRAY_move_t move) {
-  assert(at >= 0);
   if (at >= p->i)
     return ARRAY_set(p, size, at, src, nmem, init);
 
