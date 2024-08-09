@@ -56,7 +56,8 @@
   do {                                                                        \
     char *end;                                                                \
     errno = 0;                                                                \
-    yylval->TOK_##X = yytext[0] == '-'                                        \
+    _Bool is_negative = yytext[0] == '-';                                     \
+    yylval->TOK_##X = is_negative                                             \
           ? strtoll(yytext, &end, base)                                       \
           : strtoul(yytext, &end, base);                                      \
     if (errno || *end) return TOK_YYUNDEF;                                    \

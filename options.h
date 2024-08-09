@@ -129,3 +129,35 @@
 #define OPTIONS34(a, ...)                                                      \
   OPTIONS1(a);                                                                 \
   OPTIONS33(__VA_ARGS__)
+
+#define OPTIONS35(a, ...)                                                      \
+  OPTIONS1(a);                                                                 \
+  OPTIONS34(__VA_ARGS__)
+
+#define OPTIONS36(a, ...)                                                      \
+  OPTIONS1(a);                                                                 \
+  OPTIONS35(__VA_ARGS__)
+
+#define OPTIONS37(a, ...)                                                      \
+  OPTIONS1(a);                                                                 \
+  OPTIONS36(__VA_ARGS__)
+
+#define OPTIONS38(a, ...)                                                      \
+  OPTIONS1(a);                                                                 \
+  OPTIONS37(__VA_ARGS__)
+
+#define OPTIONS39(a, ...)                                                      \
+  OPTIONS1(a);                                                                 \
+  OPTIONS38(__VA_ARGS__)
+
+#define OPTIONS40(a, ...)                                                      \
+  OPTIONS1(a);                                                                 \
+  OPTIONS39(__VA_ARGS__)
+
+#define OPTIONS41(a, ...)                                                      \
+  OPTIONS1(a);                                                                 \
+  OPTIONS40(__VA_ARGS__)
+
+#define OPTIONS42(a, ...)                                                      \
+  OPTIONS1(a);                                                                 \
+  OPTIONS41(__VA_ARGS__)

@@ -644,10 +644,10 @@ Start: Node EOL
 
 Node: NULL {}
  | IntValue INTEGER {}
+ | Enum POINTER SQNAME {} 
+ | Typedef POINTER BareType {} 
  | Record POINTER BareType {}
- | Typedef POINTER BareType {}
  | Field POINTER SQNAME BareType {}
- | Enum POINTER SQNAME {}
  | AttrNode {}
  | CommentNode {}
  | DeclNode {}
