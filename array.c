@@ -24,8 +24,7 @@ TEST(proper_capacity, {
   ASSERT(proper_capacity(4) == 4);
 })
 
-struct ARRAY_base *ARRAY_reserve(struct ARRAY_base *p, ARRAY_size_t size,
-                                 ARRAY_size_t n) {
+ARRAY_t *ARRAY_reserve(ARRAY_t *p, size_t size, ARRAY_size_t n) {
   if (p->n < n) {
     void *data = realloc(p->data, size * n);
     assert(data);
@@ -36,7 +35,7 @@ struct ARRAY_base *ARRAY_reserve(struct ARRAY_base *p, ARRAY_size_t size,
 }
 
 TEST(ARRAY_reserve, {
-  struct ARRAY_base seq = {};
+  ARRAY_t seq = {};
   ARRAY_reserve(&seq, sizeof(int), 1);
   ASSERT(seq.data);
   ASSERT(seq.i == 0);
@@ -44,9 +43,8 @@ TEST(ARRAY_reserve, {
   free(seq.data);
 })
 
-struct ARRAY_base *ARRAY_set(struct ARRAY_base *p, ARRAY_size_t size,
-                             ARRAY_size_t at, const void *src,
-                             ARRAY_size_t nmem, ARRAY_move_t init) {
+ARRAY_t *ARRAY_set(ARRAY_t *p, size_t size, ARRAY_size_t at, const void *src,
+                   ARRAY_size_t nmem, ARRAY_move_t init) {
   ARRAY_size_t i = at + nmem;
 
   if (p->n < i)
@@ -64,7 +62,7 @@ struct ARRAY_base *ARRAY_set(struct ARRAY_base *p, ARRAY_size_t size,
 }
 
 TEST(ARRAY_set, {
-  struct ARRAY_base seq = {};
+  ARRAY_t seq = {};
   for (int i = 0; i < 10; ++i)
     ARRAY_set(&seq, sizeof(i), i, &i, 1, NULL);
   ASSERT(seq.i == 10);
@@ -82,10 +80,8 @@ TEST(ARRAY_set, {
   free(seq.data);
 })
 
-struct ARRAY_base *ARRAY_insert(struct ARRAY_base *p, ARRAY_size_t size,
-                                ARRAY_size_t at, const void *src,
-                                ARRAY_size_t nmem, ARRAY_init_t init,
-                                ARRAY_move_t move) {
+ARRAY_t *ARRAY_insert(ARRAY_t *p, size_t size, ARRAY_size_t at, const void *src,
+                      ARRAY_size_t nmem, ARRAY_init_t init, ARRAY_move_t move) {
   if (at >= p->i)
     return ARRAY_set(p, size, at, src, nmem, init);
 
@@ -99,7 +95,7 @@ struct ARRAY_base *ARRAY_insert(struct ARRAY_base *p, ARRAY_size_t size,
 }
 
 TEST(ARRAY_insert, {
-  struct ARRAY_base seq = {};
+  ARRAY_t seq = {};
   for (int i = 0; i < 10; ++i)
     ARRAY_set(&seq, sizeof(i), i, &i, 1, NULL);
 
@@ -116,9 +112,8 @@ TEST(ARRAY_insert, {
   free(seq.data);
 })
 
-struct ARRAY_base *ARRAY_clear(struct ARRAY_base *p, ARRAY_size_t size,
-                               ARRAY_destroy_t destroy,
-                               enum array_destroy_option option) {
+ARRAY_t *ARRAY_clear(ARRAY_t *p, size_t size, ARRAY_destroy_t destroy,
+                     enum array_destroy_option option) {
   if (destroy && option != ARRAY_DESTROY_CONTAINER_ONLY) {
     for (ARRAY_size_t i = 0; i < p->i; ++i) {
       destroy((char *)p->data + i * size);
@@ -134,7 +129,7 @@ struct ARRAY_base *ARRAY_clear(struct ARRAY_base *p, ARRAY_size_t size,
 }
 
 TEST(ARRAY_clear, {
-  struct ARRAY_base seq = {};
+  ARRAY_t seq = {};
   for (int i = 0; i < 10; ++i)
     ARRAY_set(&seq, sizeof(i), i, &i, 1, NULL);
 
@@ -148,8 +143,8 @@ TEST(ARRAY_clear, {
   ASSERT(!seq.data);
 })
 
-_Bool ARRAY_bsearch(const struct ARRAY_base *p, ARRAY_size_t size,
-                    ARRAY_compare_t compare, const void *v, ARRAY_size_t *i) {
+_Bool ARRAY_bsearch(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                    const void *v, ARRAY_size_t *i) {
   if (!v)
     return 0;
 
@@ -176,6 +171,76 @@ _Bool ARRAY_bsearch(const struct ARRAY_base *p, ARRAY_size_t size,
   return 0;
 }
 
+const void *ARRAY_hput(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                       ARRAY_hash_t hash, ARRAY_rehash_t rehash,
+                       ARRAY_access_t access, const void *v,
+                       ARRAY_move_t init) {
+  if (!v)
+    return NULL;
+
+  ARRAY_size_t i = 0;
+  const void *src = ARRAY_hget(p, size, compare, hash, rehash, access, v, &i);
+
+  // Either found the target or the table is full
+  if (src || i == p->n)
+    return src;
+
+  p->i++;
+  return (init ? init : memcpy)((char *)p->data + i * size, v, size);
+}
+
+const void *ARRAY_hget(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                       ARRAY_hash_t hash, ARRAY_rehash_t rehash,
+                       ARRAY_access_t access, const void *v,
+                       ARRAY_size_t *slot) {
+  if (!v)
+    return NULL;
+
+  assert(p->n && "Not initialized yet");
+
+  if (!compare)
+    compare = memcmp;
+  if (!hash)
+    hash = ARRAY_hash;
+  if (!rehash)
+    rehash = ARRAY_rehash;
+  if (!access)
+    access = ARRAY_access;
+
+  HASH_size_t code = hash(p, size, v);
+  ARRAY_size_t i = code % p->n;
+  ARRAY_size_t end = i;
+
+  const void *element;
+  HASH_size_t element_code;
+
+  do {
+    element = access(p, size, i);
+    element_code = hash(p, size, element);
+
+    // An available slot
+    if (element_code == 0) {
+      if (slot)
+        *slot = i;
+      return NULL;
+    }
+
+    // Found target
+    if (element_code == code && compare(v, element, size) == 0) {
+      if (slot)
+        *slot = i;
+      return element;
+    }
+
+    i = rehash(p, size, i) % p->n;
+  } while (i != end);
+
+  // Full
+  if (slot)
+    *slot = p->n;
+  return NULL;
+}
+
 #ifdef USE_TEST
 
 static int compare_int(const void *v, const void *element, size_t n) {
@@ -185,7 +250,7 @@ static int compare_int(const void *v, const void *element, size_t n) {
 #endif // USE_TEST
 
 TEST(ARRAY_bsearch, {
-  struct ARRAY_base seq = {};
+  ARRAY_t seq = {};
   for (int i = 0; i < 100; ++i)
     ARRAY_set(&seq, sizeof(i), i, &i, 1, NULL);
 

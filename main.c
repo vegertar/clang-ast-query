@@ -277,6 +277,8 @@ int main(int argc, char **argv) {
     *tmp = 0;
   }
 
+  parse_init();
+
   for (unsigned i = 0; !err && i < in_files.i; ++i) {
     const char *in_filename = ALT(in_files.data[i].filename, "/dev/stdin");
     const int in_kind = in_files.data[i].kind;
@@ -353,6 +355,7 @@ int main(int argc, char **argv) {
   html_halt();
   input_file_list_clear(&in_files, 1);
   string_clear(&in_content, 1);
+  parse_halt();
 
   return err;
 }

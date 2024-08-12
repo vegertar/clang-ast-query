@@ -17,7 +17,10 @@ static int help(const char *kind, void **p, const struct __tinfo *q) {
       fprintf(stderr, "  %s:\n", file);
       last_file = file;
     }
-    fprintf(stderr, "    %5d:%s\n", q[n].line, q[n].name);
+    fprintf(stderr, "    ");
+    if (q[n].func)
+      fprintf(stderr, "%s:", q[n].func);
+    fprintf(stderr, "%5d:%s\n", q[n].line, q[n].name);
   }
 
   return 0;

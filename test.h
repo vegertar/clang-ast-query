@@ -5,6 +5,7 @@
 struct __tinfo {
   const char *name;
   const char *file;
+  const char *func;
   unsigned line;
   _Bool enabled;
 };
@@ -23,7 +24,7 @@ extern __test_t test;
 #define TEST(name, ...)                                                        \
   static int __test_##name(const char *option);                                \
   __test_t __testcall_##name __testcall = __test_##name;                       \
-  const struct __tinfo __testinfo_##name __testinfo = {#name, __FILE__,        \
+  const struct __tinfo __testinfo_##name __testinfo = {#name, __FILE__, NULL,  \
                                                        __LINE__};              \
   static int __test_##name(const char *option) {                               \
     __VA_ARGS__                                                                \
@@ -55,8 +56,8 @@ int toggle(const char *option);
 
 #define TOGGLE(name, ...)                                                      \
   do {                                                                         \
-    static struct __tinfo __toggleinfo_##name __toggleinfo = {#name, __FILE__, \
-                                                              __LINE__};       \
+    static struct __tinfo __toggleinfo_##name __toggleinfo = {                 \
+        #name, __FILE__, __func__, __LINE__};                                  \
     static struct __tinfo *__togglehold_##name __togglehold =                  \
         &__toggleinfo_##name;                                                  \
     if (__togglehold_##name->enabled) {                                        \

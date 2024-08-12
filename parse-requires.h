@@ -1,5 +1,3 @@
-#pragma once
-
 #include "pp.h"
 #include <stdint.h>
 
@@ -40,7 +38,7 @@ typedef Range AngledRange;
 #define OPTIONS(...) OPTIONS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 
 #define OPTIONS1(a, ...) uint64_t opt_##a : 1
-#include "options.h"
+#include "parse-requires-inl.h"
 
 #define IS_BASE()                                                              \
   uint32_t level : 8;                                                          \

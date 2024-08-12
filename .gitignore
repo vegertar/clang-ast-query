@@ -4,10 +4,11 @@
 !/Makefile
 !/scan.l
 !/parse.y
-!/top.h
-!/requires.h
-!/options.h
-!/provides.h
+!/parse-top.h
+!/parse-requires.h
+!/parse-requires-inl.h
+!/parse-provides.h
+!/parse-impl.c
 !/pp.h
 !/main.c
 !/test.c
@@ -18,6 +19,8 @@
 !/array.c
 !/string.h
 !/string.c
+!/string_set.h
+!/string_set.c
 !/sql.h
 !/sql.c
 !/html.h

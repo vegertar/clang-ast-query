@@ -2,13 +2,13 @@
 
 // Emitted on top of the implementation file.
 %code top {
-  #include "top.h"
+  #include "parse-top.h"
 }
 
 // Emitted in the header file, before the opt_definition of YYSTYPE.
 %code requires {
   #include "array.h"
-  #include "requires.h"
+  #include "parse-requires.h"
  
   DECL_ARRAY(array, void *);
 
@@ -269,6 +269,8 @@
   struct string_pair add_string_map(struct string_map *map, const char *k, const char *v);
   /// The memory of the found type is owned by the underlying map.
   const char *find_string_map(struct string_map *map, const char *k);
+
+  #include "parse-provides.h"
 }
 
 // Emitted in the implementation file.
@@ -279,6 +281,8 @@
   #include <stdio.h>
   #include <errno.h>
   #include <limits.h>
+
+  #include "parse-impl.c"
 
   struct ast ast;
   struct src_set src_set;
@@ -295,7 +299,7 @@
   char tu[PATH_MAX];
   char cwd[PATH_MAX];
 
-  static char *last_loc_src;
+  static const char *last_loc_src;
   static unsigned last_loc_line;
 
   static char *get_pointer(char *s);
@@ -373,7 +377,7 @@
 %printer { fprintf(yyo, "%s", "line"); } LINE;
 %printer { fprintf(yyo, "%s", "col"); } COL;
 %printer { fprintf(yyo, "%d", $$); } <int>;
-%printer { fprintf(yyo, "\"%s\"", $$); } <char *>;
+// %printer { fprintf(yyo, "\"%s\"", $$); } <char *>;
 // %printer { print_type(yyo, &$$); } <struct type>;
 // %printer { print_array(yyo, &$$); } <struct array>;
 // %printer { print_loc(yyo, &$$); } <Loc>;
@@ -605,7 +609,7 @@
     POINTER
   <long long>
     INTEGER
-  <char *>
+  <const char *>
     NAME
     ANAME
     SQNAME

@@ -63,7 +63,7 @@ static int add_source(const char *path) {
     if (fp)
       fclose(fp);
     if (i != -1)
-      string_appends(&source_map.data[i].path, path, strlen(path));
+      string_append(&source_map.data[i].path, path, strlen(path));
   }
 
   return i;

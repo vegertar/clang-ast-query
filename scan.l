@@ -64,9 +64,7 @@
     return TOK_##X;                                                           \
   } while (0)
 
-static inline char * qname() {
-  return strndup(yytext + 1, yyleng - 2);
-}
+#define add_static(s, n) add_string(string_static(s, n))
 
 %}
 
@@ -300,13 +298,13 @@ col/:[0-9]+                     return(TOK_COL);
 {POINTER}                       ATOI(POINTER, 16);
 {INTEGER}                       ATOI(INTEGER, 10);
 
-{SRC}/:[0-9]+:[0-9]+            SET(SRC, (char *)add_src(yytext));
 {INDENT}/[^ \n]                 SET(INDENT, yyleng);
-{SQNAME}                        SET(SQNAME, qname());
-{DQNAME}                        SET(DQNAME, qname());
-"\xE2\x80\x8B"{ANAME}           SET(ANAME, strdup(yytext + 3));
-"\xE2\x80\x8B"{NAME}            SET(NAME, strdup(yytext + 3));
-{NAME}                          SET(NAME, strdup(yytext));
+{SRC}/:[0-9]+:[0-9]+            SET(SRC, add_static(yytext, yyleng));
+{SQNAME}                        SET(SQNAME, add_static(yytext + 1, yyleng - 2));
+{DQNAME}                        SET(DQNAME, add_static(yytext + 1, yyleng - 2));
+"\xE2\x80\x8B"{ANAME}           SET(ANAME, add_static(yytext + 3, yyleng - 3));
+"\xE2\x80\x8B"{NAME}            SET(NAME, add_static(yytext + 3, yyleng - 3));
+{NAME}                          SET(NAME, add_static(yytext, yyleng));
 
 ":"|","|"<"|">"                 return(yytext[0]);
 " "

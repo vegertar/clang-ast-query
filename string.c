@@ -4,13 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 
-struct string *string_reserve(struct string *p, size_t n) {
+struct string *string_reserve(struct string *p, string_size_t n) {
   if (p->flag == 2) {
     ARRAY_reserve((void *)p, sizeof(p->data[0]), proper_capacity(n + 1));
-  } else if (p->flag == 1 || p->flag == 0 && sizeof(p->s) - 1 < n) {
+  } else if (p->flag & 1 || STRING_BUFSIZ_ON_STACK - 1 < n) {
     struct string heap = {.flag = 2};
     ARRAY_reserve((void *)&heap, sizeof(heap.data[0]), proper_capacity(n + 1));
-    size_t len = string_len(p);
+    string_size_t len = string_len(p);
     memcpy(heap.data, string_get(p), len);
     heap.i = len;
     heap.data[len] = 0;
@@ -20,12 +20,13 @@ struct string *string_reserve(struct string *p, size_t n) {
   return p;
 }
 
-struct string *string_set(struct string *p, size_t i, const char *s, size_t n) {
-  size_t old_len = string_len(p);
-  size_t new_len = i + n;
+struct string *string_set(struct string *p, string_size_t i, const char *s,
+                          string_size_t n) {
+  string_size_t old_len = string_len(p);
+  string_size_t new_len = i + n;
 
   string_reserve(p, new_len);
-  assert(p->flag != 1);
+  assert(string_owned(p));
 
   char *start = (char *)string_get(p);
 
@@ -45,15 +46,15 @@ struct string *string_set(struct string *p, size_t i, const char *s, size_t n) {
   return p;
 }
 
-struct string *string_insert(struct string *p, size_t i, const char *s,
-                             size_t n) {
-  size_t old_len = string_len(p);
+struct string *string_insert(struct string *p, string_size_t i, const char *s,
+                             string_size_t n) {
+  string_size_t old_len = string_len(p);
   if (i >= old_len)
     return string_set(p, i, s, n);
 
   // allocate slots
   string_set(p, old_len, NULL, n);
-  assert(p->flag != 1);
+  assert(string_owned(p));
 
   char *dst = (char *)string_get(p) + i;
   memmove(dst + n, dst, old_len - i);
@@ -67,21 +68,22 @@ struct string *string_clear(struct string *p, int opt) {
     p->size = 0;
     p->s[0] = 0;
     break;
-  case 1:
-    p->data = NULL;
-    p->i = 0;
-    break;
   case 2:
     ARRAY_clear((void *)p, sizeof(p->data[0]), NULL, opt);
     if (p->data)
       p->data[0] = 0;
+    break;
+  case 1:
+  case 3:
+    p->data = NULL;
+    p->i = 0;
     break;
   }
 
   return p;
 }
 
-#define STR(s) s, sizeof(s) - 1
+#define STR(s) s, sizeof(s) - 1, 0
 
 TEST(string, {
   struct string s = string_create(STR("hello"));
@@ -91,7 +93,7 @@ TEST(string, {
 
   struct string l = string_literal("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
   ASSERT(string_len(&l) == 26);
-  ASSERT(l.flag == 1);
+  ASSERT(l.flag == 3);
 
   struct string h = string_create(STR("0123456789abcdefghijklmnopqrstuvwxyz"));
   ASSERT(strcmp(string_get(&h), "0123456789abcdefghijklmnopqrstuvwxyz") == 0);
