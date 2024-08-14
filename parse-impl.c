@@ -26,13 +26,14 @@ const char *add_string(struct string s) {
 void parse_init() {
   const char *string_set_size = getenv("STRING_SET_SIZE");
   int n = string_set_size ? atoi(string_set_size) : 10099;
+  TOGGLE(log_string_set_size, fprintf(stderr, "string set size is %d\n", n));
   StringSet_reserve(&all_strings, n);
 }
 
 void parse_halt() {
-  TOGGLE(dump_all_strings, StringSet_dump(&all_strings, NULL));
+  TOGGLE(dump_all_strings, StringSet_dump(&all_strings, stderr));
   TOGGLE(log_string_set_load_factor,
-         fprintf(stderr, "The load factor of <all_strings> is %.2f\n",
+         fprintf(stderr, "The load factor of string set is %.2f\n",
                  (float)all_strings.i / all_strings.n));
   StringSet_clear(&all_strings, 1);
 }

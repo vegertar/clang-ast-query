@@ -1,5 +1,18 @@
-#include "pp.h"
+#include "parse-requires-inl.h"
 #include <stdint.h>
+
+enum group {
+  GROUP_NULL,
+  GROUP_DECL,
+  GROUP_TYPE,
+  GROUP_ATTR,
+  GROUP_STMT,
+  GROUP_EXPR,
+  GROUP_LITERAL,
+  GROUP_OPERATOR,
+  GROUP_CAST_EXPR,
+  GROUP_COMMENT,
+};
 
 typedef struct {
   const char *file;
@@ -33,79 +46,87 @@ typedef Range AngledRange;
 
 #define ARG_INDICES_MAX (sizeof(ArgIndices) * 8)
 
-#define OPTIONS_I1(n) OPTIONS_I2(n)
-#define OPTIONS_I2(n) OPTIONS##n
-#define OPTIONS(...) OPTIONS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+#define LEVEL_WIDTH 8
+#define GROUP_WIDTH 8
+#define KIND_WIDTH 16
 
-#define OPTIONS1(a, ...) uint64_t opt_##a : 1
-#include "parse-requires-inl.h"
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#error "Little-endian platform is required"
+#endif
 
-#define IS_BASE()                                                              \
-  uint32_t level : 8;                                                          \
-  uint32_t group : 8;                                                          \
-  uint32_t kind : 16
+#define IS_NODE()                                                              \
+  union {                                                                      \
+    uint32_t node;                                                             \
+    struct {                                                                   \
+      uint32_t kind : KIND_WIDTH;                                              \
+      uint32_t group : GROUP_WIDTH;                                            \
+      uint32_t level : LEVEL_WIDTH;                                            \
+    };                                                                         \
+  }
 
 #define WITH_OPTIONS(...)                                                      \
   union {                                                                      \
-    uint64_t option;                                                           \
+    uint64_t options;                                                          \
     struct {                                                                   \
-      OPTIONS(__VA_ARGS__);                                                    \
+      OPTIONS(__VA_ARGS__)                                                     \
+    };                                                                         \
+    struct {                                                                   \
+      GROUPS(__VA_ARGS__)                                                      \
     };                                                                         \
   }
 
 #define IS_ATTR(...)                                                           \
-  IS_BASE();                                                                   \
+  IS_NODE();                                                                   \
   WITH_OPTIONS(inherited, implicit, ##__VA_ARGS__);                            \
   intptr_t pointer;                                                            \
   AngledRange range
 
 #define IS_COMMENT(...)                                                        \
-  IS_BASE();                                                                   \
+  IS_NODE();                                                                   \
   WITH_OPTIONS(__VA_ARGS__);                                                   \
   intptr_t pointer;                                                            \
   AngledRange range
 
 #define IS_DECL(...)                                                           \
-  IS_BASE();                                                                   \
-  WITH_OPTIONS(imported, implicit, is_undeserialized_declarations, used,       \
-               referenced, ##__VA_ARGS__);                                     \
-  intptr_t pointer;                                                            \
-  const char *parent;                                                          \
-  const char *prev;                                                            \
+  IS_NODE();                                                                   \
+  WITH_OPTIONS(imported, implicit, is_undeserialized_declarations,             \
+               _(used_or_referenced, used, referenced), ##__VA_ARGS__);        \
+  intptr_t pointer, parent, prev;                                              \
   AngledRange range;                                                           \
   Loc loc
 
 #define IS_TYPE(...)                                                           \
-  IS_BASE();                                                                   \
+  IS_NODE();                                                                   \
   WITH_OPTIONS(sugar, imported, ##__VA_ARGS__);                                \
   intptr_t pointer;                                                            \
   BareType type
 
 #define IS_STMT(...)                                                           \
-  IS_BASE();                                                                   \
+  IS_NODE();                                                                   \
   WITH_OPTIONS(__VA_ARGS__);                                                   \
   intptr_t pointer;                                                            \
   AngledRange range
 
 #define IS_EXPR(...)                                                           \
-  IS_STMT(lvalue, bitfield, ##__VA_ARGS__);                                    \
+  IS_STMT(_(value_kind, lvalue), _(object_kind, bitfield), ##__VA_ARGS__);     \
   BareType type
 
 #define IS_OPERATOR(...)                                                       \
-  IS_EXPR(Comma, Remainder, Division, Multiplication, Subtraction, Addition,   \
-          BitwiseAND, BitwiseOR, BitwiseXOR, BitwiseNOT, LogicalAND,           \
-          LogicalOR, LogicalNOT, GreaterThan, GreaterThanOrEqual, LessThan,    \
-          LessThanOrEqual, Equality, Inequality, Assignment,                   \
-          AdditionAssignment, SubtractionAssignment, MultiplicationAssignment, \
-          DivisionAssignment, RemainderAssignment, BitwiseXORAssignment,       \
-          BitwiseORAssignment, BitwiseANDAssignment, RightShift,               \
-          RightShiftAssignment, LeftShift, LeftShiftAssignment, Decrement,     \
-          Increment, ##__VA_ARGS__)
+  IS_EXPR(_(operator, Comma, Remainder, Division, Multiplication, Subtraction, \
+            Addition, BitwiseAND, BitwiseOR, BitwiseXOR, BitwiseNOT,           \
+            LogicalAND, LogicalOR, LogicalNOT, GreaterThan,                    \
+            GreaterThanOrEqual, LessThan, LessThanOrEqual, Equality,           \
+            Inequality, Assignment, AdditionAssignment, SubtractionAssignment, \
+            MultiplicationAssignment, DivisionAssignment, RemainderAssignment, \
+            BitwiseXORAssignment, BitwiseORAssignment, BitwiseANDAssignment,   \
+            RightShift, RightShiftAssignment, LeftShift, LeftShiftAssignment,  \
+            Decrement, Increment),                                             \
+          ##__VA_ARGS__)
 
 #define IS_CAST_EXPR(...)                                                      \
-  IS_EXPR(IntegralCast, LValueToRValue, FunctionToPointerDecay,                \
-          BuiltinFnToFnPtr, BitCast, NullToPointer, NoOp, ToVoid,              \
-          ArrayToPointerDecay, IntegralToFloating, IntegralToPointer,          \
+  IS_EXPR(_(cast, IntegralCast, LValueToRValue, FunctionToPointerDecay,        \
+            BuiltinFnToFnPtr, BitCast, NullToPointer, NoOp, ToVoid,            \
+            ArrayToPointerDecay, IntegralToFloating, IntegralToPointer),       \
           ##__VA_ARGS__)
 
 #define IS(X, Y, ...)                                                          \
@@ -114,7 +135,7 @@ typedef Range AngledRange;
     struct Y;                                                                  \
   }
 
-#define Raw(X, Y, ...) struct IS(BASE, Y, ##__VA_ARGS__) X
+#define Raw(X, Y, ...) struct IS(NODE, Y, ##__VA_ARGS__) X
 #define Attr(X, Y, ...) struct IS(ATTR, Y, ##__VA_ARGS__) X##Attr
 #define Comment(X, Y, ...) struct IS(COMMENT, Y, ##__VA_ARGS__) X##Comment
 #define Decl(X, Y, ...) struct IS(DECL, Y, ##__VA_ARGS__) X##Decl
@@ -134,9 +155,13 @@ typedef Range AngledRange;
   }
 
 typedef struct {
+  IS_DECL();
+} DeclNode;
+
+typedef struct {
   union {
     struct {
-      IS_BASE();
+      IS_NODE();
     };
 
     Raw(IntValue, INTEGER);
@@ -201,7 +226,8 @@ typedef struct {
       BareType type;
     });
     Decl(
-        Record, { const char *name; }, struct, union, enum, definition);
+        Record, { const char *name; }, _(class, struct, union, enum),
+        definition);
     Decl(Field, {
       const char *name;
       BareType type;
@@ -212,7 +238,7 @@ typedef struct {
           const char *name;
           BareType type;
         },
-        extern, static, inline);
+        _(storage, extern, static), inline);
     Decl(ParmVar, {
       const char *name;
       BareType type;
@@ -232,7 +258,8 @@ typedef struct {
           const char *name;
           BareType type;
         },
-        extern, static, cinit, callinit, listinit, parenlistinit);
+        _(storage, extern, static),
+        _(init_style, cinit, callinit, listinit, parenlistinit));
 
     Type(Builtin, {});
     Type(Record, {});
@@ -262,8 +289,9 @@ typedef struct {
 
     Expr(Paren, {});
     Expr(
-        DeclRef, { DeclRef ref; }, non_odr_use_unevaluated,
-        non_odr_use_constant, non_odr_use_discarded);
+        DeclRef, { DeclRef ref; },
+        _(non_odr_use, non_odr_use_unevaluated, non_odr_use_constant,
+          non_odr_use_discarded));
     Expr(ConstantExpr, {});
     Expr(Call, {});
     Expr(Member, { Member member; });
@@ -271,13 +299,14 @@ typedef struct {
     Expr(InitList, {});
     Expr(OffsetOf, {});
     Expr(
-        UnaryExprOrTypeTrait, { BareType argument_type; }, alignof, sizeof);
+        UnaryExprOrTypeTrait, { BareType argument_type; },
+        _(trait, alignof, sizeof));
 
     Literal(Integer, INTEGER);
     Literal(Character, { char c; });
     Literal(String, { const char *s; });
 
-    Operator(Unary, {}, prefix, postfix, cannot_overflow, );
+    Operator(Unary, {}, _(prefix_postfix, prefix, postfix), cannot_overflow);
     Operator(Binary, {});
     Operator(Conditional, {});
     Operator(CompoundAssign, {

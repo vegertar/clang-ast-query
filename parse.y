@@ -394,7 +394,7 @@
     PARENT
   <int>
     INDENT
-  <enum yytokentype>
+  <unsigned>
     TranslationUnitDecl
     IndirectFieldDecl
     EnumConstantDecl
@@ -628,8 +628,21 @@
     BareType
   <Node>
     Node
+    AttrNode
+    CommentNode
+    DeclNode
+    TypeNode
+    StmtNode
+  <DeclNode>
+    Decl
   <ArgIndices>
     ArgIndices
+  <intptr_t>
+    parent
+    prev
+  <unsigned>
+    opt_imported
+    opt_implicit
 %%
 
 // Naming conventions:
@@ -646,17 +659,17 @@ Start: Node EOL
     // ast_push(&ast, $2);
   }
 
-Node: NULL {}
+Node: NULL { $$.node = 0;  }
  | IntValue INTEGER {}
  | Enum POINTER SQNAME {} 
  | Typedef POINTER BareType {} 
  | Record POINTER BareType {}
  | Field POINTER SQNAME BareType {}
- | AttrNode {}
- | CommentNode {}
- | DeclNode {}
- | TypeNode {}
- | StmtNode {} 
+ | AttrNode
+ | CommentNode
+ | DeclNode
+ | TypeNode
+ | StmtNode
 
 AttrNode: ModeAttr Attr NAME {}
  | NoThrowAttr Attr {}
@@ -681,16 +694,16 @@ CommentNode: FullComment Comment {}
  | ParagraphComment Comment {}
  | TextComment Comment Text {}
 
-DeclNode: TranslationUnitDecl Decl {}
- | TypedefDecl Decl NAME BareType {}
- | RecordDecl Decl Class name opt_definition {}
- | FieldDecl Decl name BareType {}
- | FunctionDecl Decl NAME BareType opt_storage opt_inline {}
- | ParmVarDecl Decl name BareType {}
- | IndirectFieldDecl Decl NAME BareType {}
- | EnumDecl Decl name {}
- | EnumConstantDecl Decl NAME BareType {}
- | VarDecl Decl NAME BareType opt_storage opt_init_style {}
+DeclNode: TranslationUnitDecl Decl{ $$.node = $1; }
+ | TypedefDecl Decl NAME BareType { $$.node = $1; }
+ | RecordDecl Decl Class name opt_definition { $$.node = $1;}
+ | FieldDecl Decl name BareType { $$.node = $1; }
+ | FunctionDecl Decl NAME BareType opt_storage opt_inline { $$.node = $1; }
+ | ParmVarDecl Decl name BareType { $$.node = $1; }
+ | IndirectFieldDecl Decl NAME BareType {$$.node = $1;}
+ | EnumDecl Decl name { $$.node = $1; }
+ | EnumConstantDecl Decl NAME BareType { $$.node = $1; }
+ | VarDecl Decl NAME BareType opt_storage opt_init_style { $$.node = $1; }
 
 TypeNode: BuiltinType Type {}
  | RecordType Type {} 
@@ -749,6 +762,15 @@ Attr: POINTER AngledRange opt_Inherited opt_Implicit
 Comment: POINTER AngledRange
 
 Decl: POINTER parent prev AngledRange Loc opt_imported opt_implicit opt_used_or_referenced opt_undeserialized_declarations
+  {
+    $$.pointer = $1;
+    $$.parent = $2;
+    $$.prev = $3;
+    $$.range = $4;
+    $$.loc = $5;
+    $$.opt_imported = $6;
+    $$.opt_implicit = $7;
+  }
 
 Type: POINTER BareType opt_sugar opt_imported
 
@@ -852,7 +874,7 @@ ColLoc: COL ':' INTEGER
     $$ = (Loc){last_loc_src, last_loc_line, $3};
   }
 
-BareType: SQNAME { $$ = (BareType){$1}; }
+BareType: SQNAME     { $$ = (BareType){$1}; }
  | SQNAME ':' SQNAME { $$ = (BareType){$1, $3}; }
 
 ArgIndices: INTEGER
@@ -913,11 +935,11 @@ opt_part_of_explicit_cast:
 opt_sugar:
  | OPT_sugar
 
-opt_imported:
- | OPT_imported
+opt_imported:   { $$ = 0; }
+ | OPT_imported { $$ = 1; }
 
-opt_implicit:
- | OPT_implicit
+opt_implicit:   { $$ = 0; }
+ | OPT_implicit { $$ = 1; }
 
 opt_has_else:
  | OPT_has_else
@@ -957,11 +979,11 @@ integer:
 argument_type:
  | BareType
 
-prev:
- | PREV POINTER
+prev:             { $$ = 0; }
+ | PREV POINTER   { $$ = $2; }
 
-parent:
- | PARENT POINTER
+parent:           { $$ = 0; }
+ | PARENT POINTER { $$ = $2; }
 
 %%
 

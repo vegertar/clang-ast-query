@@ -179,11 +179,11 @@ const void *ARRAY_hput(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
     return NULL;
 
   ARRAY_size_t i = 0;
-  const void *src = ARRAY_hget(p, size, compare, hash, rehash, access, v, &i);
+  const void *t = ARRAY_hget(p, size, compare, hash, rehash, access, v, &i);
 
   // Either found the target or the table is full
-  if (src || i == p->n)
-    return src;
+  if (t || i == p->n)
+    return t;
 
   p->i++;
   return (init ? init : memcpy)((char *)p->data + i * size, v, size);
@@ -213,10 +213,12 @@ const void *ARRAY_hget(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
 
   const void *element;
   HASH_size_t element_code;
+  _Bool hash_collision;
 
   do {
     element = access(p, size, i);
     element_code = hash(p, size, element);
+    hash_collision = 0;
 
     // An available slot
     if (element_code == 0) {
@@ -225,14 +227,18 @@ const void *ARRAY_hget(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
       return NULL;
     }
 
-    // Found target
-    if (element_code == code && compare(v, element, size) == 0) {
-      if (slot)
-        *slot = i;
-      return element;
+    if (element_code == code) {
+      // Found target
+      if (compare(v, element, size) == 0) {
+        if (slot)
+          *slot = i;
+        return element;
+      }
+
+      hash_collision = 1;
     }
 
-    i = rehash(p, size, i) % p->n;
+    i = rehash(p, size, i, hash_collision) % p->n;
   } while (i != end);
 
   // Full

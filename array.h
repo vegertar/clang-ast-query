@@ -1,6 +1,7 @@
 #pragma once
 
 #include "murmur3.h"
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -24,9 +25,7 @@
 #define HASH_SEED 496789
 #endif
 
-#ifndef ANON
 #define ANON
-#endif
 
 #define DECL_ARRAY(name, type)                                                 \
   struct name {                                                                \
@@ -85,9 +84,10 @@ typedef ARRAY_SIZE_TYPE ARRAY_size_t;
 typedef HASH_SIZE_TYPE HASH_size_t;
 typedef DECL_ARRAY(ARRAY_base, void) ARRAY_t;
 
-typedef HASH_size_t (*ARRAY_hash_t)(const ARRAY_t *p, size_t sz, const void *v);
-typedef HASH_size_t (*ARRAY_rehash_t)(const ARRAY_t *p, size_t sz, size_t i);
-typedef const void *(*ARRAY_access_t)(const ARRAY_t *p, size_t sz, size_t i);
+typedef HASH_size_t (*ARRAY_hash_t)(const void *self, size_t sz, const void *v);
+typedef HASH_size_t (*ARRAY_rehash_t)(const void *self, size_t sz, size_t i,
+                                      _Bool hash_collision);
+typedef const void *(*ARRAY_access_t)(const void *self, size_t sz, size_t i);
 typedef int (*ARRAY_compare_t)(const void *v, const void *element, size_t sz);
 typedef void *(*ARRAY_init_t)(void *dst, const void *v, size_t sz);
 typedef void *(*ARRAY_move_t)(void *dst, const void *v, size_t sz);
@@ -119,7 +119,7 @@ const void *ARRAY_hget(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
                        ARRAY_access_t access, const void *v,
                        ARRAY_size_t *slot);
 
-static inline HASH_size_t ARRAY_hash(const ARRAY_t *p, size_t size,
+static inline HASH_size_t ARRAY_hash(const void *self, size_t size,
                                      const void *v) {
   HASH_size_t out;
 #if HASH_WIDTH == 32
@@ -130,12 +130,13 @@ static inline HASH_size_t ARRAY_hash(const ARRAY_t *p, size_t size,
   return out;
 }
 
-static inline HASH_size_t ARRAY_rehash(const ARRAY_t *p, size_t size,
-                                       size_t i) {
+static inline HASH_size_t ARRAY_rehash(const void *self, size_t size, size_t i,
+                                       _Bool hash_collision) {
+  assert(!hash_collision && "Should use a better hash algorithm");
   return i + 1;
 }
 
-static inline const void *ARRAY_access(const ARRAY_t *p, size_t size,
+static inline const void *ARRAY_access(const void *self, size_t size,
                                        size_t i) {
-  return (char *)p->data + i * size;
+  return (char *)((ARRAY_t *)self)->data + i * size;
 }

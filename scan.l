@@ -23,6 +23,8 @@
     return TOK_EOL;                                                           \
   } while (0)
 
+#define UNDEFINED() return(TOK_YYUNDEF)
+
 #define REMARK_KV(tok)                                                        \
   do {                                                                        \
     char k[32];                                                               \
@@ -44,11 +46,15 @@
   } while (0)
 
 #define OPT(X, ...) VAL(OPT_##X)
-#define VAL(X) SET(X, TOK_##X)
+#define VAL(X, ...) SET(X, TOK_##X, ##__VA_ARGS__)
+#define TOK(X) return(TOK_##X)
+#define CHR() return(yytext[0])
 
-#define SET(X, value)                                                         \
+#define DECL(X) VAL(X##Decl, + (GROUP_DECL << KIND_WIDTH))
+
+#define SET(X, value, ...)                                                    \
   do {                                                                        \
-    yylval->TOK_##X = value;                                                  \
+    yylval->TOK_##X = value __VA_ARGS__;                                      \
     return TOK_##X;                                                           \
   } while (0)
 
@@ -97,16 +103,16 @@ DQNAME (\"((?:[^"\\]|\\.)*)\")
   LOCATION_STEP();
 %}
 
-TranslationUnitDecl             VAL(TranslationUnitDecl);
-IndirectFieldDecl               VAL(IndirectFieldDecl);
-EnumConstantDecl                VAL(EnumConstantDecl);
-FunctionDecl                    VAL(FunctionDecl);
-ParmVarDecl                     VAL(ParmVarDecl);
-TypedefDecl                     VAL(TypedefDecl);
-RecordDecl                      VAL(RecordDecl);
-FieldDecl                       VAL(FieldDecl);
-EnumDecl                        VAL(EnumDecl);
-VarDecl                         VAL(VarDecl);
+TranslationUnitDecl             DECL(TranslationUnit);
+IndirectFieldDecl               DECL(IndirectField);
+EnumConstantDecl                DECL(EnumConstant);
+FunctionDecl                    DECL(Function);
+ParmVarDecl                     DECL(ParmVar);
+TypedefDecl                     DECL(Typedef);
+RecordDecl                      DECL(Record);
+FieldDecl                       DECL(Field);
+EnumDecl                        DECL(Enum);
+VarDecl                         DECL(Var);
 
 ConstantArrayType               VAL(ConstantArrayType);
 FunctionProtoType               VAL(FunctionProtoType);
@@ -288,12 +294,12 @@ postfix/" "{INC_DEC}            OPT(postfix, UnaryOperator);
 "ComputeResultTy="              OPT(ComputeResultTy, CompoundAssignOperator);
 "ComputeLHSTy="                 OPT(ComputeLHSTy, CompoundAssignOperator);
 
-"<invalid sloc>"                return(TOK_INVALID_SLOC);
-"<<<NULL>>>"                    return(TOK_NULL);
-prev/" "{POINTER}               return(TOK_PREV);
-parent/" "{POINTER}             return(TOK_PARENT);
-line/:[0-9]+:[0-9]+             return(TOK_LINE);
-col/:[0-9]+                     return(TOK_COL);
+"<invalid sloc>"                TOK(INVALID_SLOC);
+"<<<NULL>>>"                    TOK(NULL);
+prev/" "{POINTER}               TOK(PREV);
+parent/" "{POINTER}             TOK(PARENT);
+line/:[0-9]+:[0-9]+             TOK(LINE);
+col/:[0-9]+                     TOK(COL);
 
 {POINTER}                       ATOI(POINTER, 16);
 {INTEGER}                       ATOI(INTEGER, 10);
@@ -306,10 +312,10 @@ col/:[0-9]+                     return(TOK_COL);
 "\xE2\x80\x8B"{NAME}            SET(NAME, add_static(yytext + 3, yyleng - 3));
 {NAME}                          SET(NAME, add_static(yytext, yyleng));
 
-":"|","|"<"|">"                 return(yytext[0]);
-" "
+":"|","|"<"|">"                 CHR();
+" "                             {}
 \n                              LINE_STEP();
-.                               return(TOK_YYUNDEF);
+.                               UNDEFINED();
 
 
 %%

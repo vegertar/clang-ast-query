@@ -3,7 +3,7 @@
 #include <assert.h>
 #include <string.h>
 
-static HASH_size_t StringSet_hash(const ARRAY_t *p, size_t size, const void *v);
+static HASH_size_t StringSet_hash(const void *self, size_t size, const void *v);
 static int StringSet_compare(const void *v, const void *element, size_t size);
 static void *StringSet_init(void *dst, const void *src, size_t size);
 
@@ -28,7 +28,7 @@ const String *StringSet_add(StringSet *ss, const String *s) {
                     StringSet_hash, NULL, NULL, s, StringSet_init);
 }
 
-HASH_size_t StringSet_hash(const ARRAY_t *p, size_t size, const void *v) {
+HASH_size_t StringSet_hash(const void *self, size_t size, const void *v) {
   const String *x = v;
   return x->hash;
 }
