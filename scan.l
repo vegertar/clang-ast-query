@@ -50,7 +50,7 @@
 #define TOK(X) return(TOK_##X)
 #define CHR() return(yytext[0])
 
-#define DECL(X) VAL(X##Decl, + (GROUP_DECL << KIND_WIDTH))
+#define DECL(X) VAL(X##Decl, + (NG_DECL << KIND_WIDTH))
 
 #define SET(X, value, ...)                                                    \
   do {                                                                        \

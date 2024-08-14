@@ -1,48 +1,33 @@
 #include "parse-requires-inl.h"
 #include <stdint.h>
 
-enum group {
-  GROUP_NULL,
-  GROUP_DECL,
-  GROUP_TYPE,
-  GROUP_ATTR,
-  GROUP_STMT,
-  GROUP_EXPR,
-  GROUP_LITERAL,
-  GROUP_OPERATOR,
-  GROUP_CAST_EXPR,
-  GROUP_COMMENT,
-};
+#define grp_used_or_referenced _(used_or_referenced, used, referenced)
+#define grp_value_kind _(value_kind, lvalue)
+#define grp_object_kind _(object_kind, bitfield)
+#define grp_class _(class, struct, union, enum)
+#define grp_storage _(storage, extern, static)
+#define grp_init_style _(init_style, cinit, callinit, listinit, parenlistinit)
+#define grp_trait _(trait, alignof, sizeof)
+#define grp_prefix_or_postfix _(prefix_or_postfix, prefix, postfix)
 
-typedef struct {
-  const char *file;
-  unsigned line;
-  unsigned col;
-} Loc;
+#define grp_operator                                                           \
+  _(operator, Comma, Remainder, Division, Multiplication, Subtraction,         \
+    Addition, BitwiseAND, BitwiseOR, BitwiseXOR, BitwiseNOT, LogicalAND,       \
+    LogicalOR, LogicalNOT, GreaterThan, GreaterThanOrEqual, LessThan,          \
+    LessThanOrEqual, Equality, Inequality, Assignment, AdditionAssignment,     \
+    SubtractionAssignment, MultiplicationAssignment, DivisionAssignment,       \
+    RemainderAssignment, BitwiseXORAssignment, BitwiseORAssignment,            \
+    BitwiseANDAssignment, RightShift, RightShiftAssignment, LeftShift,         \
+    LeftShiftAssignment, Decrement, Increment)
 
-typedef struct {
-  Loc begin;
-  Loc end;
-} Range;
+#define grp_cast                                                               \
+  _(cast, IntegralCast, LValueToRValue, FunctionToPointerDecay,                \
+    BuiltinFnToFnPtr, BitCast, NullToPointer, NoOp, ToVoid,                    \
+    ArrayToPointerDecay, IntegralToFloating, IntegralToPointer)
 
-typedef struct {
-  const char *qualified;
-  const char *desugared;
-} BareType;
-
-typedef struct {
-  const char *decl;
-  intptr_t pointer;
-  const char *name;
-  BareType type;
-} DeclRef;
-
-typedef struct {
-  intptr_t pointer;
-} Member;
-
-typedef unsigned ArgIndices;
-typedef Range AngledRange;
+#define grp_non_odr_use                                                        \
+  _(non_odr_use, non_odr_use_unevaluated, non_odr_use_constant,                \
+    non_odr_use_discarded)
 
 #define ARG_INDICES_MAX (sizeof(ArgIndices) * 8)
 
@@ -87,13 +72,21 @@ typedef Range AngledRange;
   intptr_t pointer;                                                            \
   AngledRange range
 
-#define IS_DECL(...)                                                           \
-  IS_NODE();                                                                   \
-  WITH_OPTIONS(imported, implicit, is_undeserialized_declarations,             \
-               _(used_or_referenced, used, referenced), ##__VA_ARGS__);        \
+#define OF_DECL(...)                                                           \
+  WITH_OPTIONS(imported, implicit, undeserialized_declarations,                \
+               grp_used_or_referenced, ##__VA_ARGS__);                         \
   intptr_t pointer, parent, prev;                                              \
   AngledRange range;                                                           \
   Loc loc
+
+#define IS_DECL(...)                                                           \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    DeclPart decl;                                                             \
+    struct {                                                                   \
+      OF_DECL(__VA_ARGS__);                                                    \
+    };                                                                         \
+  }
 
 #define IS_TYPE(...)                                                           \
   IS_NODE();                                                                   \
@@ -108,26 +101,11 @@ typedef Range AngledRange;
   AngledRange range
 
 #define IS_EXPR(...)                                                           \
-  IS_STMT(_(value_kind, lvalue), _(object_kind, bitfield), ##__VA_ARGS__);     \
+  IS_STMT(grp_value_kind, grp_object_kind, ##__VA_ARGS__);                     \
   BareType type
 
-#define IS_OPERATOR(...)                                                       \
-  IS_EXPR(_(operator, Comma, Remainder, Division, Multiplication, Subtraction, \
-            Addition, BitwiseAND, BitwiseOR, BitwiseXOR, BitwiseNOT,           \
-            LogicalAND, LogicalOR, LogicalNOT, GreaterThan,                    \
-            GreaterThanOrEqual, LessThan, LessThanOrEqual, Equality,           \
-            Inequality, Assignment, AdditionAssignment, SubtractionAssignment, \
-            MultiplicationAssignment, DivisionAssignment, RemainderAssignment, \
-            BitwiseXORAssignment, BitwiseORAssignment, BitwiseANDAssignment,   \
-            RightShift, RightShiftAssignment, LeftShift, LeftShiftAssignment,  \
-            Decrement, Increment),                                             \
-          ##__VA_ARGS__)
-
-#define IS_CAST_EXPR(...)                                                      \
-  IS_EXPR(_(cast, IntegralCast, LValueToRValue, FunctionToPointerDecay,        \
-            BuiltinFnToFnPtr, BitCast, NullToPointer, NoOp, ToVoid,            \
-            ArrayToPointerDecay, IntegralToFloating, IntegralToPointer),       \
-          ##__VA_ARGS__)
+#define IS_OPERATOR(...) IS_EXPR(grp_operator, ##__VA_ARGS__)
+#define IS_CAST_EXPR(...) IS_EXPR(grp_cast, ##__VA_ARGS__)
 
 #define IS(X, Y, ...)                                                          \
   {                                                                            \
@@ -154,9 +132,52 @@ typedef Range AngledRange;
     };                                                                         \
   }
 
+typedef enum {
+  NG_NULL,
+  NG_DECL,
+  NG_TYPE,
+  NG_ATTR,
+  NG_STMT,
+  NG_EXPR,
+  NG_LITERAL,
+  NG_OPERATOR,
+  NG_CAST_EXPR,
+  NG_COMMENT,
+} NodeGroup;
+
 typedef struct {
-  IS_DECL();
-} DeclNode;
+  const char *file;
+  unsigned line;
+  unsigned col;
+} Loc;
+
+typedef struct {
+  Loc begin;
+  Loc end;
+} Range;
+
+typedef struct {
+  const char *qualified;
+  const char *desugared;
+} BareType;
+
+typedef struct {
+  const char *decl;
+  intptr_t pointer;
+  const char *name;
+  BareType type;
+} DeclRef;
+
+typedef struct {
+  intptr_t pointer;
+} Member;
+
+typedef unsigned ArgIndices;
+typedef Range AngledRange;
+
+typedef struct {
+  OF_DECL();
+} DeclPart;
 
 typedef struct {
   union {
@@ -226,8 +247,7 @@ typedef struct {
       BareType type;
     });
     Decl(
-        Record, { const char *name; }, _(class, struct, union, enum),
-        definition);
+        Record, { const char *name; }, grp_class, definition);
     Decl(Field, {
       const char *name;
       BareType type;
@@ -238,7 +258,7 @@ typedef struct {
           const char *name;
           BareType type;
         },
-        _(storage, extern, static), inline);
+        grp_storage, inline);
     Decl(ParmVar, {
       const char *name;
       BareType type;
@@ -253,13 +273,12 @@ typedef struct {
       BareType type;
     });
     Decl(
-        VarDecl,
+        Var,
         {
           const char *name;
           BareType type;
         },
-        _(storage, extern, static),
-        _(init_style, cinit, callinit, listinit, parenlistinit));
+        grp_storage, grp_init_style);
 
     Type(Builtin, {});
     Type(Record, {});
@@ -289,9 +308,7 @@ typedef struct {
 
     Expr(Paren, {});
     Expr(
-        DeclRef, { DeclRef ref; },
-        _(non_odr_use, non_odr_use_unevaluated, non_odr_use_constant,
-          non_odr_use_discarded));
+        DeclRef, { DeclRef ref; }, grp_non_odr_use);
     Expr(ConstantExpr, {});
     Expr(Call, {});
     Expr(Member, { Member member; });
@@ -299,14 +316,13 @@ typedef struct {
     Expr(InitList, {});
     Expr(OffsetOf, {});
     Expr(
-        UnaryExprOrTypeTrait, { BareType argument_type; },
-        _(trait, alignof, sizeof));
+        UnaryExprOrTypeTrait, { BareType argument_type; }, grp_trait);
 
     Literal(Integer, INTEGER);
     Literal(Character, { char c; });
     Literal(String, { const char *s; });
 
-    Operator(Unary, {}, _(prefix_postfix, prefix, postfix), cannot_overflow);
+    Operator(Unary, {}, grp_prefix_or_postfix, cannot_overflow);
     Operator(Binary, {});
     Operator(Conditional, {});
     Operator(CompoundAssign, {

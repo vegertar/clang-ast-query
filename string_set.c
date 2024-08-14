@@ -8,6 +8,7 @@ static int StringSet_compare(const void *v, const void *element, size_t size);
 static void *StringSet_init(void *dst, const void *src, size_t size);
 
 void StringSet_reserve(StringSet *ss, ARRAY_size_t n) {
+  assert(ss->i == 0 && "The string set is dirty");
   ARRAY_reserve((void *)ss, sizeof(String), n);
   memset(ss->data, 0, sizeof(String) * ss->n);
 }

@@ -62,7 +62,7 @@
 #define grpn(n, ...) grp##n(__VA_ARGS__)
 #define grpn_(n, ...) grpn(n, __VA_ARGS__)
 #define grp(...) grpn_(NO(__VA_ARGS__), __VA_ARGS__)
-#define grp__(name, ...) grp_##name, NO(__VA_ARGS__)
+#define grp__(name, ...) name, NO(__VA_ARGS__)
 
 // clang-format off
 #define grp1(a) uint64_t : 1
@@ -394,3 +394,181 @@
 #define GROUPS42(a, ...)                                                       \
   GROUPS1(a)                                                                   \
   GROUPS41(__VA_ARGS__)
+
+#define SET_OPTIONS(obj, val, opt) SET_OPTIONS_I1(obj, val, opt, grp_##opt)
+#define SET_OPTIONS_I1(obj, val, opt, grp) SET_OPTIONS_I2(obj, val, opt, grp)
+#define SET_OPTIONS_I2(obj, val, opt, grp)                                     \
+  SET_OPTIONS_(obj, val, opt, SET_OPTIONS_##grp)
+#define SET_OPTIONS_(obj, val, opt, ...)                                       \
+  do {                                                                         \
+    switch (val) {                                                             \
+      __VA_ARGS__                                                              \
+    default:                                                                   \
+      obj.opt = 0;                                                             \
+      break;                                                                   \
+    }                                                                          \
+  } while (0)
+#define SET_OPTIONS__(grp, ...) SET_OPTIONSN_(NO(__VA_ARGS__), __VA_ARGS__)
+#define SET_OPTIONSN_(n, ...) SET_OPTIONSN(n, __VA_ARGS__)
+#define SET_OPTIONSN(n, ...) SET_OPTIONS##n(__VA_ARGS__)
+
+#define SET_OPTIONS1(a)                                                        \
+  case TOK_OPT_##a:                                                            \
+    obj.opt_##a = 1;                                                           \
+    break;
+
+#define SET_OPTIONS2(a, ...)                                                   \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS1(__VA_ARGS__)
+
+#define SET_OPTIONS3(a, ...)                                                   \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS2(__VA_ARGS__)
+
+#define SET_OPTIONS4(a, ...)                                                   \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS3(__VA_ARGS__)
+
+#define SET_OPTIONS5(a, ...)                                                   \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS4(__VA_ARGS__)
+
+#define SET_OPTIONS6(a, ...)                                                   \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS5(__VA_ARGS__)
+
+#define SET_OPTIONS7(a, ...)                                                   \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS6(__VA_ARGS__)
+
+#define SET_OPTIONS8(a, ...)                                                   \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS7(__VA_ARGS__)
+
+#define SET_OPTIONS9(a, ...)                                                   \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS8(__VA_ARGS__)
+
+#define SET_OPTIONS10(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS9(__VA_ARGS__)
+
+#define SET_OPTIONS11(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS10(__VA_ARGS__)
+
+#define SET_OPTIONS12(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS11(__VA_ARGS__)
+
+#define SET_OPTIONS13(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS12(__VA_ARGS__)
+
+#define SET_OPTIONS14(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS13(__VA_ARGS__)
+
+#define SET_OPTIONS15(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS14(__VA_ARGS__)
+
+#define SET_OPTIONS16(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS15(__VA_ARGS__)
+
+#define SET_OPTIONS17(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS16(__VA_ARGS__)
+
+#define SET_OPTIONS18(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS17(__VA_ARGS__)
+
+#define SET_OPTIONS19(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS18(__VA_ARGS__)
+
+#define SET_OPTIONS20(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS19(__VA_ARGS__)
+
+#define SET_OPTIONS21(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS20(__VA_ARGS__)
+
+#define SET_OPTIONS22(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS21(__VA_ARGS__)
+
+#define SET_OPTIONS23(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS22(__VA_ARGS__)
+
+#define SET_OPTIONS24(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS23(__VA_ARGS__)
+
+#define SET_OPTIONS25(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS24(__VA_ARGS__)
+
+#define SET_OPTIONS26(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS25(__VA_ARGS__)
+
+#define SET_OPTIONS27(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS26(__VA_ARGS__)
+
+#define SET_OPTIONS28(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS27(__VA_ARGS__)
+
+#define SET_OPTIONS29(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS28(__VA_ARGS__)
+
+#define SET_OPTIONS30(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS29(__VA_ARGS__)
+
+#define SET_OPTIONS31(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS30(__VA_ARGS__)
+
+#define SET_OPTIONS32(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS31(__VA_ARGS__)
+
+#define SET_OPTIONS33(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS32(__VA_ARGS__)
+
+#define SET_OPTIONS34(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS33(__VA_ARGS__)
+
+#define SET_OPTIONS35(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS34(__VA_ARGS__)
+
+#define SET_OPTIONS36(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS35(__VA_ARGS__)
+
+#define SET_OPTIONS37(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS36(__VA_ARGS__)
+
+#define SET_OPTIONS38(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS37(__VA_ARGS__)
+
+#define SET_OPTIONS39(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS38(__VA_ARGS__)
+
+#define SET_OPTIONS40(a, ...)                                                  \
+  SET_OPTIONS1(a)                                                              \
+  SET_OPTIONS39(__VA_ARGS__)

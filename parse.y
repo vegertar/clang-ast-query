@@ -483,6 +483,7 @@
 
     IntValue
 
+  <enum yytokentype>
     /* Operator */
     OPT_Comma
     OPT_Remainder
@@ -630,19 +631,54 @@
     Node
     AttrNode
     CommentNode
-    DeclNode
+    TranslationUnitDeclNode
+    TypedefDeclNode
+    RecordDeclNode
+    FieldDeclNode
+    FunctionDeclNode
+    ParmVarDeclNode
+    IndirectFieldDeclNode
+    EnumDeclNode
+    EnumConstantDeclNode
+    VarDeclNode
     TypeNode
     StmtNode
-  <DeclNode>
+  <DeclPart>
     Decl
   <ArgIndices>
     ArgIndices
   <intptr_t>
     parent
     prev
-  <unsigned>
+  <_Bool>
+    opt_inline
+    opt_const
+    opt_volatile
+    opt_cannot_overflow
+    opt_part_of_explicit_cast
+    opt_sugar
     opt_imported
     opt_implicit
+    opt_has_else
+    opt_definition
+    opt_IsLiteralLabel
+    opt_Inherited
+    opt_Implicit
+    opt_undeserialized_declarations
+  <enum yytokentype>
+    Operator
+    Cast
+    Trait
+    Class
+    PrefixOrPostfix
+    storage
+    init_style
+    used_or_referenced
+    non_odr_use
+    value_kind
+    object_kind
+  <const char *>
+    name
 %%
 
 // Naming conventions:
@@ -667,7 +703,18 @@ Node: NULL { $$.node = 0;  }
  | Field POINTER SQNAME BareType {}
  | AttrNode
  | CommentNode
- | DeclNode
+
+ | TranslationUnitDeclNode
+ | TypedefDeclNode
+ | RecordDeclNode
+ | FieldDeclNode
+ | FunctionDeclNode
+ | ParmVarDeclNode
+ | IndirectFieldDeclNode
+ | EnumDeclNode
+ | EnumConstantDeclNode
+ | VarDeclNode
+
  | TypeNode
  | StmtNode
 
@@ -694,16 +741,103 @@ CommentNode: FullComment Comment {}
  | ParagraphComment Comment {}
  | TextComment Comment Text {}
 
-DeclNode: TranslationUnitDecl Decl{ $$.node = $1; }
- | TypedefDecl Decl NAME BareType { $$.node = $1; }
- | RecordDecl Decl Class name opt_definition { $$.node = $1;}
- | FieldDecl Decl name BareType { $$.node = $1; }
- | FunctionDecl Decl NAME BareType opt_storage opt_inline { $$.node = $1; }
- | ParmVarDecl Decl name BareType { $$.node = $1; }
- | IndirectFieldDecl Decl NAME BareType {$$.node = $1;}
- | EnumDecl Decl name { $$.node = $1; }
- | EnumConstantDecl Decl NAME BareType { $$.node = $1; }
- | VarDecl Decl NAME BareType opt_storage opt_init_style { $$.node = $1; }
+TranslationUnitDeclNode: TranslationUnitDecl Decl
+  {
+    $$.TranslationUnitDecl.node = $1;
+    $$.TranslationUnitDecl.decl = $2;
+  }
+
+TypedefDeclNode: TypedefDecl Decl NAME BareType
+  {
+    $$.TypedefDecl.node = $1;
+    $$.TypedefDecl.decl = $2;
+    $$.TypedefDecl.name = $3;
+    $$.TypedefDecl.type = $4;
+  }
+
+RecordDeclNode: RecordDecl Decl Class name opt_definition
+  {
+#define obj $$.RecordDecl
+    obj.node = $1;
+    obj.decl = $2;
+    SET_OPTIONS(obj, $3, class);
+    obj.name = $4;
+    obj.opt_definition = $5;
+#undef obj
+  }
+
+FieldDeclNode: FieldDecl Decl name BareType
+  {
+#define obj $$.FieldDecl
+    obj.node = $1;
+    obj.decl = $2;
+    obj.name = $3;
+    obj.type = $4;
+#undef obj
+  }
+
+FunctionDeclNode: FunctionDecl Decl NAME BareType storage opt_inline
+  {
+#define obj $$.FunctionDecl
+    obj.node = $1;
+    obj.decl = $2;
+    obj.name = $3;
+    obj.type = $4;
+    SET_OPTIONS(obj, $5, storage);
+    obj.opt_inline = $6;
+#undef obj
+  }
+
+ParmVarDeclNode: ParmVarDecl Decl name BareType
+  {
+#define obj $$.ParmVarDecl
+    obj.node = $1;
+    obj.decl = $2;
+    obj.name = $3;
+    obj.type = $4;
+#undef obj
+  }
+
+IndirectFieldDeclNode: IndirectFieldDecl Decl NAME BareType
+  {
+#define obj $$.IndirectFieldDecl
+    obj.node = $1;
+    obj.decl = $2;
+    obj.name = $3;
+    obj.type = $4;
+#undef obj
+  }
+
+EnumDeclNode: EnumDecl Decl name
+  {
+#define obj $$.EnumDecl
+    obj.node = $1;
+    obj.decl = $2;
+    obj.name = $3;
+#undef obj
+  }
+
+EnumConstantDeclNode: EnumConstantDecl Decl NAME BareType
+  {
+#define obj $$.EnumConstantDecl
+    obj.node = $1;
+    obj.decl = $2;
+    obj.name = $3;
+    obj.type = $4;
+#undef obj
+  }
+
+VarDeclNode: VarDecl Decl NAME BareType storage init_style
+  {
+#define obj $$.VarDecl
+    obj.node = $1;
+    obj.decl = $2;
+    obj.name = $3;
+    obj.type = $4;
+    SET_OPTIONS(obj, $5, storage);
+    SET_OPTIONS(obj, $6, init_style);
+#undef obj
+  }
 
 TypeNode: BuiltinType Type {}
  | RecordType Type {} 
@@ -736,7 +870,7 @@ ExprNode: LiteralNode {}
  | OperatorNode {}
  | CastExprNode {}
  | ParenExpr Expr {}
- | DeclRefExpr Expr DeclRef opt_non_odr_use {}
+ | DeclRefExpr Expr DeclRef non_odr_use {}
  | ConstantExpr Expr {}
  | CallExpr Expr {}
  | MemberExpr Expr Member {}
@@ -749,7 +883,7 @@ LiteralNode: IntegerLiteral Expr INTEGER {}
  | CharacterLiteral Expr INTEGER {} 
  | StringLiteral Expr DQNAME {}
 
-OperatorNode: UnaryOperator Expr PrefixPostfix Operator opt_cannot_overflow {}
+OperatorNode: UnaryOperator Expr PrefixOrPostfix Operator opt_cannot_overflow {}
  | BinaryOperator Expr Operator {}
  | ConditionalOperator Expr {}
  | CompoundAssignOperator Expr Operator ComputeLHSTy ComputeResultTy {}
@@ -761,7 +895,7 @@ Attr: POINTER AngledRange opt_Inherited opt_Implicit
 
 Comment: POINTER AngledRange
 
-Decl: POINTER parent prev AngledRange Loc opt_imported opt_implicit opt_used_or_referenced opt_undeserialized_declarations
+Decl: POINTER parent prev AngledRange Loc opt_imported opt_implicit used_or_referenced opt_undeserialized_declarations
   {
     $$.pointer = $1;
     $$.parent = $2;
@@ -770,13 +904,19 @@ Decl: POINTER parent prev AngledRange Loc opt_imported opt_implicit opt_used_or_
     $$.loc = $5;
     $$.opt_imported = $6;
     $$.opt_implicit = $7;
+
+#define obj $$
+    SET_OPTIONS($$, $8, used_or_referenced);
+#undef obj
+
+    $$.opt_undeserialized_declarations = $9;
   }
 
 Type: POINTER BareType opt_sugar opt_imported
 
 Stmt: POINTER AngledRange
 
-Expr: Stmt BareType opt_value_kind opt_object_kind
+Expr: Stmt BareType value_kind object_kind
 
 CastExpr: Expr Cast
 
@@ -842,6 +982,9 @@ Class: OPT_struct
  | OPT_union
  | OPT_enum
 
+PrefixOrPostfix: OPT_prefix
+ | OPT_postfix
+
 Label: SQNAME POINTER
 
 DeclRef: NAME POINTER SQNAME BareType
@@ -900,40 +1043,23 @@ ComputeLHSTy: OPT_ComputeLHSTy BareType
 
 ComputeResultTy: OPT_ComputeResultTy BareType
 
-PrefixPostfix: OPT_prefix
- | OPT_postfix
+opt_inline:   { $$ = 0; }
+ | OPT_inline { $$ = 1; }
 
-opt_storage:
- | OPT_extern
- | OPT_static
+opt_const:   { $$ = 0; }
+ | OPT_const { $$ = 1; }
 
-opt_inline:
- | OPT_inline
+opt_volatile:   { $$ = 0; }
+ | OPT_volatile { $$ = 1; }
 
-opt_const:
- | OPT_const
+opt_cannot_overflow:   { $$ = 0; }
+ | OPT_cannot_overflow { $$ = 1; }
 
-opt_volatile:
- | OPT_volatile
+opt_part_of_explicit_cast:   { $$ = 0; }
+ | OPT_part_of_explicit_cast { $$ = 1; }
 
-opt_init_style:
- | OPT_cinit
- | OPT_callinit
- | OPT_listinit
- | OPT_parenlistinit
-
-opt_used_or_referenced:
- | OPT_used
- | OPT_referenced
-
-opt_cannot_overflow:
- | OPT_cannot_overflow
-
-opt_part_of_explicit_cast:
- | OPT_part_of_explicit_cast
-
-opt_sugar:
- | OPT_sugar
+opt_sugar:   { $$ = 0; }
+ | OPT_sugar { $$ = 1; }
 
 opt_imported:   { $$ = 0; }
  | OPT_imported { $$ = 1; }
@@ -941,36 +1067,50 @@ opt_imported:   { $$ = 0; }
 opt_implicit:   { $$ = 0; }
  | OPT_implicit { $$ = 1; }
 
-opt_has_else:
- | OPT_has_else
+opt_has_else:   { $$ = 0; }
+ | OPT_has_else { $$ = 1; }
 
-opt_non_odr_use:
+opt_definition:   { $$ = 0; }
+ | OPT_definition { $$ = 1; }
+
+opt_IsLiteralLabel:   { $$ = 0; }
+ | OPT_IsLiteralLabel { $$ = 1; }
+
+opt_Inherited:   { $$ = 0; }
+ | OPT_Inherited { $$ = 1; }
+
+opt_Implicit:   { $$ = 0; }
+ | OPT_Implicit { $$ = 1; }
+
+opt_undeserialized_declarations:   { $$ = 0; }
+ | OPT_undeserialized_declarations { $$ = 1; }
+
+storage: { $$ = 0; }
+ | OPT_extern
+ | OPT_static
+
+init_style: { $$ = 0; }
+ | OPT_cinit
+ | OPT_callinit
+ | OPT_listinit
+ | OPT_parenlistinit
+
+used_or_referenced: { $$ = 0; }
+ | OPT_used
+ | OPT_referenced
+
+non_odr_use: { $$ = 0; }
  | OPT_non_odr_use_unevaluated
  | OPT_non_odr_use_constant
  | OPT_non_odr_use_discarded
 
-opt_value_kind:
+value_kind: { $$ = 0; }
  | OPT_lvalue
 
-opt_object_kind:
+object_kind: { $$ = 0; }
  | OPT_bitfield
 
-opt_definition:
- | OPT_definition
-
-opt_IsLiteralLabel:
- | OPT_IsLiteralLabel
-
-opt_Inherited:
- | OPT_Inherited
-
-opt_Implicit:
- | OPT_Implicit
-
-opt_undeserialized_declarations:
- | OPT_undeserialized_declarations
-
-name:
+name: { $$ = NULL; }
  | NAME
 
 integer:
