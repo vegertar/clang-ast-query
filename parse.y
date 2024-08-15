@@ -700,6 +700,10 @@
     OffsetOfExprNode
     UnaryExprOrTypeTraitExprNode
 
+    IntegerLiteralNode
+    CharacterLiteralNode
+    StringLiteralNode
+
   <AttrSelf>
     Attr
   <CommentSelf>
@@ -851,7 +855,10 @@ Node: NULL { $$.node = 0;  }
  | OffsetOfExprNode
  | UnaryExprOrTypeTraitExprNode
 
- | LiteralNode {}
+ | IntegerLiteralNode
+ | CharacterLiteralNode
+ | StringLiteralNode
+
  | OperatorNode {}
  | CastExprNode {}
 
@@ -1314,9 +1321,26 @@ UnaryExprOrTypeTraitExprNode: UnaryExprOrTypeTraitExpr Expr Trait argument_type 
     $$.UnaryExprOrTypeTraitExpr.argument_type = $4;
   }
 
-LiteralNode: IntegerLiteral Expr INTEGER {}
- | CharacterLiteral Expr INTEGER {} 
- | StringLiteral Expr DQNAME {}
+IntegerLiteralNode: IntegerLiteral Expr INTEGER
+  {
+    $$.IntegerLiteral.node = $1;
+    $$.IntegerLiteral.self = $2;
+    $$.IntegerLiteral.value = $3;
+  }
+
+CharacterLiteralNode: CharacterLiteral Expr INTEGER
+  {
+    $$.CharacterLiteral.node = $1;
+    $$.CharacterLiteral.self = $2;
+    $$.CharacterLiteral.value = $3.i;
+  }
+
+StringLiteralNode: StringLiteral Expr DQNAME
+  {
+    $$.StringLiteral.node = $1;
+    $$.StringLiteral.self = $2;
+    $$.StringLiteral.value = $3;
+  }
 
 OperatorNode: UnaryOperator Expr PrefixOrPostfix Operator opt_cannot_overflow {}
  | BinaryOperator Expr Operator {}

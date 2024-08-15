@@ -389,9 +389,9 @@ typedef struct {
     Expr(
         UnaryExprOrTypeTrait, { BareType argument_type; }, grp_trait);
 
-    Literal(Integer, INTEGER);
-    Literal(Character, { char c; });
-    Literal(String, { const char *s; });
+    Literal(Integer, { Integer value; });
+    Literal(Character, { char value; });
+    Literal(String, { const char *value; });
 
     Operator(Unary, {}, grp_prefix_or_postfix, cannot_overflow);
     Operator(Binary, {});
