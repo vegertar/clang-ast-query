@@ -63,11 +63,19 @@
     };                                                                         \
   }
 
-#define IS_COMMENT(...)                                                        \
-  IS_NODE();                                                                   \
+#define OF_COMMENT(...)                                                        \
   WITH_OPTIONS(__VA_ARGS__);                                                   \
   uintptr_t pointer;                                                           \
   AngledRange range
+
+#define IS_COMMENT(...)                                                        \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    CommentPart comment;                                                       \
+    struct {                                                                   \
+      OF_COMMENT(__VA_ARGS__);                                                 \
+    };                                                                         \
+  }
 
 #define OF_DECL(...)                                                           \
   WITH_OPTIONS(imported, implicit, undeserialized_declarations,                \
@@ -176,12 +184,16 @@ typedef unsigned ArgIndices;
 typedef Range AngledRange;
 
 typedef struct {
-  OF_DECL();
-} DeclPart;
-
-typedef struct {
   OF_ATTR();
 } AttrPart;
+
+typedef struct {
+  OF_COMMENT();
+} CommentPart;
+
+typedef struct {
+  OF_DECL();
+} DeclPart;
 
 typedef struct {
   union {

@@ -648,7 +648,9 @@
     PackedAttrNode
     PureAttrNode
 
-    CommentNode
+    FullCommentNode
+    ParagraphCommentNode
+    TextCommentNode
 
     TranslationUnitDeclNode
     TypedefDeclNode
@@ -663,10 +665,12 @@
 
     TypeNode
     StmtNode
-  <DeclPart>
-    Decl
   <AttrPart>
     Attr
+  <CommentPart>
+    Comment
+  <DeclPart>
+    Decl
   <ArgIndices>
     ArgIndices
   <intptr_t>
@@ -701,6 +705,7 @@
     object_kind
   <const char *>
     name
+    Text
   <Integer>
     integer
 %%
@@ -745,7 +750,9 @@ Node: NULL { $$.node = 0;  }
  | PackedAttrNode
  | PureAttrNode
 
- | CommentNode
+ | FullCommentNode
+ | ParagraphCommentNode
+ | TextCommentNode
 
  | TranslationUnitDeclNode
  | TypedefDeclNode
@@ -886,9 +893,24 @@ PureAttrNode: PureAttr Attr
     $$.PureAttr.attr = $2;
   }
 
-CommentNode: FullComment Comment {}
- | ParagraphComment Comment {}
- | TextComment Comment Text {}
+FullCommentNode: FullComment Comment
+  {
+    $$.FullComment.node = $1;
+    $$.FullComment.comment = $2;
+  }
+
+ParagraphCommentNode: ParagraphComment Comment
+  {
+    $$.ParagraphComment.node = $1;
+    $$.ParagraphComment.comment = $2;
+  }
+
+TextCommentNode: TextComment Comment Text
+  {
+    $$.TextComment.node = $1;
+    $$.TextComment.comment = $2;
+    $$.TextComment.text = $3;
+  }
 
 TranslationUnitDeclNode: TranslationUnitDecl Decl
   {
@@ -1049,6 +1071,10 @@ Attr: POINTER AngledRange opt_Inherited opt_Implicit
   }
 
 Comment: POINTER AngledRange
+  {
+    $$.pointer = $1.u;
+    $$.range = $2;
+  }
 
 Decl: POINTER parent prev AngledRange Loc opt_imported opt_implicit used_or_referenced opt_undeserialized_declarations
   {
@@ -1192,7 +1218,7 @@ ArgIndices: INTEGER
     $$ = $1 | (0U << $2.u);
   }
 
-Text: OPT_Text DQNAME
+Text: OPT_Text DQNAME { $$ = $2; }
 
 ComputeLHSTy: OPT_ComputeLHSTy BareType
 
