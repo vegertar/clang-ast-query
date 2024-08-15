@@ -172,15 +172,20 @@ typedef struct INTEGER Integer;
 
 typedef enum {
   NG_NULL,
-  NG_DECL,
-  NG_TYPE,
-  NG_ATTR,
-  NG_STMT,
-  NG_EXPR,
-  NG_LITERAL,
-  NG_OPERATOR,
-  NG_CAST_EXPR,
-  NG_COMMENT,
+  NG_IntValue,
+  NG_Enum,
+  NG_Typedef,
+  NG_Record,
+  NG_Field,
+  NG_Attr,
+  NG_Comment,
+  NG_Decl,
+  NG_Type,
+  NG_Stmt,
+  NG_Expr,
+  NG_Literal,
+  NG_Operator,
+  NG_CastExpr,
 } NodeGroup;
 
 typedef struct {
@@ -256,7 +261,7 @@ typedef struct {
       IS_NODE();
     };
 
-    Raw(IntValue, INTEGER);
+    Raw(IntValue, { Integer value; });
     Raw(Enum, {
       uintptr_t pointer;
       const char *name;

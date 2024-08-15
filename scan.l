@@ -45,12 +45,21 @@
     return tok;                                                               \
   } while (0)
 
-#define OPT(X, ...) VAL(OPT_##X)
+#define OPT(X, ctx...) VAL(OPT_##X)
 #define VAL(X, ...) SET(X, TOK_##X, ##__VA_ARGS__)
 #define TOK(X) return(TOK_##X)
 #define CHR() return(yytext[0])
 
-#define DECL(X) VAL(X##Decl, | (NG_DECL << KIND_WIDTH))
+#define RAW(X) VAL(X, | (NG_##X << KIND_WIDTH))
+#define ATTR(X) VAL(X##Attr, | (NG_Attr << KIND_WIDTH))
+#define COMMENT(X) VAL(X##Comment, | (NG_Comment << KIND_WIDTH))
+#define DECL(X) VAL(X##Decl, | (NG_Decl << KIND_WIDTH))
+#define TYPE(X) VAL(X##Type, | (NG_Type << KIND_WIDTH))
+#define STMT(X) VAL(X##Stmt, | (NG_Stmt << KIND_WIDTH))
+#define EXPR(X) VAL(X##Expr, | (NG_Expr << KIND_WIDTH))
+#define LITERAL(X) VAL(X##Literal, | (NG_Literal << KIND_WIDTH))
+#define OPERATOR(X) VAL(X##Operator, | (NG_Operator << KIND_WIDTH))
+#define CAST_EXPR(X) VAL(X##CastExpr, | (NG_CastExpr << KIND_WIDTH))
 
 #define SET(X, value, ...)                                                    \
   do {                                                                        \
@@ -105,93 +114,93 @@ DQNAME (\"((?:[^"\\]|\\.)*)\")
   LOCATION_STEP();
 %}
 
+"value: Int"                    RAW(IntValue);
+Enum                            RAW(Enum);
+Typedef                         RAW(Typedef);
+Record                          RAW(Record);
+Field                           RAW(Field);
+
+ModeAttr                        ATTR(Mode);
+NoThrowAttr                     ATTR(NoThrow);
+NonNullAttr                     ATTR(NonNull);
+AsmLabelAttr                    ATTR(AsmLabel);
+DeprecatedAttr                  ATTR(Deprecated);
+BuiltinAttr                     ATTR(Builtin);
+ReturnsTwiceAttr                ATTR(ReturnsTwice);
+ConstAttr                       ATTR(Const);
+AlignedAttr                     ATTR(Aligned);
+RestrictAttr                    ATTR(Restrict);
+FormatAttr                      ATTR(Format);
+GNUInlineAttr                   ATTR(GNUInline);
+AllocSizeAttr                   ATTR(AllocSize);
+WarnUnusedResultAttr            ATTR(WarnUnusedResult);
+AllocAlignAttr                  ATTR(AllocAlign);
+TransparentUnionAttr            ATTR(TransparentUnion);
+PackedAttr                      ATTR(Packed);
+PureAttr                        ATTR(Pure);
+
+FullComment                     COMMENT(Full);
+ParagraphComment                COMMENT(Paragraph);
+TextComment                     COMMENT(Text);
+
 TranslationUnitDecl             DECL(TranslationUnit);
-IndirectFieldDecl               DECL(IndirectField);
-EnumConstantDecl                DECL(EnumConstant);
-FunctionDecl                    DECL(Function);
-ParmVarDecl                     DECL(ParmVar);
 TypedefDecl                     DECL(Typedef);
 RecordDecl                      DECL(Record);
 FieldDecl                       DECL(Field);
+FunctionDecl                    DECL(Function);
+ParmVarDecl                     DECL(ParmVar);
+IndirectFieldDecl               DECL(IndirectField);
 EnumDecl                        DECL(Enum);
+EnumConstantDecl                DECL(EnumConstant);
 VarDecl                         DECL(Var);
 
-ConstantArrayType               VAL(ConstantArrayType);
-FunctionProtoType               VAL(FunctionProtoType);
-ElaboratedType                  VAL(ElaboratedType);
-BuiltinType                     VAL(BuiltinType);
-PointerType                     VAL(PointerType);
-TypedefType                     VAL(TypedefType);
-RecordType                      VAL(RecordType);
-ParenType                       VAL(ParenType);
-QualType                        VAL(QualType);
-EnumType                        VAL(EnumType);
+BuiltinType                     TYPE(Builtin);
+RecordType                      TYPE(Record);
+PointerType                     TYPE(Pointer);
+ConstantArrayType               TYPE(ConstantArray);
+ElaboratedType                  TYPE(Elaborated);
+TypedefType                     TYPE(Typedef);
+QualType                        TYPE(Qual);
+EnumType                        TYPE(Enum);
+FunctionProtoType               TYPE(FunctionProto);
+ParenType                       TYPE(Paren);
 
-TransparentUnionAttr            VAL(TransparentUnionAttr);
-WarnUnusedResultAttr            VAL(WarnUnusedResultAttr);
-ReturnsTwiceAttr                VAL(ReturnsTwiceAttr);
-AllocAlignAttr                  VAL(AllocAlignAttr);
-DeprecatedAttr                  VAL(DeprecatedAttr);
-GNUInlineAttr                   VAL(GNUInlineAttr);
-AllocSizeAttr                   VAL(AllocSizeAttr);
-RestrictAttr                    VAL(RestrictAttr);
-AsmLabelAttr                    VAL(AsmLabelAttr);
-AlignedAttr                     VAL(AlignedAttr);
-NoThrowAttr                     VAL(NoThrowAttr);
-NonNullAttr                     VAL(NonNullAttr);
-BuiltinAttr                     VAL(BuiltinAttr);
-PackedAttr                      VAL(PackedAttr);
-FormatAttr                      VAL(FormatAttr);
-ConstAttr                       VAL(ConstAttr);
-PureAttr                        VAL(PureAttr);
-ModeAttr                        VAL(ModeAttr);
+CompoundStmt                    STMT(Compound);
+ReturnStmt                      STMT(Return);
+DeclStmt                        STMT(Decl);
+WhileStmt                       STMT(While);
+IfStmt                          STMT(If);
+ForStmt                         STMT(For);
+NullStmt                        STMT(Null);
+GotoStmt                        STMT(Goto);
+SwitchStmt                      STMT(Switch);
+CaseStmt                        STMT(Case);
+DefaultStmt                     STMT(Default);
+LabelStmt                       STMT(Label);
+ContinueStmt                    STMT(Continue);
+BreakStmt                       STMT(Break);
 
-CompoundStmt                    VAL(CompoundStmt);
-ContinueStmt                    VAL(ContinueStmt);
-DefaultStmt                     VAL(DefaultStmt);
-SwitchStmt                      VAL(SwitchStmt);
-ReturnStmt                      VAL(ReturnStmt);
-LabelStmt                       VAL(LabelStmt);
-BreakStmt                       VAL(BreakStmt);
-WhileStmt                       VAL(WhileStmt);
-DeclStmt                        VAL(DeclStmt);
-CaseStmt                        VAL(CaseStmt);
-NullStmt                        VAL(NullStmt);
-GotoStmt                        VAL(GotoStmt);
-ForStmt                         VAL(ForStmt);
-IfStmt                          VAL(IfStmt);
+ParenExpr                       EXPR(Paren);
+DeclRefExpr                     EXPR(DeclRef);
+ConstantExpr                    EXPR(Constant);
+CallExpr                        EXPR(Call);
+MemberExpr                      EXPR(Member);
+ArraySubscriptExpr              EXPR(ArraySubscript);
+InitListExpr                    EXPR(InitList);
+OffsetOfExpr                    EXPR(OffsetOf);
+UnaryExprOrTypeTraitExpr        EXPR(UnaryExprOrTypeTrait);
 
-UnaryExprOrTypeTraitExpr        VAL(UnaryExprOrTypeTraitExpr);
-ArraySubscriptExpr              VAL(ArraySubscriptExpr);
-ImplicitCastExpr                VAL(ImplicitCastExpr);
-CStyleCastExpr                  VAL(CStyleCastExpr);
-ConstantExpr                    VAL(ConstantExpr);
-InitListExpr                    VAL(InitListExpr);
-OffsetOfExpr                    VAL(OffsetOfExpr);
-DeclRefExpr                     VAL(DeclRefExpr);
-MemberExpr                      VAL(MemberExpr);
-ParenExpr                       VAL(ParenExpr);
-CallExpr                        VAL(CallExpr);
+IntegerLiteral                  LITERAL(Integer);
+CharacterLiteral                LITERAL(Character);
+StringLiteral                   LITERAL(String);
 
-CompoundAssignOperator          VAL(CompoundAssignOperator);
-ConditionalOperator             VAL(ConditionalOperator);
-BinaryOperator                  VAL(BinaryOperator);
-UnaryOperator                   VAL(UnaryOperator);
+UnaryOperator                   OPERATOR(Unary);
+BinaryOperator                  OPERATOR(Binary);
+ConditionalOperator             OPERATOR(Conditional);
+CompoundAssignOperator          OPERATOR(CompoundAssign);
 
-CharacterLiteral                VAL(CharacterLiteral);
-IntegerLiteral                  VAL(IntegerLiteral);
-StringLiteral                   VAL(StringLiteral);
-
-ParagraphComment                VAL(ParagraphComment);
-FullComment                     VAL(FullComment);
-TextComment                     VAL(TextComment);
-
-Typedef                         VAL(Typedef);
-Record                          VAL(Record);
-Field                           VAL(Field);
-Enum                            VAL(Enum);
-
-"value: Int"                    VAL(IntValue);
+CStyleCastExpr                  CAST_EXPR(CStyle);
+ImplicitCastExpr                CAST_EXPR(Implicit);
 
 "','"                           OPT(Comma, Operator);
 "'%'"                           OPT(Remainder, Operator);
@@ -262,18 +271,18 @@ union                           OPT(union, RecordDecl);
 enum                            OPT(enum, RecordDecl);
 
 "<undeserialized declarations>" OPT(undeserialized_declarations, Decl);
+used                            OPT(used, Decl);
 referenced                      OPT(referenced, Decl);
 implicit                        OPT(implicit, Decl);
-used                            OPT(used, Decl);
 
-parenlistinit                   OPT(parenlistinit, VarDecl);
+cinit                           OPT(cinit, VarDecl);
 callinit                        OPT(callinit, VarDecl);
 listinit                        OPT(listinit, VarDecl);
-cinit                           OPT(cinit, VarDecl);
+parenlistinit                   OPT(parenlistinit, VarDecl);
 
 non_odr_use_unevaluated         OPT(non_odr_use_unevaluated, DeclRefExpr);
-non_odr_use_discarded           OPT(non_odr_use_discarded, DeclRefExpr);
 non_odr_use_constant            OPT(non_odr_use_constant, DeclRefExpr);
+non_odr_use_discarded           OPT(non_odr_use_discarded, DeclRefExpr);
 
 has_else                        OPT(has_else, IfStmt);
 

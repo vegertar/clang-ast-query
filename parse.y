@@ -619,6 +619,12 @@
   <Node>
     Node
 
+    IntValueNode
+    EnumNode
+    TypedefNode
+    RecordNode
+    FieldNode
+
     ModeAttrNode
     NoThrowAttrNode
     NonNullAttrNode
@@ -788,11 +794,11 @@ Start: Node EOL
   }
 
 Node: NULL { $$.node = 0;  }
- | IntValue INTEGER {}
- | Enum POINTER SQNAME {} 
- | Typedef POINTER BareType {} 
- | Record POINTER BareType {}
- | Field POINTER SQNAME BareType {}
+ | IntValueNode
+ | EnumNode
+ | TypedefNode
+ | RecordNode
+ | FieldNode
 
  | ModeAttrNode
  | NoThrowAttrNode
@@ -875,6 +881,41 @@ Node: NULL { $$.node = 0;  }
 
  | CStyleCastExprNode
  | ImplicitCastExprNode
+
+IntValueNode: IntValue INTEGER
+  {
+    $$.IntValue.node = $1;
+    $$.IntValue.value = $2;
+  }
+
+EnumNode: Enum POINTER SQNAME
+  {
+    $$.Enum.node = $1;
+    $$.Enum.pointer = $2.u;
+    $$.Enum.name = $3;
+  }
+
+TypedefNode: Typedef POINTER BareType
+  {
+    $$.Typedef.node = $1;
+    $$.Typedef.pointer = $2.u;
+    $$.Typedef.type = $3;
+  }
+
+RecordNode: Record POINTER BareType
+  {
+    $$.Record.node = $1;
+    $$.Record.pointer = $2.u;
+    $$.Record.type = $3;
+  }
+
+FieldNode: Field POINTER SQNAME BareType
+  {
+    $$.Field.node = $1;
+    $$.Field.pointer = $2.u;
+    $$.Field.name = $3;
+    $$.Field.type = $4;
+  }
 
 ModeAttrNode: ModeAttr Attr NAME
   {
