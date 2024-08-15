@@ -1,5 +1,9 @@
-#include "parse-requires-inl.h"
+#include "options.h"
 #include <stdint.h>
+
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#error "Little-endian platform is required"
+#endif
 
 #define grp_used_or_referenced _(used_or_referenced, used, referenced)
 #define grp_value_kind _(value_kind, lvalue)
@@ -35,10 +39,6 @@
 #define GROUP_WIDTH 8
 #define KIND_WIDTH 16
 
-#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-#error "Little-endian platform is required"
-#endif
-
 #define IS_NODE()                                                              \
   union {                                                                      \
     uint32_t node;                                                             \
@@ -49,33 +49,30 @@
     };                                                                         \
   }
 
-#define WITH_OPTIONS(...)                                                      \
-  union {                                                                      \
-    uint64_t options;                                                          \
-    struct {                                                                   \
-      OPTIONS(__VA_ARGS__)                                                     \
-    };                                                                         \
-    struct {                                                                   \
-      GROUPS(__VA_ARGS__)                                                      \
-    };                                                                         \
-  }
+#define OF_ATTR(...)                                                           \
+  WITH_OPTIONS(Inherited, Implicit, ##__VA_ARGS__);                            \
+  uintptr_t pointer;                                                           \
+  AngledRange range
 
 #define IS_ATTR(...)                                                           \
   IS_NODE();                                                                   \
-  WITH_OPTIONS(inherited, implicit, ##__VA_ARGS__);                            \
-  intptr_t pointer;                                                            \
-  AngledRange range
+  union {                                                                      \
+    AttrPart attr;                                                             \
+    struct {                                                                   \
+      OF_ATTR(__VA_ARGS__);                                                    \
+    };                                                                         \
+  }
 
 #define IS_COMMENT(...)                                                        \
   IS_NODE();                                                                   \
   WITH_OPTIONS(__VA_ARGS__);                                                   \
-  intptr_t pointer;                                                            \
+  uintptr_t pointer;                                                           \
   AngledRange range
 
 #define OF_DECL(...)                                                           \
   WITH_OPTIONS(imported, implicit, undeserialized_declarations,                \
                grp_used_or_referenced, ##__VA_ARGS__);                         \
-  intptr_t pointer, parent, prev;                                              \
+  uintptr_t pointer, parent, prev;                                             \
   AngledRange range;                                                           \
   Loc loc
 
@@ -91,13 +88,13 @@
 #define IS_TYPE(...)                                                           \
   IS_NODE();                                                                   \
   WITH_OPTIONS(sugar, imported, ##__VA_ARGS__);                                \
-  intptr_t pointer;                                                            \
+  uintptr_t pointer;                                                           \
   BareType type
 
 #define IS_STMT(...)                                                           \
   IS_NODE();                                                                   \
   WITH_OPTIONS(__VA_ARGS__);                                                   \
-  intptr_t pointer;                                                            \
+  uintptr_t pointer;                                                           \
   AngledRange range
 
 #define IS_EXPR(...)                                                           \
@@ -130,7 +127,10 @@
       long long i;                                                             \
       unsigned long long u;                                                    \
     };                                                                         \
+    _Bool negative;                                                            \
   }
+
+typedef struct INTEGER Integer;
 
 typedef enum {
   NG_NULL,
@@ -163,13 +163,13 @@ typedef struct {
 
 typedef struct {
   const char *decl;
-  intptr_t pointer;
+  uintptr_t pointer;
   const char *name;
   BareType type;
 } DeclRef;
 
 typedef struct {
-  intptr_t pointer;
+  uintptr_t pointer;
 } Member;
 
 typedef unsigned ArgIndices;
@@ -180,6 +180,10 @@ typedef struct {
 } DeclPart;
 
 typedef struct {
+  OF_ATTR();
+} AttrPart;
+
+typedef struct {
   union {
     struct {
       IS_NODE();
@@ -187,19 +191,19 @@ typedef struct {
 
     Raw(IntValue, INTEGER);
     Raw(Enum, {
-      intptr_t pointer;
+      uintptr_t pointer;
       const char *name;
     });
     Raw(Typedef, {
-      intptr_t pointer;
+      uintptr_t pointer;
       BareType type;
     });
     Raw(Record, {
-      intptr_t pointer;
+      uintptr_t pointer;
       BareType type;
     });
     Raw(Field, {
-      intptr_t pointer;
+      uintptr_t pointer;
       const char *name;
       BareType type;
     });
@@ -208,7 +212,7 @@ typedef struct {
     Attr(NoThrow, {});
     Attr(NonNull, { ArgIndices arg_indices; });
     Attr(
-        AsmLabel, { const char *name; }, literal_label);
+        AsmLabel, { const char *name; }, IsLiteralLabel);
     Attr(Deprecated, {
       const char *message;
       const char *replacement;
@@ -219,9 +223,9 @@ typedef struct {
     Attr(Aligned, { const char *name; });
     Attr(Restrict, { const char *name; });
     Attr(Format, {
+      const char *archetype;
       uint16_t string_index : 5;
       uint16_t first_to_check : 5;
-      const char *archetype;
     });
     Attr(GNUInline, {});
     Attr(AllocSize, {

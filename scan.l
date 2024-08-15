@@ -16,14 +16,14 @@
     yylloc->first_column = yylloc->last_column;                               \
   } while (0)
 
-#define LINE_STEP()                                                           \
+#define EOL()                                                                 \
   do {                                                                        \
     yylloc->last_line++;                                                      \
     yylloc->last_column = 1;                                                  \
     return TOK_EOL;                                                           \
   } while (0)
 
-#define UNDEFINED() return(TOK_YYUNDEF)
+#define UND() return(TOK_YYUNDEF)
 
 #define REMARK_KV(tok)                                                        \
   do {                                                                        \
@@ -50,7 +50,7 @@
 #define TOK(X) return(TOK_##X)
 #define CHR() return(yytext[0])
 
-#define DECL(X) VAL(X##Decl, + (NG_DECL << KIND_WIDTH))
+#define DECL(X) VAL(X##Decl, | (NG_DECL << KIND_WIDTH))
 
 #define SET(X, value, ...)                                                    \
   do {                                                                        \
@@ -63,11 +63,13 @@
     char *end;                                                                \
     errno = 0;                                                                \
     _Bool is_negative = yytext[0] == '-';                                     \
-    yylval->TOK_##X = is_negative                                             \
-          ? strtoll(yytext, &end, base)                                       \
-          : strtoul(yytext, &end, base);                                      \
-    if (errno || *end) return TOK_YYUNDEF;                                    \
-    return TOK_##X;                                                           \
+    yylval->TOK_##X.negative = is_negative;                                   \
+    if (is_negative)                                                          \
+      yylval->TOK_##X.i = strtoll(yytext, &end, base);                        \
+    else                                                                      \
+      yylval->TOK_##X.u = strtoul(yytext, &end, base);                        \
+                                                                              \
+    return (errno || *end) ? TOK_YYUNDEF : TOK_##X;                           \
   } while (0)
 
 #define add_static(s, n) add_string(string_static(s, n))
@@ -314,8 +316,8 @@ col/:[0-9]+                     TOK(COL);
 
 ":"|","|"<"|">"                 CHR();
 " "                             {}
-\n                              LINE_STEP();
-.                               UNDEFINED();
+\n                              EOL();
+.                               UND();
 
 
 %%

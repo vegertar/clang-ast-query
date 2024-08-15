@@ -6,9 +6,9 @@
 !/parse.y
 !/parse-top.h
 !/parse-requires.h
-!/parse-requires-inl.h
 !/parse-provides.h
 !/parse-impl.c
+!/options.h
 !/pp.h
 !/main.c
 !/test.c

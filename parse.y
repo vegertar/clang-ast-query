@@ -606,10 +606,9 @@
     OPT_ComputeResultTy
     OPT_ComputeLHSTy
 
-  <intptr_t>
-    POINTER
-  <long long>
+  <Integer>
     INTEGER
+    POINTER
   <const char *>
     NAME
     ANAME
@@ -629,8 +628,28 @@
     BareType
   <Node>
     Node
-    AttrNode
+
+    ModeAttrNode
+    NoThrowAttrNode
+    NonNullAttrNode
+    AsmLabelAttrNode
+    DeprecatedAttrNode
+    BuiltinAttrNode
+    ReturnsTwiceAttrNode
+    ConstAttrNode
+    AlignedAttrNode
+    RestrictAttrNode
+    FormatAttrNode
+    GNUInlineAttrNode
+    AllocSizeAttrNode
+    WarnUnusedResultAttrNode
+    AllocAlignAttrNode
+    TransparentUnionAttrNode
+    PackedAttrNode
+    PureAttrNode
+
     CommentNode
+
     TranslationUnitDeclNode
     TypedefDeclNode
     RecordDeclNode
@@ -641,10 +660,13 @@
     EnumDeclNode
     EnumConstantDeclNode
     VarDeclNode
+
     TypeNode
     StmtNode
   <DeclPart>
     Decl
+  <AttrPart>
+    Attr
   <ArgIndices>
     ArgIndices
   <intptr_t>
@@ -679,6 +701,8 @@
     object_kind
   <const char *>
     name
+  <Integer>
+    integer
 %%
 
 // Naming conventions:
@@ -701,7 +725,26 @@ Node: NULL { $$.node = 0;  }
  | Typedef POINTER BareType {} 
  | Record POINTER BareType {}
  | Field POINTER SQNAME BareType {}
- | AttrNode
+
+ | ModeAttrNode
+ | NoThrowAttrNode
+ | NonNullAttrNode
+ | AsmLabelAttrNode
+ | DeprecatedAttrNode
+ | BuiltinAttrNode
+ | ReturnsTwiceAttrNode
+ | ConstAttrNode
+ | AlignedAttrNode
+ | RestrictAttrNode
+ | FormatAttrNode
+ | GNUInlineAttrNode
+ | AllocSizeAttrNode
+ | WarnUnusedResultAttrNode
+ | AllocAlignAttrNode
+ | TransparentUnionAttrNode
+ | PackedAttrNode
+ | PureAttrNode
+
  | CommentNode
 
  | TranslationUnitDeclNode
@@ -718,24 +761,130 @@ Node: NULL { $$.node = 0;  }
  | TypeNode
  | StmtNode
 
-AttrNode: ModeAttr Attr NAME {}
- | NoThrowAttr Attr {}
- | NonNullAttr Attr ArgIndices {}
- | AsmLabelAttr Attr DQNAME opt_IsLiteralLabel {}
- | DeprecatedAttr Attr DQNAME DQNAME {}
- | BuiltinAttr Attr INTEGER {}
- | ReturnsTwiceAttr Attr {}
- | ConstAttr Attr {}
- | AlignedAttr Attr NAME {}
- | RestrictAttr Attr NAME {}
- | FormatAttr Attr NAME INTEGER INTEGER {}
- | GNUInlineAttr Attr {}
- | AllocSizeAttr Attr INTEGER integer {}
- | WarnUnusedResultAttr Attr NAME DQNAME {}
- | AllocAlignAttr Attr INTEGER {}
- | TransparentUnionAttr Attr {}
- | PackedAttr Attr {}
- | PureAttr Attr {}
+ModeAttrNode: ModeAttr Attr NAME
+  {
+    $$.ModeAttr.node = $1;
+    $$.ModeAttr.attr = $2;
+    $$.ModeAttr.name = $3;
+  }
+
+NoThrowAttrNode: NoThrowAttr Attr
+  {
+    $$.NoThrowAttr.node = $1;
+    $$.NoThrowAttr.attr = $2;
+  }
+
+NonNullAttrNode: NonNullAttr Attr ArgIndices
+  {
+    $$.NonNullAttr.node = $1;
+    $$.NonNullAttr.attr = $2;
+    $$.NonNullAttr.arg_indices = $3;
+  }
+
+AsmLabelAttrNode: AsmLabelAttr Attr DQNAME opt_IsLiteralLabel
+  {
+    $$.AsmLabelAttr.node = $1;
+    $$.AsmLabelAttr.attr = $2;
+    $$.AsmLabelAttr.name = $3;
+    $$.AsmLabelAttr.opt_IsLiteralLabel = $4;
+  }
+
+DeprecatedAttrNode: DeprecatedAttr Attr DQNAME DQNAME
+  {
+    $$.DeprecatedAttr.node = $1;
+    $$.DeprecatedAttr.attr = $2;
+    $$.DeprecatedAttr.message = $3;
+    $$.DeprecatedAttr.replacement = $4;
+  }
+
+BuiltinAttrNode: BuiltinAttr Attr INTEGER
+  {
+    $$.BuiltinAttr.node = $1;
+    $$.BuiltinAttr.attr = $2;
+    $$.BuiltinAttr.id = $3.u;
+  }
+
+ReturnsTwiceAttrNode: ReturnsTwiceAttr Attr
+  {
+    $$.ReturnsTwiceAttr.node = $1;
+    $$.ReturnsTwiceAttr.attr = $2;
+  }
+
+ConstAttrNode: ConstAttr Attr
+  {
+    $$.ConstAttr.node = $1;
+    $$.ConstAttr.attr = $2;
+  }
+
+AlignedAttrNode: AlignedAttr Attr NAME
+  {
+    $$.AlignedAttr.node = $1;
+    $$.AlignedAttr.attr = $2;
+    $$.AlignedAttr.name = $3;
+  }
+
+RestrictAttrNode: RestrictAttr Attr NAME
+  {
+    $$.RestrictAttr.node = $1;
+    $$.RestrictAttr.attr = $2;
+    $$.RestrictAttr.name = $3;
+  }
+
+FormatAttrNode: FormatAttr Attr NAME INTEGER INTEGER
+  {
+    $$.FormatAttr.node = $1;
+    $$.FormatAttr.attr = $2;
+    $$.FormatAttr.archetype = $3;
+    $$.FormatAttr.string_index = $4.u;
+    $$.FormatAttr.first_to_check = $5.u;
+  }
+
+GNUInlineAttrNode: GNUInlineAttr Attr
+  {
+    $$.GNUInlineAttr.node = $1;
+    $$.GNUInlineAttr.attr = $2;
+  }
+
+AllocSizeAttrNode: AllocSizeAttr Attr INTEGER integer {}
+  {
+    $$.AllocSizeAttr.node = $1;
+    $$.AllocSizeAttr.attr = $2;
+    $$.AllocSizeAttr.position1 = $3.u;
+    $$.AllocSizeAttr.position2 = $4.u;
+  }
+
+WarnUnusedResultAttrNode: WarnUnusedResultAttr Attr NAME DQNAME {}
+  {
+    $$.WarnUnusedResultAttr.node = $1;
+    $$.WarnUnusedResultAttr.attr = $2;
+    $$.WarnUnusedResultAttr.name = $3;
+    $$.WarnUnusedResultAttr.message = $4;
+  }
+
+AllocAlignAttrNode: AllocAlignAttr Attr INTEGER
+  {
+    $$.AllocAlignAttr.node = $1;
+    $$.AllocAlignAttr.attr = $2;
+    $$.AllocAlignAttr.position = $3.u;
+  }
+
+TransparentUnionAttrNode: TransparentUnionAttr Attr
+  {
+    $$.TransparentUnionAttr.node = $1;
+    $$.TransparentUnionAttr.attr = $2;
+  }
+
+PackedAttrNode: PackedAttr Attr
+  {
+    $$.PackedAttr.node = $1;
+    $$.PackedAttr.attr = $2;
+  }
+
+PureAttrNode: PureAttr Attr
+  {
+    $$.PureAttr.node = $1;
+    $$.PureAttr.attr = $2;
+  }
 
 CommentNode: FullComment Comment {}
  | ParagraphComment Comment {}
@@ -892,12 +1041,18 @@ CastExprNode: CStyleCastExpr CastExpr {}
  | ImplicitCastExpr CastExpr opt_part_of_explicit_cast {}
 
 Attr: POINTER AngledRange opt_Inherited opt_Implicit
+  {
+    $$.pointer = $1.u;
+    $$.range = $2;
+    $$.opt_Inherited = $3;
+    $$.opt_Implicit = $4;
+  }
 
 Comment: POINTER AngledRange
 
 Decl: POINTER parent prev AngledRange Loc opt_imported opt_implicit used_or_referenced opt_undeserialized_declarations
   {
-    $$.pointer = $1;
+    $$.pointer = $1.u;
     $$.parent = $2;
     $$.prev = $3;
     $$.range = $4;
@@ -1002,19 +1157,19 @@ Loc: INVALID_SLOC { $$ = (Loc){}; }
 FileLoc: SRC ':' INTEGER ':' INTEGER
   {
     last_loc_src = $1;
-    last_loc_line = $3;
-    $$ = (Loc){last_loc_src, last_loc_line, $5};
+    last_loc_line = $3.u;
+    $$ = (Loc){last_loc_src, last_loc_line, $5.u};
   }
 
 LineLoc: LINE ':' INTEGER ':' INTEGER
   {
-    last_loc_line = $3;
-    $$ = (Loc){last_loc_src, last_loc_line, $5};
+    last_loc_line = $3.u;
+    $$ = (Loc){last_loc_src, last_loc_line, $5.u};
   }
 
 ColLoc: COL ':' INTEGER
   {
-    $$ = (Loc){last_loc_src, last_loc_line, $3};
+    $$ = (Loc){last_loc_src, last_loc_line, $3.u};
   }
 
 BareType: SQNAME     { $$ = (BareType){$1}; }
@@ -1022,19 +1177,19 @@ BareType: SQNAME     { $$ = (BareType){$1}; }
 
 ArgIndices: INTEGER
   {
-    if ($1 < 1 || $1 > ARG_INDICES_MAX) {
-      yyerror(&@$, uctx, "require a [1, %lu] index: %lld", ARG_INDICES_MAX, $1);
+    if ($1.u < 1 || $1.u > ARG_INDICES_MAX) {
+      yyerror(&@$, uctx, "require a [1, %lu] index: %lld", ARG_INDICES_MAX, $1.u);
       YYERROR;
     }
-    $$ = 0U << $1;
+    $$ = 0U << $1.u;
   }
  | ArgIndices INTEGER
   {
-    if ($2 < 1 || $2 > ARG_INDICES_MAX) {
-      yyerror(&@$, uctx, "require a [1, %lu] index: %lld", ARG_INDICES_MAX, $2);
+    if ($2.u < 1 || $2.u > ARG_INDICES_MAX) {
+      yyerror(&@$, uctx, "require a [1, %lu] index: %lld", ARG_INDICES_MAX, $2.u);
       YYERROR;
     }
-    $$ = $1 | (0U << $2);
+    $$ = $1 | (0U << $2.u);
   }
 
 Text: OPT_Text DQNAME
@@ -1113,17 +1268,17 @@ object_kind: { $$ = 0; }
 name: { $$ = NULL; }
  | NAME
 
-integer:
+integer: { $$ = (Integer){0}; }
  | INTEGER
 
 argument_type:
  | BareType
 
 prev:             { $$ = 0; }
- | PREV POINTER   { $$ = $2; }
+ | PREV POINTER   { $$ = $2.u; }
 
 parent:           { $$ = 0; }
- | PARENT POINTER { $$ = $2; }
+ | PARENT POINTER { $$ = $2.u; }
 
 %%
 

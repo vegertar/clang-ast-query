@@ -1,3 +1,5 @@
+#pragma once
+
 #include "pp.h"
 
 #define NO(...) NO_I1(PP_NARG(__VA_ARGS__))
@@ -572,3 +574,14 @@
 #define SET_OPTIONS40(a, ...)                                                  \
   SET_OPTIONS1(a)                                                              \
   SET_OPTIONS39(__VA_ARGS__)
+
+#define WITH_OPTIONS(...)                                                      \
+  union {                                                                      \
+    uint64_t options;                                                          \
+    struct {                                                                   \
+      OPTIONS(__VA_ARGS__)                                                     \
+    };                                                                         \
+    struct {                                                                   \
+      GROUPS(__VA_ARGS__)                                                      \
+    };                                                                         \
+  }
