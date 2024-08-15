@@ -663,14 +663,26 @@
     EnumConstantDeclNode
     VarDeclNode
 
-    TypeNode
+    BuiltinTypeNode
+    RecordTypeNode
+    PointerTypeNode
+    ConstantArrayTypeNode
+    ElaboratedTypeNode
+    TypedefTypeNode
+    QualTypeNode
+    EnumTypeNode
+    FunctionProtoTypeNode
+    ParenTypeNode
+
     StmtNode
-  <AttrPart>
+  <AttrSelf>
     Attr
-  <CommentPart>
+  <CommentSelf>
     Comment
-  <DeclPart>
+  <DeclSelf>
     Decl
+  <TypeSelf>
+    Type
   <ArgIndices>
     ArgIndices
   <intptr_t>
@@ -765,33 +777,43 @@ Node: NULL { $$.node = 0;  }
  | EnumConstantDeclNode
  | VarDeclNode
 
- | TypeNode
+ | BuiltinTypeNode
+ | RecordTypeNode
+ | PointerTypeNode
+ | ConstantArrayTypeNode
+ | ElaboratedTypeNode
+ | TypedefTypeNode
+ | QualTypeNode
+ | EnumTypeNode
+ | FunctionProtoTypeNode
+ | ParenTypeNode
+
  | StmtNode
 
 ModeAttrNode: ModeAttr Attr NAME
   {
     $$.ModeAttr.node = $1;
-    $$.ModeAttr.attr = $2;
+    $$.ModeAttr.self = $2;
     $$.ModeAttr.name = $3;
   }
 
 NoThrowAttrNode: NoThrowAttr Attr
   {
     $$.NoThrowAttr.node = $1;
-    $$.NoThrowAttr.attr = $2;
+    $$.NoThrowAttr.self = $2;
   }
 
 NonNullAttrNode: NonNullAttr Attr ArgIndices
   {
     $$.NonNullAttr.node = $1;
-    $$.NonNullAttr.attr = $2;
+    $$.NonNullAttr.self = $2;
     $$.NonNullAttr.arg_indices = $3;
   }
 
 AsmLabelAttrNode: AsmLabelAttr Attr DQNAME opt_IsLiteralLabel
   {
     $$.AsmLabelAttr.node = $1;
-    $$.AsmLabelAttr.attr = $2;
+    $$.AsmLabelAttr.self = $2;
     $$.AsmLabelAttr.name = $3;
     $$.AsmLabelAttr.opt_IsLiteralLabel = $4;
   }
@@ -799,7 +821,7 @@ AsmLabelAttrNode: AsmLabelAttr Attr DQNAME opt_IsLiteralLabel
 DeprecatedAttrNode: DeprecatedAttr Attr DQNAME DQNAME
   {
     $$.DeprecatedAttr.node = $1;
-    $$.DeprecatedAttr.attr = $2;
+    $$.DeprecatedAttr.self = $2;
     $$.DeprecatedAttr.message = $3;
     $$.DeprecatedAttr.replacement = $4;
   }
@@ -807,40 +829,40 @@ DeprecatedAttrNode: DeprecatedAttr Attr DQNAME DQNAME
 BuiltinAttrNode: BuiltinAttr Attr INTEGER
   {
     $$.BuiltinAttr.node = $1;
-    $$.BuiltinAttr.attr = $2;
+    $$.BuiltinAttr.self = $2;
     $$.BuiltinAttr.id = $3.u;
   }
 
 ReturnsTwiceAttrNode: ReturnsTwiceAttr Attr
   {
     $$.ReturnsTwiceAttr.node = $1;
-    $$.ReturnsTwiceAttr.attr = $2;
+    $$.ReturnsTwiceAttr.self = $2;
   }
 
 ConstAttrNode: ConstAttr Attr
   {
     $$.ConstAttr.node = $1;
-    $$.ConstAttr.attr = $2;
+    $$.ConstAttr.self = $2;
   }
 
 AlignedAttrNode: AlignedAttr Attr NAME
   {
     $$.AlignedAttr.node = $1;
-    $$.AlignedAttr.attr = $2;
+    $$.AlignedAttr.self = $2;
     $$.AlignedAttr.name = $3;
   }
 
 RestrictAttrNode: RestrictAttr Attr NAME
   {
     $$.RestrictAttr.node = $1;
-    $$.RestrictAttr.attr = $2;
+    $$.RestrictAttr.self = $2;
     $$.RestrictAttr.name = $3;
   }
 
 FormatAttrNode: FormatAttr Attr NAME INTEGER INTEGER
   {
     $$.FormatAttr.node = $1;
-    $$.FormatAttr.attr = $2;
+    $$.FormatAttr.self = $2;
     $$.FormatAttr.archetype = $3;
     $$.FormatAttr.string_index = $4.u;
     $$.FormatAttr.first_to_check = $5.u;
@@ -849,13 +871,13 @@ FormatAttrNode: FormatAttr Attr NAME INTEGER INTEGER
 GNUInlineAttrNode: GNUInlineAttr Attr
   {
     $$.GNUInlineAttr.node = $1;
-    $$.GNUInlineAttr.attr = $2;
+    $$.GNUInlineAttr.self = $2;
   }
 
 AllocSizeAttrNode: AllocSizeAttr Attr INTEGER integer {}
   {
     $$.AllocSizeAttr.node = $1;
-    $$.AllocSizeAttr.attr = $2;
+    $$.AllocSizeAttr.self = $2;
     $$.AllocSizeAttr.position1 = $3.u;
     $$.AllocSizeAttr.position2 = $4.u;
   }
@@ -863,7 +885,7 @@ AllocSizeAttrNode: AllocSizeAttr Attr INTEGER integer {}
 WarnUnusedResultAttrNode: WarnUnusedResultAttr Attr NAME DQNAME {}
   {
     $$.WarnUnusedResultAttr.node = $1;
-    $$.WarnUnusedResultAttr.attr = $2;
+    $$.WarnUnusedResultAttr.self = $2;
     $$.WarnUnusedResultAttr.name = $3;
     $$.WarnUnusedResultAttr.message = $4;
   }
@@ -871,57 +893,57 @@ WarnUnusedResultAttrNode: WarnUnusedResultAttr Attr NAME DQNAME {}
 AllocAlignAttrNode: AllocAlignAttr Attr INTEGER
   {
     $$.AllocAlignAttr.node = $1;
-    $$.AllocAlignAttr.attr = $2;
+    $$.AllocAlignAttr.self = $2;
     $$.AllocAlignAttr.position = $3.u;
   }
 
 TransparentUnionAttrNode: TransparentUnionAttr Attr
   {
     $$.TransparentUnionAttr.node = $1;
-    $$.TransparentUnionAttr.attr = $2;
+    $$.TransparentUnionAttr.self = $2;
   }
 
 PackedAttrNode: PackedAttr Attr
   {
     $$.PackedAttr.node = $1;
-    $$.PackedAttr.attr = $2;
+    $$.PackedAttr.self = $2;
   }
 
 PureAttrNode: PureAttr Attr
   {
     $$.PureAttr.node = $1;
-    $$.PureAttr.attr = $2;
+    $$.PureAttr.self = $2;
   }
 
 FullCommentNode: FullComment Comment
   {
     $$.FullComment.node = $1;
-    $$.FullComment.comment = $2;
+    $$.FullComment.self = $2;
   }
 
 ParagraphCommentNode: ParagraphComment Comment
   {
     $$.ParagraphComment.node = $1;
-    $$.ParagraphComment.comment = $2;
+    $$.ParagraphComment.self = $2;
   }
 
 TextCommentNode: TextComment Comment Text
   {
     $$.TextComment.node = $1;
-    $$.TextComment.comment = $2;
+    $$.TextComment.self = $2;
     $$.TextComment.text = $3;
   }
 
 TranslationUnitDeclNode: TranslationUnitDecl Decl
   {
     $$.TranslationUnitDecl.node = $1;
-    $$.TranslationUnitDecl.decl = $2;
+    $$.TranslationUnitDecl.self = $2;
   }
 
 TypedefDeclNode: TypedefDecl Decl NAME BareType
   {
     $$.TypedefDecl.node = $1;
-    $$.TypedefDecl.decl = $2;
+    $$.TypedefDecl.self = $2;
     $$.TypedefDecl.name = $3;
     $$.TypedefDecl.type = $4;
   }
@@ -930,7 +952,7 @@ RecordDeclNode: RecordDecl Decl Class name opt_definition
   {
 #define obj $$.RecordDecl
     obj.node = $1;
-    obj.decl = $2;
+    obj.self = $2;
     SET_OPTIONS(obj, $3, class);
     obj.name = $4;
     obj.opt_definition = $5;
@@ -941,7 +963,7 @@ FieldDeclNode: FieldDecl Decl name BareType
   {
 #define obj $$.FieldDecl
     obj.node = $1;
-    obj.decl = $2;
+    obj.self = $2;
     obj.name = $3;
     obj.type = $4;
 #undef obj
@@ -951,7 +973,7 @@ FunctionDeclNode: FunctionDecl Decl NAME BareType storage opt_inline
   {
 #define obj $$.FunctionDecl
     obj.node = $1;
-    obj.decl = $2;
+    obj.self = $2;
     obj.name = $3;
     obj.type = $4;
     SET_OPTIONS(obj, $5, storage);
@@ -963,7 +985,7 @@ ParmVarDeclNode: ParmVarDecl Decl name BareType
   {
 #define obj $$.ParmVarDecl
     obj.node = $1;
-    obj.decl = $2;
+    obj.self = $2;
     obj.name = $3;
     obj.type = $4;
 #undef obj
@@ -973,7 +995,7 @@ IndirectFieldDeclNode: IndirectFieldDecl Decl NAME BareType
   {
 #define obj $$.IndirectFieldDecl
     obj.node = $1;
-    obj.decl = $2;
+    obj.self = $2;
     obj.name = $3;
     obj.type = $4;
 #undef obj
@@ -983,7 +1005,7 @@ EnumDeclNode: EnumDecl Decl name
   {
 #define obj $$.EnumDecl
     obj.node = $1;
-    obj.decl = $2;
+    obj.self = $2;
     obj.name = $3;
 #undef obj
   }
@@ -992,7 +1014,7 @@ EnumConstantDeclNode: EnumConstantDecl Decl NAME BareType
   {
 #define obj $$.EnumConstantDecl
     obj.node = $1;
-    obj.decl = $2;
+    obj.self = $2;
     obj.name = $3;
     obj.type = $4;
 #undef obj
@@ -1002,7 +1024,7 @@ VarDeclNode: VarDecl Decl NAME BareType storage init_style
   {
 #define obj $$.VarDecl
     obj.node = $1;
-    obj.decl = $2;
+    obj.self = $2;
     obj.name = $3;
     obj.type = $4;
     SET_OPTIONS(obj, $5, storage);
@@ -1010,16 +1032,69 @@ VarDeclNode: VarDecl Decl NAME BareType storage init_style
 #undef obj
   }
 
-TypeNode: BuiltinType Type {}
- | RecordType Type {} 
- | PointerType Type {}
- | ConstantArrayType Type INTEGER {}
- | ElaboratedType Type {}
- | TypedefType Type {}
- | QualType Type opt_const opt_volatile {}
- | EnumType Type {}
- | FunctionProtoType Type NAME {}
- | ParenType Type {}
+BuiltinTypeNode: BuiltinType Type
+  {
+    $$.BuiltinType.node = $1;
+    $$.BuiltinType.self = $2;
+  }
+
+RecordTypeNode: RecordType Type {} 
+  {
+    $$.RecordType.node = $1;
+    $$.RecordType.self = $2;
+  }
+
+PointerTypeNode: PointerType Type {}
+  {
+    $$.PointerType.node = $1;
+    $$.PointerType.self = $2;
+  }
+
+ConstantArrayTypeNode: ConstantArrayType Type INTEGER {}
+  {
+    $$.ConstantArrayType.node = $1;
+    $$.ConstantArrayType.self = $2;
+    $$.ConstantArrayType.size = $3.u;
+  }
+
+ElaboratedTypeNode: ElaboratedType Type {}
+  {
+    $$.ElaboratedType.node = $1;
+    $$.ElaboratedType.self = $2;
+  }
+
+TypedefTypeNode: TypedefType Type {}
+  {
+    $$.TypedefType.node = $1;
+    $$.TypedefType.self = $2;
+  }
+
+QualTypeNode: QualType Type opt_const opt_volatile {}
+  {
+    $$.QualType.node = $1;
+    $$.QualType.self = $2;
+    $$.QualType.opt_const = $3;
+    $$.QualType.opt_volatile = $4;
+  }
+
+EnumTypeNode: EnumType Type {}
+  {
+    $$.EnumType.node = $1;
+    $$.EnumType.self = $2;
+  }
+
+FunctionProtoTypeNode: FunctionProtoType Type NAME {}
+  {
+    $$.FunctionProtoType.node = $1;
+    $$.FunctionProtoType.self = $2;
+    $$.FunctionProtoType.name = $3;
+  }
+
+ParenTypeNode: ParenType Type {}
+  {
+    $$.ParenType.node = $1;
+    $$.ParenType.self = $2;
+  }
 
 StmtNode: ExprNode {}
  | CompoundStmt Stmt {}
@@ -1094,6 +1169,12 @@ Decl: POINTER parent prev AngledRange Loc opt_imported opt_implicit used_or_refe
   }
 
 Type: POINTER BareType opt_sugar opt_imported
+  {
+    $$.pointer = $1.u;
+    $$.type = $2;
+    $$.opt_sugar = $3;
+    $$.opt_imported = $4;
+  }
 
 Stmt: POINTER AngledRange
 

@@ -57,7 +57,7 @@
 #define IS_ATTR(...)                                                           \
   IS_NODE();                                                                   \
   union {                                                                      \
-    AttrPart attr;                                                             \
+    AttrSelf self;                                                             \
     struct {                                                                   \
       OF_ATTR(__VA_ARGS__);                                                    \
     };                                                                         \
@@ -71,7 +71,7 @@
 #define IS_COMMENT(...)                                                        \
   IS_NODE();                                                                   \
   union {                                                                      \
-    CommentPart comment;                                                       \
+    CommentSelf self;                                                       \
     struct {                                                                   \
       OF_COMMENT(__VA_ARGS__);                                                 \
     };                                                                         \
@@ -87,17 +87,25 @@
 #define IS_DECL(...)                                                           \
   IS_NODE();                                                                   \
   union {                                                                      \
-    DeclPart decl;                                                             \
+    DeclSelf self;                                                             \
     struct {                                                                   \
       OF_DECL(__VA_ARGS__);                                                    \
     };                                                                         \
   }
 
-#define IS_TYPE(...)                                                           \
-  IS_NODE();                                                                   \
+#define OF_TYPE(...)                                                           \
   WITH_OPTIONS(sugar, imported, ##__VA_ARGS__);                                \
   uintptr_t pointer;                                                           \
   BareType type
+
+#define IS_TYPE(...)                                                           \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    TypeSelf self;                                                             \
+    struct {                                                                   \
+      OF_TYPE(__VA_ARGS__);                                                    \
+    };                                                                         \
+  }
 
 #define IS_STMT(...)                                                           \
   IS_NODE();                                                                   \
@@ -185,15 +193,19 @@ typedef Range AngledRange;
 
 typedef struct {
   OF_ATTR();
-} AttrPart;
+} AttrSelf;
 
 typedef struct {
   OF_COMMENT();
-} CommentPart;
+} CommentSelf;
 
 typedef struct {
   OF_DECL();
-} DeclPart;
+} DeclSelf;
+
+typedef struct {
+  OF_TYPE();
+} TypeSelf;
 
 typedef struct {
   union {
