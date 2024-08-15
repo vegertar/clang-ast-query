@@ -71,7 +71,7 @@
 #define IS_COMMENT(...)                                                        \
   IS_NODE();                                                                   \
   union {                                                                      \
-    CommentSelf self;                                                       \
+    CommentSelf self;                                                          \
     struct {                                                                   \
       OF_COMMENT(__VA_ARGS__);                                                 \
     };                                                                         \
@@ -107,11 +107,19 @@
     };                                                                         \
   }
 
-#define IS_STMT(...)                                                           \
-  IS_NODE();                                                                   \
+#define OF_STMT(...)                                                           \
   WITH_OPTIONS(__VA_ARGS__);                                                   \
   uintptr_t pointer;                                                           \
   AngledRange range
+
+#define IS_STMT(...)                                                           \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    StmtSelf self;                                                             \
+    struct {                                                                   \
+      OF_STMT(__VA_ARGS__);                                                    \
+    };                                                                         \
+  }
 
 #define IS_EXPR(...)                                                           \
   IS_STMT(grp_value_kind, grp_object_kind, ##__VA_ARGS__);                     \
@@ -178,6 +186,11 @@ typedef struct {
 } BareType;
 
 typedef struct {
+  const char *name;
+  uintptr_t pointer;
+} Label;
+
+typedef struct {
   const char *decl;
   uintptr_t pointer;
   const char *name;
@@ -206,6 +219,10 @@ typedef struct {
 typedef struct {
   OF_TYPE();
 } TypeSelf;
+
+typedef struct {
+  OF_STMT();
+} StmtSelf;
 
 typedef struct {
   union {
@@ -326,11 +343,11 @@ typedef struct {
     Stmt(If, {}, has_else);
     Stmt(For, {});
     Stmt(Null, {});
-    Stmt(Goto, {});
+    Stmt(Goto, { Label label; });
     Stmt(Switch, {});
     Stmt(Case, {});
     Stmt(Default, {});
-    Stmt(Label, {});
+    Stmt(Label, { const char *name; });
     Stmt(Continue, {});
     Stmt(Break, {});
 

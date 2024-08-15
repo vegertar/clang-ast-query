@@ -674,7 +674,21 @@
     FunctionProtoTypeNode
     ParenTypeNode
 
-    StmtNode
+    CompoundStmtNode
+    ReturnStmtNode
+    DeclStmtNode
+    WhileStmtNode
+    IfStmtNode
+    ForStmtNode
+    NullStmtNode
+    GotoStmtNode
+    SwitchStmtNode
+    CaseStmtNode
+    DefaultStmtNode
+    LabelStmtNode
+    ContinueStmtNode
+    BreakStmtNode
+
   <AttrSelf>
     Attr
   <CommentSelf>
@@ -683,6 +697,8 @@
     Decl
   <TypeSelf>
     Type
+  <StmtSelf>
+    Stmt
   <ArgIndices>
     ArgIndices
   <intptr_t>
@@ -720,6 +736,8 @@
     Text
   <Integer>
     integer
+  <Label>
+    Label
 %%
 
 // Naming conventions:
@@ -788,7 +806,22 @@ Node: NULL { $$.node = 0;  }
  | FunctionProtoTypeNode
  | ParenTypeNode
 
- | StmtNode
+ | CompoundStmtNode
+ | ReturnStmtNode
+ | DeclStmtNode
+ | WhileStmtNode
+ | IfStmtNode
+ | ForStmtNode
+ | NullStmtNode
+ | GotoStmtNode
+ | SwitchStmtNode
+ | CaseStmtNode
+ | DefaultStmtNode
+ | LabelStmtNode
+ | ContinueStmtNode
+ | BreakStmtNode
+
+ | ExprNode {}
 
 ModeAttrNode: ModeAttr Attr NAME
   {
@@ -1096,21 +1129,92 @@ ParenTypeNode: ParenType Type {}
     $$.ParenType.self = $2;
   }
 
-StmtNode: ExprNode {}
- | CompoundStmt Stmt {}
- | ReturnStmt Stmt {}
- | DeclStmt Stmt {}
- | WhileStmt Stmt {}
- | IfStmt Stmt opt_has_else {}
- | ForStmt Stmt {}
- | NullStmt Stmt {}
- | GotoStmt Stmt Label {}
- | SwitchStmt Stmt {}
- | CaseStmt Stmt {}
- | DefaultStmt Stmt {}
- | LabelStmt Stmt SQNAME {}
- | ContinueStmt Stmt {}
- | BreakStmt Stmt {}
+CompoundStmtNode: CompoundStmt Stmt
+  {
+    $$.CompoundStmt.node = $1;
+    $$.CompoundStmt.self = $2;
+  }
+
+ReturnStmtNode: ReturnStmt Stmt
+  {
+    $$.ReturnStmt.node = $1;
+    $$.ReturnStmt.self = $2;
+  }
+
+DeclStmtNode: DeclStmt Stmt
+  {
+    $$.DeclStmt.node = $1;
+    $$.DeclStmt.self = $2;
+  }
+
+WhileStmtNode: WhileStmt Stmt
+  {
+    $$.WhileStmt.node = $1;
+    $$.WhileStmt.self = $2;
+  }
+
+IfStmtNode: IfStmt Stmt opt_has_else
+  {
+    $$.IfStmt.node = $1;
+    $$.IfStmt.self = $2;
+    $$.IfStmt.opt_has_else = $3;
+  }
+
+ForStmtNode: ForStmt Stmt
+  {
+    $$.ForStmt.node = $1;
+    $$.ForStmt.self = $2;
+  }
+
+NullStmtNode: NullStmt Stmt
+  {
+    $$.NullStmt.node = $1;
+    $$.NullStmt.self = $2;
+  }
+
+GotoStmtNode: GotoStmt Stmt Label
+  {
+    $$.GotoStmt.node = $1;
+    $$.GotoStmt.self = $2;
+    $$.GotoStmt.label = $3;
+  }
+
+SwitchStmtNode: SwitchStmt Stmt
+  {
+    $$.SwitchStmt.node = $1;
+    $$.SwitchStmt.self = $2;
+  }
+
+CaseStmtNode: CaseStmt Stmt
+  {
+    $$.CaseStmt.node = $1;
+    $$.CaseStmt.self = $2;
+  }
+
+DefaultStmtNode: DefaultStmt Stmt
+  {
+    $$.DefaultStmt.node = $1;
+    $$.DefaultStmt.self = $2;
+  }
+
+LabelStmtNode: LabelStmt Stmt SQNAME
+  {
+    $$.LabelStmt.node = $1;
+    $$.LabelStmt.self = $2;
+    $$.LabelStmt.name = $3;
+  }
+
+ContinueStmtNode: ContinueStmt Stmt
+  {
+    $$.ContinueStmt.node = $1;
+    $$.ContinueStmt.self = $2;
+  }
+
+BreakStmtNode: BreakStmt Stmt
+  {
+    $$.BreakStmt.node = $1;
+    $$.BreakStmt.self = $2;
+  }
 
 ExprNode: LiteralNode {}
  | OperatorNode {}
@@ -1177,6 +1281,10 @@ Type: POINTER BareType opt_sugar opt_imported
   }
 
 Stmt: POINTER AngledRange
+  {
+    $$.pointer = $1.u;
+    $$.range = $2;
+  }
 
 Expr: Stmt BareType value_kind object_kind
 
@@ -1248,6 +1356,10 @@ PrefixOrPostfix: OPT_prefix
  | OPT_postfix
 
 Label: SQNAME POINTER
+  {
+    $$.name = $1;
+    $$.pointer = $2.u;
+  }
 
 DeclRef: NAME POINTER SQNAME BareType
 
