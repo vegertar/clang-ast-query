@@ -616,17 +616,6 @@
     DQNAME
     SRC
 %nterm
-  <Loc>
-    Loc
-    FileLoc
-    LineLoc
-    ColLoc
-  <Range>
-    Range
-    AngledRange
-  <BareType>
-    argument_type
-    BareType
   <Node>
     Node
 
@@ -704,6 +693,13 @@
     CharacterLiteralNode
     StringLiteralNode
 
+    UnaryOperatorNode
+    BinaryOperatorNode
+    ConditionalOperatorNode
+    CompoundAssignOperatorNode
+
+    CStyleCastExprNode
+    ImplicitCastExprNode
   <AttrSelf>
     Attr
   <CommentSelf>
@@ -728,6 +724,19 @@
     integer
   <Label>
     Label
+  <Loc>
+    Loc
+    FileLoc
+    LineLoc
+    ColLoc
+  <Range>
+    Range
+    AngledRange
+  <BareType>
+    BareType
+    argument_type
+    ComputeLHSTy
+    ComputeResultTy
   <intptr_t>
     parent
     prev
@@ -859,8 +868,13 @@ Node: NULL { $$.node = 0;  }
  | CharacterLiteralNode
  | StringLiteralNode
 
- | OperatorNode {}
- | CastExprNode {}
+ | UnaryOperatorNode
+ | BinaryOperatorNode
+ | ConditionalOperatorNode
+ | CompoundAssignOperatorNode
+
+ | CStyleCastExprNode
+ | ImplicitCastExprNode
 
 ModeAttrNode: ModeAttr Attr NAME
   {
@@ -1342,13 +1356,64 @@ StringLiteralNode: StringLiteral Expr DQNAME
     $$.StringLiteral.value = $3;
   }
 
-OperatorNode: UnaryOperator Expr PrefixOrPostfix Operator opt_cannot_overflow {}
- | BinaryOperator Expr Operator {}
- | ConditionalOperator Expr {}
- | CompoundAssignOperator Expr Operator ComputeLHSTy ComputeResultTy {}
+UnaryOperatorNode: UnaryOperator Expr PrefixOrPostfix Operator opt_cannot_overflow
+  {
+    $$.UnaryOperator.node = $1;
+    $$.UnaryOperator.self = $2;
 
-CastExprNode: CStyleCastExpr CastExpr {}
- | ImplicitCastExpr CastExpr opt_part_of_explicit_cast {}
+#define obj $$.UnaryOperator
+    SET_OPTIONS(obj, $3, prefix_or_postfix);
+    SET_OPTIONS(obj, $4, operator);
+#undef obj
+
+    $$.UnaryOperator.opt_cannot_overflow = $5;
+  }
+
+BinaryOperatorNode: BinaryOperator Expr Operator
+  {
+    $$.BinaryOperator.node = $1;
+    $$.BinaryOperator.self = $2;
+
+#define obj $$.BinaryOperator
+    SET_OPTIONS(obj, $3, operator);
+#undef obj
+  }
+
+ConditionalOperatorNode: ConditionalOperator Expr {}
+CompoundAssignOperatorNode: CompoundAssignOperator Expr Operator ComputeLHSTy ComputeResultTy {}
+  {
+    $$.CompoundAssignOperator.node = $1;
+    $$.CompoundAssignOperator.self = $2;
+
+#define obj $$.CompoundAssignOperator
+    SET_OPTIONS(obj, $3, operator);
+#undef obj
+
+    $$.CompoundAssignOperator.computation_lhs_type = $4;
+    $$.CompoundAssignOperator.computation_result_type = $5;
+  }
+
+CStyleCastExprNode: CStyleCastExpr Expr Cast
+  {
+    $$.CStyleCastExpr.node = $1;
+    $$.CStyleCastExpr.self = $2;
+
+#define obj $$.CStyleCastExpr
+    SET_OPTIONS(obj, $3, cast);
+#undef obj
+  }
+
+ImplicitCastExprNode: ImplicitCastExpr Expr Cast opt_part_of_explicit_cast
+  {
+    $$.ImplicitCastExpr.node = $1;
+    $$.ImplicitCastExpr.self = $2;
+
+#define obj $$.ImplicitCastExpr
+    SET_OPTIONS(obj, $3, cast);
+#undef obj
+
+    $$.ImplicitCastExpr.opt_part_of_explicit_cast = $4;
+  }
 
 Attr: POINTER AngledRange opt_Inherited opt_Implicit
   {
@@ -1402,8 +1467,6 @@ Expr: Stmt BareType value_kind object_kind
     $$.value_kind = $3;
     $$.object_kind = $4;
   }
-
-CastExpr: Expr Cast
 
 Member: MemberAccess MemberDecl POINTER
   {
@@ -1540,9 +1603,9 @@ ArgIndices: INTEGER
 
 Text: OPT_Text DQNAME { $$ = $2; }
 
-ComputeLHSTy: OPT_ComputeLHSTy BareType
+ComputeLHSTy: OPT_ComputeLHSTy BareType { $$ = $2; }
 
-ComputeResultTy: OPT_ComputeResultTy BareType
+ComputeResultTy: OPT_ComputeResultTy BareType { $$ = $2; }
 
 opt_inline:   { $$ = 0; }
  | OPT_inline { $$ = 1; }
