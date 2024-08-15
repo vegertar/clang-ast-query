@@ -625,6 +625,7 @@
     Range
     AngledRange
   <BareType>
+    argument_type
     BareType
   <Node>
     Node
@@ -689,6 +690,16 @@
     ContinueStmtNode
     BreakStmtNode
 
+    ParenExprNode
+    DeclRefExprNode
+    ConstantExprNode
+    CallExprNode
+    MemberExprNode
+    ArraySubscriptExprNode
+    InitListExprNode
+    OffsetOfExprNode
+    UnaryExprOrTypeTraitExprNode
+
   <AttrSelf>
     Attr
   <CommentSelf>
@@ -699,8 +710,20 @@
     Type
   <StmtSelf>
     Stmt
+  <ExprSelf>
+    Expr
+  <DeclRef>
+    DeclRef
   <ArgIndices>
     ArgIndices
+  <Member>
+    Member
+  <MemberDecl>
+    MemberDecl
+  <Integer>
+    integer
+  <Label>
+    Label
   <intptr_t>
     parent
     prev
@@ -720,6 +743,7 @@
     opt_Implicit
     opt_undeserialized_declarations
   <enum yytokentype>
+    MemberAccess
     Operator
     Cast
     Trait
@@ -734,10 +758,6 @@
   <const char *>
     name
     Text
-  <Integer>
-    integer
-  <Label>
-    Label
 %%
 
 // Naming conventions:
@@ -821,7 +841,19 @@ Node: NULL { $$.node = 0;  }
  | ContinueStmtNode
  | BreakStmtNode
 
- | ExprNode {}
+ | ParenExprNode
+ | DeclRefExprNode
+ | ConstantExprNode
+ | CallExprNode
+ | MemberExprNode
+ | ArraySubscriptExprNode
+ | InitListExprNode
+ | OffsetOfExprNode
+ | UnaryExprOrTypeTraitExprNode
+
+ | LiteralNode {}
+ | OperatorNode {}
+ | CastExprNode {}
 
 ModeAttrNode: ModeAttr Attr NAME
   {
@@ -1216,18 +1248,71 @@ BreakStmtNode: BreakStmt Stmt
     $$.BreakStmt.self = $2;
   }
 
-ExprNode: LiteralNode {}
- | OperatorNode {}
- | CastExprNode {}
- | ParenExpr Expr {}
- | DeclRefExpr Expr DeclRef non_odr_use {}
- | ConstantExpr Expr {}
- | CallExpr Expr {}
- | MemberExpr Expr Member {}
- | ArraySubscriptExpr Expr {}
- | InitListExpr Expr {}
- | OffsetOfExpr Expr {}
- | UnaryExprOrTypeTraitExpr Expr Trait argument_type {}
+ParenExprNode: ParenExpr Expr
+  {
+    $$.ParenExpr.node = $1;
+    $$.ParenExpr.self = $2;
+  }
+
+DeclRefExprNode: DeclRefExpr Expr DeclRef non_odr_use {}
+  {
+    $$.DeclRefExpr.node = $1;
+    $$.DeclRefExpr.self = $2;
+    $$.DeclRefExpr.ref = $3;
+
+#define obj $$.DeclRefExpr
+    SET_OPTIONS(obj, $4, non_odr_use);
+#undef obj
+  }
+
+ConstantExprNode: ConstantExpr Expr {}
+  {
+    $$.ConstantExpr.node = $1;
+    $$.ConstantExpr.self = $2;
+  }
+
+CallExprNode: CallExpr Expr {}
+  {
+    $$.CallExpr.node = $1;
+    $$.CallExpr.self = $2;
+  }
+
+MemberExprNode: MemberExpr Expr Member {}
+  {
+    $$.MemberExpr.node = $1;
+    $$.MemberExpr.self = $2;
+    $$.MemberExpr.member = $3;
+  }
+
+ArraySubscriptExprNode: ArraySubscriptExpr Expr {}
+  {
+    $$.ArraySubscriptExpr.node = $1;
+    $$.ArraySubscriptExpr.self = $2;
+  }
+
+InitListExprNode: InitListExpr Expr {}
+  {
+    $$.InitListExpr.node = $1;
+    $$.InitListExpr.self = $2;
+  }
+
+OffsetOfExprNode: OffsetOfExpr Expr {}
+  {
+    $$.OffsetOfExpr.node = $1;
+    $$.OffsetOfExpr.self = $2;
+  }
+
+UnaryExprOrTypeTraitExprNode: UnaryExprOrTypeTraitExpr Expr Trait argument_type {}
+  {
+    $$.UnaryExprOrTypeTraitExpr.node = $1;
+    $$.UnaryExprOrTypeTraitExpr.self = $2;
+
+#define obj $$.UnaryExprOrTypeTraitExpr
+    SET_OPTIONS(obj, $3, trait);
+#undef obj
+
+    $$.UnaryExprOrTypeTraitExpr.argument_type = $4;
+  }
 
 LiteralNode: IntegerLiteral Expr INTEGER {}
  | CharacterLiteral Expr INTEGER {} 
@@ -1287,16 +1372,28 @@ Stmt: POINTER AngledRange
   }
 
 Expr: Stmt BareType value_kind object_kind
+  {
+    $$.stmt = $1;
+    $$.type = $2;
+    $$.value_kind = $3;
+    $$.object_kind = $4;
+  }
 
 CastExpr: Expr Cast
 
 Member: MemberAccess MemberDecl POINTER
+  {
+    $$.dot = $1 == TOK_OPT_dot;
+    $$.anonymous = $2.anonymous;
+    $$.name = $2.name;
+    $$.pointer = $3.u;
+  }
 
 MemberAccess: OPT_arrow
  | OPT_dot
 
-MemberDecl: NAME
- | ANAME
+MemberDecl: NAME { $$ = (MemberDecl){0, $1}; }
+ | ANAME         { $$ = (MemberDecl){1, $1}; }
 
 Operator: OPT_Comma
  | OPT_Remainder
@@ -1362,6 +1459,12 @@ Label: SQNAME POINTER
   }
 
 DeclRef: NAME POINTER SQNAME BareType
+  {
+    $$.decl = $1;
+    $$.pointer = $2.u;
+    $$.name = $3;
+    $$.type = $4;
+  }
 
 AngledRange: '<' Range '>' { $$ = $2; }
 
@@ -1490,7 +1593,7 @@ name: { $$ = NULL; }
 integer: { $$ = (Integer){0}; }
  | INTEGER
 
-argument_type:
+argument_type: { $$ = (BareType){0}; }
  | BareType
 
 prev:             { $$ = 0; }

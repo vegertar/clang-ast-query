@@ -59,11 +59,11 @@
 #define GROUPS(...) GROUPS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 #define GROUPS_I1(n) GROUPS_I2(n)
 #define GROUPS_I2(n) GROUPS##n
-#define GROUPS1(a) grp(grp_##a);
+#define GROUPS1(a) grp_(grp_##a);
 
 #define grpn(n, ...) grp##n(__VA_ARGS__)
 #define grpn_(n, ...) grpn(n, __VA_ARGS__)
-#define grp(...) grpn_(NO(__VA_ARGS__), __VA_ARGS__)
+#define grp_(...) grpn_(NO(__VA_ARGS__), __VA_ARGS__)
 #define grp__(name, ...) name, NO(__VA_ARGS__)
 
 // clang-format off

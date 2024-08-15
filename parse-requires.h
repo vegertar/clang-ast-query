@@ -121,9 +121,23 @@
     };                                                                         \
   }
 
-#define IS_EXPR(...)                                                           \
-  IS_STMT(grp_value_kind, grp_object_kind, ##__VA_ARGS__);                     \
+#define OF_EXPR(...)                                                           \
+  union {                                                                      \
+    StmtSelf stmt;                                                             \
+    struct {                                                                   \
+      OF_STMT(grp_value_kind, grp_object_kind, ##__VA_ARGS__);                 \
+    };                                                                         \
+  };                                                                           \
   BareType type
+
+#define IS_EXPR(...)                                                           \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    ExprSelf self;                                                             \
+    struct {                                                                   \
+      OF_EXPR(__VA_ARGS__);                                                    \
+    };                                                                         \
+  }
 
 #define IS_OPERATOR(...) IS_EXPR(grp_operator, ##__VA_ARGS__)
 #define IS_CAST_EXPR(...) IS_EXPR(grp_cast, ##__VA_ARGS__)
@@ -198,6 +212,14 @@ typedef struct {
 } DeclRef;
 
 typedef struct {
+  _Bool anonymous;
+  const char *name;
+} MemberDecl;
+
+typedef struct {
+  uint8_t dot : 1;
+  uint8_t anonymous : 1;
+  const char *name;
   uintptr_t pointer;
 } Member;
 
@@ -223,6 +245,10 @@ typedef struct {
 typedef struct {
   OF_STMT();
 } StmtSelf;
+
+typedef struct {
+  OF_EXPR();
+} ExprSelf;
 
 typedef struct {
   union {
@@ -354,7 +380,7 @@ typedef struct {
     Expr(Paren, {});
     Expr(
         DeclRef, { DeclRef ref; }, grp_non_odr_use);
-    Expr(ConstantExpr, {});
+    Expr(Constant, {});
     Expr(Call, {});
     Expr(Member, { Member member; });
     Expr(ArraySubscript, {});
