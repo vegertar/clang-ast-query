@@ -296,19 +296,19 @@ typedef struct {
     Attr(Restrict, { const char *name; });
     Attr(Format, {
       const char *archetype;
-      uint16_t string_index : 5;
-      uint16_t first_to_check : 5;
+      uint8_t string_index;
+      uint8_t first_to_check;
     });
     Attr(GNUInline, {});
     Attr(AllocSize, {
-      uint16_t position1 : 5;
-      uint16_t position2 : 5;
+      uint8_t position1;
+      uint8_t position2;
     });
     Attr(WarnUnusedResult, {
       const char *name;
       const char *message;
     });
-    Attr(AllocAlign, { uint16_t position : 5; });
+    Attr(AllocAlign, { uint8_t position; });
     Attr(TransparentUnion, {});
     Attr(Packed, {});
     Attr(Pure, {});

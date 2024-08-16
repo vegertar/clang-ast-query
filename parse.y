@@ -376,7 +376,7 @@
 %printer { fprintf(yyo, "%s", "<invalid loc>"); } INVALID_SLOC;
 %printer { fprintf(yyo, "%s", "line"); } LINE;
 %printer { fprintf(yyo, "%s", "col"); } COL;
-%printer { fprintf(yyo, "%d", $$); } <int>;
+// %printer { fprintf(yyo, "%d", $$); } <int>;
 // %printer { fprintf(yyo, "\"%s\"", $$); } <char *>;
 // %printer { print_type(yyo, &$$); } <struct type>;
 // %printer { print_array(yyo, &$$); } <struct array>;
@@ -392,96 +392,96 @@
     NULL
     PREV
     PARENT
-  <int>
-    INDENT
   <unsigned>
-    TranslationUnitDecl
-    IndirectFieldDecl
-    EnumConstantDecl
-    FunctionDecl
-    ParmVarDecl
-    TypedefDecl
-    RecordDecl
-    FieldDecl
-    EnumDecl
-    VarDecl
+    INDENT
 
-    ConstantArrayType
-    FunctionProtoType
-    ElaboratedType
-    BuiltinType
-    PointerType
-    TypedefType
-    RecordType
-    ParenType
-    QualType
-    EnumType
-
-    TransparentUnionAttr
-    WarnUnusedResultAttr
-    ReturnsTwiceAttr
-    AllocAlignAttr
-    DeprecatedAttr
-    GNUInlineAttr
-    AllocSizeAttr
-    RestrictAttr
-    AsmLabelAttr
-    AlignedAttr
-    NoThrowAttr
-    NonNullAttr
-    BuiltinAttr
-    PackedAttr
-    FormatAttr
-    ConstAttr
-    PureAttr
-    ModeAttr
-
-    CompoundStmt
-    ContinueStmt
-    DefaultStmt
-    SwitchStmt
-    ReturnStmt
-    LabelStmt
-    BreakStmt
-    WhileStmt
-    DeclStmt
-    CaseStmt
-    NullStmt
-    GotoStmt
-    ForStmt
-    IfStmt
-
-    UnaryExprOrTypeTraitExpr
-    ArraySubscriptExpr
-    ImplicitCastExpr
-    CStyleCastExpr
-    ConstantExpr
-    InitListExpr
-    OffsetOfExpr
-    DeclRefExpr
-    MemberExpr
-    ParenExpr
-    CallExpr
-
-    CompoundAssignOperator
-    ConditionalOperator
-    BinaryOperator
-    UnaryOperator
-
-    CharacterLiteral
-    IntegerLiteral
-    StringLiteral
-
-    ParagraphComment
-    FullComment
-    TextComment
-
+    IntValue
+    Enum
     Typedef
     Record
     Field
-    Enum
 
-    IntValue
+    ModeAttr
+    NoThrowAttr
+    NonNullAttr
+    AsmLabelAttr
+    DeprecatedAttr
+    BuiltinAttr
+    ReturnsTwiceAttr
+    ConstAttr
+    AlignedAttr
+    RestrictAttr
+    FormatAttr
+    GNUInlineAttr
+    AllocSizeAttr
+    WarnUnusedResultAttr
+    AllocAlignAttr
+    TransparentUnionAttr
+    PackedAttr
+    PureAttr
+
+    FullComment
+    ParagraphComment
+    TextComment
+
+    TranslationUnitDecl
+    TypedefDecl
+    RecordDecl
+    FieldDecl
+    FunctionDecl
+    ParmVarDecl
+    IndirectFieldDecl
+    EnumDecl
+    EnumConstantDecl
+    VarDecl
+
+    BuiltinType
+    RecordType
+    PointerType
+    ConstantArrayType
+    ElaboratedType
+    TypedefType
+    QualType
+    EnumType
+    FunctionProtoType
+    ParenType
+
+    CompoundStmt
+    ReturnStmt
+    DeclStmt
+    WhileStmt
+    IfStmt
+    ForStmt
+    NullStmt
+    GotoStmt
+    SwitchStmt
+    CaseStmt
+    DefaultStmt
+    LabelStmt
+    ContinueStmt
+    BreakStmt
+
+    ParenExpr
+    DeclRefExpr
+    ConstantExpr
+    CallExpr
+    MemberExpr
+    ArraySubscriptExpr
+    InitListExpr
+    OffsetOfExpr
+    UnaryExprOrTypeTraitExpr
+
+    IntegerLiteral
+    CharacterLiteral
+    StringLiteral
+
+    UnaryOperator
+    BinaryOperator
+    ConditionalOperator
+    CompoundAssignOperator
+
+    CStyleCastExpr
+    ImplicitCastExpr
 
   <enum yytokentype>
     /* Operator */
@@ -782,6 +782,7 @@
 // Naming conventions:
 // - All lowercase leading names are optional non-terminal tokens.
 // - All "opt_" leading names are both optional and represent options.
+// - All "OPT_" leading names are necessary options.
 
 Start: Node EOL
   {
@@ -1596,8 +1597,8 @@ DeclRef: NAME POINTER SQNAME BareType
 
 AngledRange: '<' Range '>' { $$ = $2; }
 
-Range: Loc { $$ = (Range){$1, $1}; }
- | Loc ',' Loc { $$ = (Range){$1, $3}; }
+Range: Loc      { $$ = (Range){$1, $1}; }
+ | Loc ',' Loc  { $$ = (Range){$1, $3}; }
 
 Loc: INVALID_SLOC { $$ = (Loc){}; }
  | FileLoc
@@ -1622,8 +1623,8 @@ ColLoc: COL ':' INTEGER
     $$ = (Loc){last_loc_src, last_loc_line, $3.u};
   }
 
-BareType: SQNAME     { $$ = (BareType){$1}; }
- | SQNAME ':' SQNAME { $$ = (BareType){$1, $3}; }
+BareType: SQNAME      { $$ = (BareType){$1}; }
+ | SQNAME ':' SQNAME  { $$ = (BareType){$1, $3}; }
 
 ArgIndices: INTEGER
   {
@@ -1651,20 +1652,20 @@ ComputeResultTy: OPT_ComputeResultTy BareType { $$ = $2; }
 opt_inline:   { $$ = 0; }
  | OPT_inline { $$ = 1; }
 
-opt_const:   { $$ = 0; }
- | OPT_const { $$ = 1; }
+opt_const:    { $$ = 0; }
+ | OPT_const  { $$ = 1; }
 
 opt_volatile:   { $$ = 0; }
  | OPT_volatile { $$ = 1; }
 
-opt_cannot_overflow:   { $$ = 0; }
- | OPT_cannot_overflow { $$ = 1; }
+opt_cannot_overflow:    { $$ = 0; }
+ | OPT_cannot_overflow  { $$ = 1; }
 
-opt_part_of_explicit_cast:   { $$ = 0; }
- | OPT_part_of_explicit_cast { $$ = 1; }
+opt_part_of_explicit_cast:    { $$ = 0; }
+ | OPT_part_of_explicit_cast  { $$ = 1; }
 
-opt_sugar:   { $$ = 0; }
- | OPT_sugar { $$ = 1; }
+opt_sugar:    { $$ = 0; }
+ | OPT_sugar  { $$ = 1; }
 
 opt_imported:   { $$ = 0; }
  | OPT_imported { $$ = 1; }
@@ -1681,14 +1682,14 @@ opt_definition:   { $$ = 0; }
 opt_IsLiteralLabel:   { $$ = 0; }
  | OPT_IsLiteralLabel { $$ = 1; }
 
-opt_Inherited:   { $$ = 0; }
- | OPT_Inherited { $$ = 1; }
+opt_Inherited:    { $$ = 0; }
+ | OPT_Inherited  { $$ = 1; }
 
 opt_Implicit:   { $$ = 0; }
  | OPT_Implicit { $$ = 1; }
 
-opt_undeserialized_declarations:   { $$ = 0; }
- | OPT_undeserialized_declarations { $$ = 1; }
+opt_undeserialized_declarations:    { $$ = 0; }
+ | OPT_undeserialized_declarations  { $$ = 1; }
 
 storage: { $$ = 0; }
  | OPT_extern
@@ -1724,8 +1725,8 @@ integer: { $$ = (Integer){0}; }
 argument_type: { $$ = (BareType){0}; }
  | BareType
 
-prev:             { $$ = 0; }
- | PREV POINTER   { $$ = $2.u; }
+prev:           { $$ = 0; }
+ | PREV POINTER { $$ = $2.u; }
 
 parent:           { $$ = 0; }
  | PARENT POINTER { $$ = $2.u; }
