@@ -692,23 +692,13 @@ private:
 
     void If(SourceLocation loc, SourceRange range,
             ConditionValueKind value) override {
-      auto locations = ast.find_if_locations(loc);
-      add_sub_directive<if_directive>(tok::pp_if, loc,
-                                      SourceRange{locations.hash_loc});
-      add_sub_directive<if_directive::cond>(range, value);
-      ast.add_expansion();
-      add_sup_directive<if_directive::block>();
+      handle_if(loc, range, value);
     }
 
     void Elif(SourceLocation loc, SourceRange range, ConditionValueKind value,
               SourceLocation if_loc) override {
       assert(verify_if_loc(if_loc));
-      auto locations = ast.find_if_locations(loc);
-      add_sup_directive<if_directive>(tok::pp_elif, loc,
-                                      SourceRange{locations.hash_loc});
-      add_sub_directive<if_directive::cond>(range, value);
-      ast.add_expansion();
-      add_sup_directive<if_directive::block>();
+      handle_if(loc, range, value, true);
     }
 
     void Else(SourceLocation loc, SourceLocation if_loc) override {
@@ -763,7 +753,7 @@ private:
 
         ast.dir = current_node->parent;
         current_node = parent_node;
-      } while (p->kind != tok::pp_if);
+      } while (!p->is_if());
 
       assert(p->loc == if_loc);
       ast.dir = current_node->parent;
@@ -771,56 +761,34 @@ private:
 
     void Ifdef(SourceLocation loc, const Token &token,
                const MacroDefinition &md) override {
-      // ast.tests.emplace_back(token, md);
-      // ast.directives.emplace_back(directive_ifdef{loc, token.getLocation(),
-      //                                             token.getIdentifierInfo(),
-      //                                             md.getMacroInfo()});
-      // add_if_directive();
+      handle_ifdef(loc, token, md, tok::pp_ifdef);
     }
 
     void Ifndef(SourceLocation loc, const Token &token,
                 const MacroDefinition &md) override {
-      // ast.tests.emplace_back(token, md);
-      // ast.directives.emplace_back(directive_ifndef{loc, token.getLocation(),
-      //                                              token.getIdentifierInfo(),
-      //                                              md.getMacroInfo()});
-      // add_if_directive();
+      handle_ifdef(loc, token, md, tok::pp_ifndef);
     }
 
     void Elifdef(SourceLocation loc, const Token &token,
                  const MacroDefinition &md) override {
-      // ast.tests.emplace_back(token, md);
-      // lift_if_directive({}, loc);
-      // ast.directives.emplace_back(directive_elifdef_taken{
-      //     loc, token.getLocation(), token.getIdentifierInfo(),
-      //     md.getMacroInfo()});
-      // add_if_directive();
+      handle_ifdef(loc, token, md, tok::pp_elifdef);
     }
 
     void Elifdef(SourceLocation loc, SourceRange range,
                  SourceLocation if_loc) override {
-      // lift_if_directive(if_loc, loc);
-      // ast.directives.emplace_back(directive_elifdef_skiped{
-      //     loc, range, pp_callback::CVK_NotEvaluated, if_loc});
-      // add_if_directive();
+      assert(verify_if_loc(if_loc));
+      handle_elifdef(loc, range);
     }
 
     void Elifndef(SourceLocation loc, const Token &token,
                   const MacroDefinition &md) override {
-      // ast.tests.emplace_back(token, md);
-      // lift_if_directive({}, loc);
-      // ast.directives.emplace_back(directive_elifndef_taken{
-      //     loc, token.getLocation(), token.getIdentifierInfo(),
-      //     md.getMacroInfo()});
-      // add_if_directive();
+      handle_ifdef(loc, token, md, tok::pp_elifndef);
     }
 
     void Elifndef(SourceLocation loc, SourceRange range,
                   SourceLocation if_loc) override {
-      // lift_if_directive(if_loc, loc);
-      // ast.directives.emplace_back(directive_elifndef_skiped{
-      //     loc, range, pp_callback::CVK_NotEvaluated, if_loc});
-      // add_if_directive();
+      assert(verify_if_loc(if_loc));
+      handle_elifdef(loc, range, true);
     }
 
     void Defined(const Token &token, const MacroDefinition &md,
@@ -914,6 +882,53 @@ private:
     void EndOfMainFile() override { assert(ast.inclusion_stack.empty()); }
 
   private:
+    void handle_if(SourceLocation loc, SourceRange range,
+                   ConditionValueKind value, bool elif = false) {
+      auto locations = ast.find_if_locations(loc);
+
+      if (elif)
+        ast.lift_directive();
+
+      add_sub_directive<if_directive>(elif ? tok::pp_elif : tok::pp_if, loc,
+                                      SourceRange{locations.hash_loc});
+      add_sub_directive<if_directive::cond>(range, value);
+      ast.add_expansion();
+      add_sup_directive<if_directive::block>();
+    }
+
+    void handle_ifdef(SourceLocation loc, const Token &token,
+                      const MacroDefinition &md, tok::PPKeywordKind kind) {
+      auto locations = ast.find_if_locations(loc);
+      auto tok_loc = token.getLocation();
+      SourceRange range(tok_loc, tok_loc.getLocWithOffset(token.getLength()));
+      auto mi = md.getMacroInfo();
+      bool is_ndef = kind == tok::pp_ifndef || kind == tok::pp_elifndef;
+
+      if (kind == tok::pp_elifdef || kind == tok::pp_elifndef)
+        ast.lift_directive();
+
+      add_sub_directive<if_directive>(kind, loc,
+                                      SourceRange{locations.hash_loc});
+      add_sub_directive<if_directive::cond>(
+          range,
+          !!mi == !is_ndef ? pp_callback::CVK_True : pp_callback::CVK_False,
+          true);
+      ast.add_directive<if_directive::defined>(range, tok_loc,
+                                               token.getIdentifierInfo(), mi);
+      add_sup_directive<if_directive::block>();
+    }
+
+    void handle_elifdef(SourceLocation loc, SourceRange range,
+                        bool ndef = false) {
+      auto locations = ast.find_if_locations(loc);
+
+      add_sup_directive<if_directive>(ndef ? tok::pp_elifndef : tok::pp_elifdef,
+                                      loc, SourceRange{locations.hash_loc});
+      add_sub_directive<if_directive::cond>(
+          range, pp_callback::CVK_NotEvaluated, true);
+      add_sup_directive<if_directive::block>();
+    }
+
     template <typename T, typename... U> void add_sub_directive(U &&... args) {
       ast.add_directive<T>(std::forward<U>(args)...);
       ast.down_directive();
@@ -927,6 +942,9 @@ private:
     bool verify_if_loc(SourceLocation if_loc) {
       // Must be if>if_directive::block
       directive_node *current_node = &ast.directive_nodes[ast.dir];
+      assert(std::holds_alternative<if_directive::block>(
+          ast.directives[current_node->i]));
+
       if_directive *p = nullptr;
 
       do {
@@ -934,7 +952,7 @@ private:
         p = std::get_if<if_directive>(&ast.directives[parent_node->i]);
         assert(p);
         current_node = parent_node;
-      } while (p->kind != tok::pp_if);
+      } while (!p->is_if());
 
       return p->loc == if_loc;
     }
@@ -967,6 +985,11 @@ private:
     SourceLocation loc;
     SourceRange range;
     bool has_else;
+
+    bool is_if() const {
+      return kind == tok::pp_if || kind == tok::pp_ifdef ||
+             kind == tok::pp_ifndef;
+    }
 
     struct cond {
       SourceRange range;
@@ -1067,7 +1090,9 @@ private:
     dumper->dumpPointer(mi);
     dumper->dumpSourceRange({mi->getDefinitionLoc(), get_macro_end(mi, id)});
 
-    out << ' ' << id->getName() << ' ';
+    out << ' ';
+    dump_name(id);
+    out << ' ';
     dump_macro_parameters(mi);
     out << ' ';
     dump_macro_replacement(mi);
@@ -1325,16 +1350,18 @@ private:
       ast.dumper->dumpPointer(&arg);
       ast.dumper->dumpSourceRange(arg.range);
 
-      ast.out << ' ';
+      if (arg.implicit)
+        ast.out << " implicit";
+
       switch (arg.value) {
       case pp_callback::CVK_NotEvaluated:
-        ast.out << "NotEvaluated";
+        ast.out << " NotEvaluated";
         break;
       case pp_callback::CVK_False:
-        ast.out << "False";
+        ast.out << " False";
         break;
       case pp_callback::CVK_True:
-        ast.out << "True";
+        ast.out << " True";
         break;
       }
     }
@@ -1349,7 +1376,10 @@ private:
       ast.out << "DefinedPPOperator";
       ast.dumper->dumpPointer(&arg);
       ast.dumper->dumpSourceRange(arg.range);
-      ast.out << ' ' << arg.id->getName();
+      ast.out << ' ';
+      ast.dumper->dumpLocation(arg.tok_loc);
+      ast.out << ' ';
+      ast.dump_name(arg.id);
       ast.dumper->dumpPointer(arg.mi);
     }
 
@@ -1498,27 +1528,32 @@ private:
       last_expansion.first = macros.size();
       last_expansion.second = macro_tokens.size();
 
-      std::vector<std::tuple<SourceLocation, unsigned, bool>> order;
-      order.reserve(exp.root.children.size() + defined_queue.size());
-      for (size_t i = 0; i < exp.root.children.size(); ++i) {
-        auto node = exp.root.children[i];
-        assert(!node->token);
-        order.emplace_back(macros[node->i].range.getBegin(), i, true);
-      }
-      for (size_t i = 0; i < defined_queue.size(); ++i) {
-        order.emplace_back(defined_queue[i].tok_loc, i, false);
-      }
+      if (defined_queue.empty()) {
+        for (auto node : exp.root.children)
+          add_directive<expansion::node *>(node);
+      } else {
+        std::vector<std::tuple<SourceLocation, unsigned, bool>> order;
+        order.reserve(exp.root.children.size() + defined_queue.size());
+        for (size_t i = 0; i < exp.root.children.size(); ++i) {
+          auto node = exp.root.children[i];
+          assert(!node->token);
+          order.emplace_back(macros[node->i].range.getBegin(), i, true);
+        }
+        for (size_t i = 0; i < defined_queue.size(); ++i) {
+          order.emplace_back(defined_queue[i].tok_loc, i, false);
+        }
 
-      std::sort(order.begin(), order.end(), [](auto &a, auto &b) {
-        return std::get<0>(a) < std::get<0>(b);
-      });
+        std::sort(order.begin(), order.end(), [](auto &a, auto &b) {
+          return std::get<0>(a) < std::get<0>(b);
+        });
 
-      for (auto &item : order) {
-        auto i = std::get<1>(item);
-        if (std::get<2>(item))
-          add_directive<expansion::node *>(exp.root.children[i]);
-        else
-          add_directive<if_directive::defined>(std::move(defined_queue[i]));
+        for (auto &item : order) {
+          auto i = std::get<1>(item);
+          if (std::get<2>(item))
+            add_directive<expansion::node *>(exp.root.children[i]);
+          else
+            add_directive<if_directive::defined>(std::move(defined_queue[i]));
+        }
       }
 
       expansions.push_back(std::move(exp));
@@ -1568,7 +1603,8 @@ private:
     out << "MacroExpansion";
     dumper->dumpPointer(macro.info);
     dumper->dumpSourceRange(macro.range);
-    out << ' ' << macro.token.getIdentifierInfo()->getName();
+    out << ' ';
+    dump_name(macro.token.getIdentifierInfo());
     if (macro.fast)
       out << " fast";
   }
@@ -1681,7 +1717,8 @@ private:
 
     SourceLocation origin_loc;
     if (macro && macro != provider) {
-      out << " macro " << macro;
+      out << " macro";
+      dumper->dumpPointer(macro);
 
       SourceRange range(macro->getDefinitionLoc(),
                         macro->getDefinitionEndLoc());
@@ -1716,6 +1753,8 @@ private:
       add_tok({loc, loc.getLocWithOffset(token_length)}, token.getKind());
     }
   }
+
+  void dump_name(const IdentifierInfo *id) { out << "\u200B" << id->getName(); }
 
   unsigned dump_token_content(const Token &token) {
     if (IdentifierInfo *ii = token.getIdentifierInfo()) {
