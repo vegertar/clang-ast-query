@@ -11,13 +11,12 @@
 
 #include <cctype>
 #include <optional>
+#include <type_traits>
 #include <unistd.h>
 
 namespace {
 
 using namespace clang;
-
-static int not_space(int c) { return !std::isspace(c); }
 
 static inline const char *get_macro_kind(const MacroInfo *info) {
   if (!info)
@@ -80,19 +79,19 @@ private:
   expanded_decl *prev;
 };
 
-struct test_decl {
+struct macro_test {
   IdentifierInfo *ii;
   MacroInfo *mi;
   SourceRange sr;
 
-  test_decl(const Token &token, const MacroDefinition &md)
+  macro_test(const Token &token, const MacroDefinition &md)
       : ii(token.getIdentifierInfo()), mi(md.getMacroInfo()),
         sr(token.getLocation(),
            token.getLocation().getLocWithOffset(token.getLength())) {}
 };
 
-struct expansion_decl {
-  Token token;
+struct macro_expansion {
+  Token token; // TODO: use IdentifierInfo instead
   MacroInfo *info;
   SourceRange range;
   int parent;
@@ -118,9 +117,9 @@ public:
     assert(is_expanded_decl() && get_raw() == p);
   }
 
-  explicit index_value_t(const expansion_decl *p) : data((char *)p + 3) {
-    static_assert(alignof(expansion_decl) >= 4 &&
-                  alignof(expansion_decl) % 4 == 0);
+  explicit index_value_t(const macro_expansion *p) : data((char *)p + 3) {
+    static_assert(alignof(macro_expansion) >= 4 &&
+                  alignof(macro_expansion) % 4 == 0);
     assert(is_expansion() && get_raw() == p);
   }
 
@@ -149,9 +148,9 @@ public:
     return (expanded_decl *)get_raw();
   }
 
-  const expansion_decl *get_expansion() const {
+  const macro_expansion *get_expansion() const {
     assert(is_expansion());
-    return (const expansion_decl *)get_raw();
+    return (const macro_expansion *)get_raw();
   }
 
   void *get_raw() const { return (void *)((std::uintptr_t)data & ~mask); }
@@ -270,7 +269,7 @@ class ast_consumer final : public ASTConsumer {
 public:
   ast_consumer(std::unique_ptr<raw_line_ostream> os, Preprocessor &pp)
       : out(*os), pp(pp), os(std::move(os)), visitor(*this),
-        last_macro_expansion(0, 0), dir(0) {
+        last_expansion(0, 0), dir(0) {
     directive_nodes.emplace_back();
   }
 
@@ -290,7 +289,7 @@ protected:
           assert(macro.mi->isBuiltinMacro());
           auto md = pp.getLocalMacroDirective(macro.ii);
           assert(md->getMacroInfo() == macro.mi);
-          directives.emplace_back(directive_def{macro.ii, md});
+          directives.emplace_back(def_directive{macro.ii, md});
           add_directive();
         }
       }
@@ -653,7 +652,7 @@ private:
 
     void MacroDefined(const Token &token, const MacroDirective *md) override {
       ast.defined_map[md->getMacroInfo()] = token.getIdentifierInfo();
-      ast.directives.emplace_back(directive_def{token.getIdentifierInfo(), md});
+      ast.directives.emplace_back(def_directive{token.getIdentifierInfo(), md});
       ast.add_directive();
     }
 
@@ -661,10 +660,18 @@ private:
                       SourceRange range, const MacroArgs *args) override {
       auto &expanding_stack = ast.expanding_stack;
       auto &macros = ast.macros;
-
+      auto remote = macros.size();
       int parent = expanding_stack.empty() ? -1 : expanding_stack.back();
-      unsigned remote = macros.size();
-      macros.emplace_back(token, def.getMacroInfo(), range, parent, remote);
+      assert(parent == -1 ? token.getLocation() == range.getBegin() : true);
+      macros.emplace_back(
+          token, def.getMacroInfo(),
+          SourceRange{range.getBegin(),
+                      parent != -1 ? range.getEnd()
+                                   : range.getBegin() == range.getEnd()
+                                         ? token.getLocation().getLocWithOffset(
+                                               token.getLength())
+                                         : range.getEnd().getLocWithOffset(1)},
+          parent, remote);
       expanding_stack.push_back(remote);
 
       // Update remote field up to the root
@@ -685,88 +692,143 @@ private:
 
     void If(SourceLocation loc, SourceRange range,
             ConditionValueKind value) override {
-      ast.directives.emplace_back(directive_if{loc, range, value});
-      add_if_directive();
+      auto locations = ast.find_if_locations(loc);
+      add_sub_directive<if_directive>(tok::pp_if, loc,
+                                      SourceRange{locations.hash_loc});
+      add_sub_directive<if_directive::cond>(range, value);
+      ast.add_expansion();
+      add_sup_directive<if_directive::block>();
     }
 
     void Elif(SourceLocation loc, SourceRange range, ConditionValueKind value,
               SourceLocation if_loc) override {
-      lift_if_directive(if_loc, loc);
-      ast.directives.emplace_back(directive_elif{loc, range, value, if_loc});
-      add_if_directive();
+      assert(verify_if_loc(if_loc));
+      auto locations = ast.find_if_locations(loc);
+      add_sup_directive<if_directive>(tok::pp_elif, loc,
+                                      SourceRange{locations.hash_loc});
+      add_sub_directive<if_directive::cond>(range, value);
+      ast.add_expansion();
+      add_sup_directive<if_directive::block>();
     }
 
     void Else(SourceLocation loc, SourceLocation if_loc) override {
-      lift_if_directive(if_loc, loc);
-      ast.directives.emplace_back(directive_else{loc, if_loc});
-      add_if_directive();
+      assert(verify_if_loc(if_loc));
+      auto locations = ast.find_if_locations(loc);
+      add_sup_directive<if_directive::block>(
+          locations.hash_loc, SourceRange{locations.keyword_end});
     }
 
     void Endif(SourceLocation loc, SourceLocation if_loc) override {
-      lift_if_directive(if_loc, loc);
-      ast.directives.emplace_back(directive_endif{loc, if_loc});
-      ast.add_directive();
+      auto locations = ast.find_if_locations(loc);
+      auto body_end_loc = locations.hash_loc;
+
+      // Either #else or #elif>if_directive::block
+      directive_node *current_node = &ast.directive_nodes[ast.dir];
+      if_directive *p = nullptr;
+
+      do {
+        auto parent_node = &ast.directive_nodes[current_node->parent];
+        p = std::get_if<if_directive>(&ast.directives[parent_node->i]);
+        assert(p);
+        p->range.setEnd(locations.keyword_end);
+        p->has_else = parent_node->children.size() == 3;
+
+        auto cond_node = &ast.directive_nodes[parent_node->children[0]];
+        auto cond_expr = &ast.directives[cond_node->i];
+        auto cond = std::get_if<if_directive::cond>(cond_expr);
+        assert(cond);
+        // The original end is the position of the last token
+        cond->range.setEnd(ast.next_space(cond->range.getEnd()));
+
+        auto then_node = &ast.directive_nodes[parent_node->children[1]];
+        auto then_stmt = &ast.directives[then_node->i];
+        auto then = std::get_if<if_directive::block>(then_stmt);
+        assert(then);
+        then->range.setBegin(cond->range.getEnd());
+        if (!p->has_else) {
+          then->range.setEnd(body_end_loc);
+        } else {
+          auto alt_node = &ast.directive_nodes[parent_node->children[2]];
+          auto directive = &ast.directives[alt_node->i];
+          if (auto elif = std::get_if<if_directive>(directive)) {
+            then->range.setEnd(elif->range.getBegin());
+          } else if (auto alt = std::get_if<if_directive::block>(directive)) {
+            assert(alt->hash_loc.isValid()); // is an #else directive
+            then->range.setEnd(alt->hash_loc);
+            alt->range.setEnd(body_end_loc);
+          } else {
+            assert(false && "Never reach here");
+          }
+        }
+
+        ast.dir = current_node->parent;
+        current_node = parent_node;
+      } while (p->kind != tok::pp_if);
+
+      assert(p->loc == if_loc);
+      ast.dir = current_node->parent;
     }
 
     void Ifdef(SourceLocation loc, const Token &token,
                const MacroDefinition &md) override {
-      ast.tests.emplace_back(token, md);
-      ast.directives.emplace_back(directive_ifdef{loc, token.getLocation(),
-                                                  token.getIdentifierInfo(),
-                                                  md.getMacroInfo()});
-      add_if_directive();
+      // ast.tests.emplace_back(token, md);
+      // ast.directives.emplace_back(directive_ifdef{loc, token.getLocation(),
+      //                                             token.getIdentifierInfo(),
+      //                                             md.getMacroInfo()});
+      // add_if_directive();
     }
 
     void Ifndef(SourceLocation loc, const Token &token,
                 const MacroDefinition &md) override {
-      ast.tests.emplace_back(token, md);
-      ast.directives.emplace_back(directive_ifndef{loc, token.getLocation(),
-                                                   token.getIdentifierInfo(),
-                                                   md.getMacroInfo()});
-      add_if_directive();
+      // ast.tests.emplace_back(token, md);
+      // ast.directives.emplace_back(directive_ifndef{loc, token.getLocation(),
+      //                                              token.getIdentifierInfo(),
+      //                                              md.getMacroInfo()});
+      // add_if_directive();
     }
 
     void Elifdef(SourceLocation loc, const Token &token,
                  const MacroDefinition &md) override {
-      ast.tests.emplace_back(token, md);
-      ast.lift_directive();
-      ast.directives.emplace_back(directive_elifdef_taken{
-          loc, token.getLocation(), token.getIdentifierInfo(),
-          md.getMacroInfo()});
-      add_if_directive();
+      // ast.tests.emplace_back(token, md);
+      // lift_if_directive({}, loc);
+      // ast.directives.emplace_back(directive_elifdef_taken{
+      //     loc, token.getLocation(), token.getIdentifierInfo(),
+      //     md.getMacroInfo()});
+      // add_if_directive();
     }
 
     void Elifdef(SourceLocation loc, SourceRange range,
                  SourceLocation if_loc) override {
-      lift_if_directive(if_loc, loc);
-      ast.directives.emplace_back(directive_elifdef_skiped{loc, range, if_loc});
-      add_if_directive();
+      // lift_if_directive(if_loc, loc);
+      // ast.directives.emplace_back(directive_elifdef_skiped{
+      //     loc, range, pp_callback::CVK_NotEvaluated, if_loc});
+      // add_if_directive();
     }
 
     void Elifndef(SourceLocation loc, const Token &token,
                   const MacroDefinition &md) override {
-      ast.tests.emplace_back(token, md);
-      ast.lift_directive();
-      ast.directives.emplace_back(directive_elifndef_taken{
-          loc, token.getLocation(), token.getIdentifierInfo(),
-          md.getMacroInfo()});
-      add_if_directive();
+      // ast.tests.emplace_back(token, md);
+      // lift_if_directive({}, loc);
+      // ast.directives.emplace_back(directive_elifndef_taken{
+      //     loc, token.getLocation(), token.getIdentifierInfo(),
+      //     md.getMacroInfo()});
+      // add_if_directive();
     }
 
     void Elifndef(SourceLocation loc, SourceRange range,
                   SourceLocation if_loc) override {
-      lift_if_directive(if_loc, loc);
-      ast.directives.emplace_back(
-          directive_elifndef_skiped{loc, range, if_loc});
-      add_if_directive();
+      // lift_if_directive(if_loc, loc);
+      // ast.directives.emplace_back(directive_elifndef_skiped{
+      //     loc, range, pp_callback::CVK_NotEvaluated, if_loc});
+      // add_if_directive();
     }
 
     void Defined(const Token &token, const MacroDefinition &md,
                  SourceRange range) override {
       ast.tests.emplace_back(token, md);
-      ast.defined_queue.push_back({range.getBegin(), token.getLocation(),
-                                   token.getIdentifierInfo(),
-                                   md.getMacroInfo()});
+      ast.defined_queue.emplace_back(range, token.getLocation(),
+                                     token.getIdentifierInfo(),
+                                     md.getMacroInfo());
     }
 
     void InclusionDirective(SourceLocation hash_loc, const Token &include_tok,
@@ -791,7 +853,7 @@ private:
       });
 
       ast.inclusion_stack.push_back(ast.directives.size() - 1);
-      add_sub_directive();
+      // add_sub_directive();
     }
 
     void FileChanged(SourceLocation loc, FileChangeReason reason,
@@ -852,126 +914,77 @@ private:
     void EndOfMainFile() override { assert(ast.inclusion_stack.empty()); }
 
   private:
-    void lift_if_directive(SourceLocation if_loc, SourceLocation end_loc) {
-      std::visit(
-          [if_loc, end_loc, this](auto &&arg) {
-            using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, directive_if>) {
-              assert(arg.loc == if_loc);
-              if (arg.end_loc.isInvalid())
-                arg.end_loc = end_loc;
-            } else if constexpr (std::is_same_v<T, directive_elif>) {
-              assert(arg.if_loc == if_loc);
-              if (arg.end_loc.isInvalid())
-                arg.end_loc = end_loc;
-            } else if constexpr (std::is_same_v<T, directive_else>) {
-              assert(arg.if_loc == if_loc);
-              if (arg.end_loc.isInvalid())
-                arg.end_loc = end_loc;
-            } else if constexpr (std::is_same_v<T, directive_elifdef_skiped>) {
-              assert(arg.if_loc == if_loc);
-              if (arg.end_loc.isInvalid())
-                arg.end_loc = end_loc;
-            } else if constexpr (std::is_same_v<T, directive_elifndef_skiped>) {
-              assert(arg.if_loc == if_loc);
-              if (arg.end_loc.isInvalid())
-                arg.end_loc = end_loc;
-            } else {
-              assert("Never reach here");
-            }
-          },
-          ast.directives[ast.directive_nodes[ast.dir].i]);
-      ast.lift_directive();
+    template <typename T, typename... U> void add_sub_directive(U &&... args) {
+      ast.add_directive<T>(std::forward<U>(args)...);
+      ast.down_directive();
     }
 
-    void add_if_directive() { add_sub_directive(); }
+    template <typename T, typename... U> void add_sup_directive(U &&... args) {
+      ast.lift_directive();
+      add_sub_directive<T>(std::forward<U>(args)...);
+    }
 
-    void add_sub_directive() {
-      ast.add_directive();
-      ast.down_directive();
-      ast.add_defined_operator();
-      ast.add_expansion_directive();
+    bool verify_if_loc(SourceLocation if_loc) {
+      // Must be if>if_directive::block
+      directive_node *current_node = &ast.directive_nodes[ast.dir];
+      if_directive *p = nullptr;
+
+      do {
+        auto parent_node = &ast.directive_nodes[current_node->parent];
+        p = std::get_if<if_directive>(&ast.directives[parent_node->i]);
+        assert(p);
+        current_node = parent_node;
+      } while (p->kind != tok::pp_if);
+
+      return p->loc == if_loc;
     }
 
     ast_consumer &ast;
   };
 
-  struct macro_expansion_node {
-    unsigned i; // index of macros
-    bool token;
-    llvm::SmallVector<macro_expansion_node *, 4> children;
+  struct expansion {
+    struct node {
+      unsigned i; // index of macros or macro_tokens if the token field is true
+      bool token;
+      llvm::SmallVector<node *, 4> children;
+    };
+
+    node root; // only root.children is available
+    std::vector<node> pool;
+
+    expansion() = default;
+    expansion(expansion &&) = default;
+    expansion(const expansion &) = delete;
   };
 
-  struct directive_def {
+  struct def_directive {
     const IdentifierInfo *id;
     const MacroDirective *md;
   };
 
-  struct directive_if {
+  struct if_directive {
+    tok::PPKeywordKind kind;
     SourceLocation loc;
     SourceRange range;
-    pp_callback::ConditionValueKind value;
-    SourceLocation end_loc;
-  };
+    bool has_else;
 
-  struct directive_elif {
-    SourceLocation loc;
-    SourceRange range;
-    pp_callback::ConditionValueKind value;
-    SourceLocation if_loc;
-    SourceLocation end_loc;
-  };
+    struct cond {
+      SourceRange range;
+      pp_callback::ConditionValueKind value;
+      bool implicit;
+    };
 
-  struct directive_else {
-    SourceLocation loc;
-    SourceLocation if_loc;
-    SourceLocation end_loc;
-  };
+    struct defined {
+      SourceRange range;
+      SourceLocation tok_loc;
+      const IdentifierInfo *id;
+      const MacroInfo *mi;
+    };
 
-  struct directive_endif {
-    SourceLocation loc;
-    SourceLocation if_loc;
-  };
-
-  struct directive_ifxdef {
-    SourceLocation loc;
-    SourceLocation tok_loc;
-    const IdentifierInfo *id;
-    const MacroInfo *mi;
-    SourceLocation end_loc;
-  };
-
-  struct operator_defined : directive_ifxdef {};
-
-  struct directive_ifdef : directive_ifxdef {};
-
-  struct directive_ifndef : directive_ifxdef {};
-
-  struct directive_elifdef_taken : directive_ifxdef {};
-
-  struct directive_elifndef_taken : directive_ifxdef {};
-
-  struct directive_elifdef_skiped {
-    SourceLocation loc;
-    SourceRange range;
-    SourceLocation if_loc;
-    SourceLocation end_loc;
-  };
-
-  struct directive_elifndef_skiped {
-    SourceLocation loc;
-    SourceRange range;
-    SourceLocation if_loc;
-    SourceLocation end_loc;
-  };
-
-  struct directive_expansion {
-    macro_expansion_node root; // only root.children is available
-    std::vector<macro_expansion_node> pool;
-
-    directive_expansion() = default;
-    directive_expansion(directive_expansion &&) = default;
-    directive_expansion(const directive_expansion &) = delete;
+    struct block {
+      SourceLocation hash_loc;
+      SourceRange range;
+    };
   };
 
   struct directive_inclusion {
@@ -990,31 +1003,11 @@ private:
     llvm::SmallVector<unsigned, 4> children;
   };
 
-  void dump_kind(MacroDirective::Kind kind) const {
-    switch (kind) {
-    case MacroDirective::MD_Define:
-      out << "Def";
-      break;
-    case MacroDirective::MD_Undefine:
-      out << "Undef";
-      break;
-    case MacroDirective::MD_Visibility:
-      out << "Visibility";
-      break;
-    }
-  }
-
-  void dump_macro_ref(const MacroInfo *mi, StringRef name) {
-    if (!mi)
-      return;
-
-    out << " '<...>' Macro";
-    dumper->dumpPointer(mi);
-    out << " '" << name << "' ";
-    dump_macro_parameters(mi);
-    out << ':';
-    dump_macro_replacement(mi);
-  }
+  struct directive_locations {
+    SourceLocation hash_loc;
+    SourceLocation keyword_loc;
+    SourceLocation keyword_end;
+  };
 
   void dump_macro_parameters(const MacroInfo *mi) {
     out << "'";
@@ -1087,13 +1080,13 @@ private:
 
     auto loc = token.getLocation();
     if (loc.isFileID()) {
-      add_expansion_directive();
+      add_expansion();
     } else {
       // The fast-expanded token is expanded at the parent macro, in this case
       // the expanding_stack will be empty in advance.
-      expansions.emplace_back(expanding_stack.empty() ? macros.size() - 1
-                                                      : expanding_stack.back(),
-                              token);
+      macro_tokens.emplace_back(
+          expanding_stack.empty() ? macros.size() - 1 : expanding_stack.back(),
+          token);
     }
   }
 
@@ -1119,60 +1112,141 @@ private:
                                 pp.getSourceManager(), pp.getLangOpts());
   }
 
-  SourceLocation find(SourceLocation loc, int (*predicator)(int), int step,
-                      bool *invalid = nullptr) {
-    SourceLocation last = loc;
+  SourceLocation prev(SourceLocation loc, bool space, bool *invalid = nullptr) {
     bool err = false;
-    while (!predicator(get(loc, &err)) && !err) {
+    int curr = 0;
+    SourceLocation last = loc;
+    while ((curr = get(loc, &err)) && !err) {
+      if (curr == '\n') {
+        int prev = get(loc.getLocWithOffset(-1), &err);
+        if (!err && prev == '\\') {
+          loc = loc.getLocWithOffset(-2);
+          continue;
+        }
+      }
+
+      if (space == static_cast<bool>(std::isspace(curr)))
+        break;
+
       last = loc;
-      loc = loc.getLocWithOffset(step);
+      loc = loc.getLocWithOffset(-1);
     }
     if (invalid)
       *invalid = err;
     return err ? last : loc;
   }
 
-  SourceLocation find(SourceLocation loc, int (*predicator)(int),
-                      bool *invalid = nullptr) {
-    return find(loc, predicator, 1, invalid);
+  SourceLocation prev_space(SourceLocation loc, bool *invalid = nullptr) {
+    return prev(loc, true, invalid);
   }
 
-  SourceLocation rfind(SourceLocation loc, int (*predicator)(int),
-                       bool *invalid = nullptr) {
-    return find(loc, predicator, -1, invalid);
+  SourceLocation prev_non_space(SourceLocation loc, bool *invalid = nullptr) {
+    return prev(loc, false, invalid);
   }
 
-  void add_pp_defined(SourceLocation loc) {
-    semantic_tokens.emplace_back(
-        SourceRange{loc, loc.getLocWithOffset(7) /* defined */},
-        tok::pp_defined, true);
+  SourceLocation next(SourceLocation loc, bool space, bool *invalid = nullptr) {
+    bool err = false;
+    int curr = 0;
+    while ((curr = get(loc, &err)) && !err) {
+      if (curr == '\\') {
+        int next = get(loc.getLocWithOffset(1), &err);
+        if (!err && next == '\n') {
+          loc = loc.getLocWithOffset(2);
+          continue;
+        }
+      }
+
+      if (space == static_cast<bool>(std::isspace(curr)))
+        break;
+
+      loc = loc.getLocWithOffset(1);
+    }
+    if (invalid)
+      *invalid = err;
+    return loc;
   }
 
-  void add_pp_if(SourceLocation loc, tok::PPKeywordKind kind) {
-    auto &sm = pp.getSourceManager();
+  SourceLocation next_space(SourceLocation loc, bool *invalid = nullptr) {
+    return next(loc, true, invalid);
+  }
+
+  SourceLocation next_non_space(SourceLocation loc, bool *invalid = nullptr) {
+    return next(loc, false, invalid);
+  }
+
+  directive_locations find_define_locations(SourceLocation loc) {
+    if (loc.isInvalid())
+      return {};
+
+    bool err = false;
+    auto keyword_last = prev_non_space(loc.getLocWithOffset(-1), &err);
+    assert(!err);
+
+    auto keyword_rend = prev_space(keyword_last.getLocWithOffset(-1), &err);
+    // If there's an error, keyword_rend is the file start.
+    auto keyword_loc = keyword_rend.getLocWithOffset(err ? 0 : 1);
+    auto keyword_end = keyword_last.getLocWithOffset(1);
+    auto text = get(keyword_loc, keyword_end);
+
+    SourceLocation hash_loc;
+    if (text[0] == '#') {
+      hash_loc = keyword_loc;
+      keyword_loc = keyword_loc.getLocWithOffset(1);
+    } else {
+      assert(text[0] == 'd');
+      hash_loc = prev_non_space(keyword_rend.getLocWithOffset(-1));
+    }
+
+    return {hash_loc, keyword_loc, keyword_end};
+  }
+
+  directive_locations find_if_locations(SourceLocation loc) {
     SourceLocation hash_loc = loc.getLocWithOffset(-1);
     auto prev = get(hash_loc);
 
     if (std::isspace(prev))
-      hash_loc = rfind(hash_loc.getLocWithOffset(-1), not_space);
+      hash_loc = prev_non_space(hash_loc.getLocWithOffset(-1));
     else
       assert(prev == '#');
 
-    semantic_tokens.emplace_back(
-        SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
-    semantic_tokens.emplace_back(
-        SourceRange{loc, find(loc.getLocWithOffset(2) /* if/elif/else/endif */,
-                              std::isspace)},
-        kind, true);
+    /* if/elif/else/endif */
+    SourceLocation keyword_end = next_space(loc.getLocWithOffset(1));
+
+    return {hash_loc, loc, keyword_end};
   }
 
-  void add_pp_include(SourceLocation hash_loc, SourceLocation loc) {
-    semantic_tokens.emplace_back(
-        SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
-    semantic_tokens.emplace_back(
-        SourceRange{loc, loc.getLocWithOffset(7) /* include */},
-        tok::pp_include, true);
-  }
+  // void add_pp_defined(SourceLocation loc) {
+  //   semantic_tokens.emplace_back(
+  //       SourceRange{loc, loc.getLocWithOffset(7) /* defined */},
+  //       tok::pp_defined, true);
+  // }
+
+  // void add_pp_if(SourceLocation loc, tok::PPKeywordKind kind) {
+  //   auto &sm = pp.getSourceManager();
+  //   SourceLocation hash_loc = loc.getLocWithOffset(-1);
+  //   auto prev = get(hash_loc);
+
+  //   if (std::isspace(prev))
+  //     hash_loc = rfind(hash_loc.getLocWithOffset(-1), not_space);
+  //   else
+  //     assert(prev == '#');
+
+  //   semantic_tokens.emplace_back(
+  //       SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
+  //   semantic_tokens.emplace_back(
+  //       SourceRange{loc, find(loc.getLocWithOffset(2) /* if/elif/else/endif
+  //       */,
+  //                             std::isspace)},
+  //       kind, true);
+  // }
+
+  // void add_pp_include(SourceLocation hash_loc, SourceLocation loc) {
+  //   semantic_tokens.emplace_back(
+  //       SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
+  //   semantic_tokens.emplace_back(
+  //       SourceRange{loc, loc.getLocWithOffset(7) /* include */},
+  //       tok::pp_include, true);
+  // }
 
   void add_tok(SourceRange range, int kind) {
     semantic_tokens.emplace_back(range, kind);
@@ -1188,139 +1262,25 @@ private:
   struct directive_dumper {
     ast_consumer &ast;
 
-    struct directive_locations {
-      SourceLocation hash_loc;
-      SourceLocation keyword_loc;
-      SourceLocation keyword_end;
-    };
-
-    char get(SourceLocation loc, bool *invalid = nullptr) {
-      auto s = Lexer::getSourceText(
-          CharSourceRange::getCharRange({loc, loc.getLocWithOffset(1)}),
-          ast.pp.getSourceManager(), ast.pp.getLangOpts(), invalid);
-      return s.empty() ? 0 : s[0];
-    }
-
-    StringRef get(SourceLocation loc, SourceLocation end) {
-      return Lexer::getSourceText(CharSourceRange::getCharRange({loc, end}),
-                                  ast.pp.getSourceManager(),
-                                  ast.pp.getLangOpts());
-    }
-
-    SourceLocation prev(SourceLocation loc, bool space,
-                        bool *invalid = nullptr) {
-      bool err = false;
-      int curr = 0;
-      SourceLocation last = loc;
-      while ((curr = get(loc, &err)) && !err) {
-        if (curr == '\n') {
-          int prev = get(loc.getLocWithOffset(-1), &err);
-          if (!err && prev == '\\') {
-            loc = loc.getLocWithOffset(-2);
-            continue;
-          }
-        }
-
-        if (space == static_cast<bool>(std::isspace(curr)))
-          break;
-
-        last = loc;
-        loc = loc.getLocWithOffset(-1);
-      }
-      if (invalid)
-        *invalid = err;
-      return err ? last : loc;
-    }
-
-    SourceLocation prev_space(SourceLocation loc, bool *invalid = nullptr) {
-      return prev(loc, true, invalid);
-    }
-
-    SourceLocation prev_non_space(SourceLocation loc, bool *invalid = nullptr) {
-      return prev(loc, false, invalid);
-    }
-
-    SourceLocation next(SourceLocation loc, bool space,
-                        bool *invalid = nullptr) {
-      bool err = false;
-      int curr = 0;
-      while ((curr = get(loc, &err)) && !err) {
-        if (curr == '\\') {
-          int next = get(loc.getLocWithOffset(1), &err);
-          if (!err && next == '\n') {
-            loc = loc.getLocWithOffset(2);
-            continue;
-          }
-        }
-
-        if (space == static_cast<bool>(std::isspace(curr)))
-          break;
-
-        loc = loc.getLocWithOffset(1);
-      }
-      if (invalid)
-        *invalid = err;
-      return loc;
-    }
-
-    SourceLocation next_space(SourceLocation loc, bool *invalid = nullptr) {
-      return next(loc, true, invalid);
-    }
-
-    SourceLocation next_non_space(SourceLocation loc, bool *invalid = nullptr) {
-      return next(loc, false, invalid);
-    }
-
-    directive_locations find_define_locations(SourceLocation loc) {
-      if (loc.isInvalid())
-        return {};
-
-      bool err = false;
-      auto keyword_last = prev_non_space(loc.getLocWithOffset(-1), &err);
-      assert(!err);
-
-      auto keyword_rend = prev_space(keyword_last.getLocWithOffset(-1), &err);
-      // If there's an error, keyword_rend is the file start.
-      auto keyword_loc = keyword_rend.getLocWithOffset(err ? 0 : 1);
-      auto keyword_end = keyword_last.getLocWithOffset(1);
-      auto text = get(keyword_loc, keyword_end);
-
-      SourceLocation hash_loc;
-      if (text[0] == '#') {
-        hash_loc = keyword_loc;
-        keyword_loc = keyword_loc.getLocWithOffset(1);
-      } else {
-        assert(text[0] == 'd');
-        hash_loc = prev_non_space(keyword_rend.getLocWithOffset(-1));
-      }
-
-      return {hash_loc, keyword_loc, keyword_end};
-    }
-
-    directive_locations find_if_locations(SourceLocation loc) {
-      SourceLocation hash_loc = loc.getLocWithOffset(-1);
-      auto prev = get(hash_loc);
-
-      if (std::isspace(prev))
-        hash_loc = prev_non_space(hash_loc.getLocWithOffset(-1));
-      else
-        assert(prev == '#');
-
-      /* if/elif/else/endif */
-      SourceLocation keyword_end = next_space(loc.getLocWithOffset(1));
-
-      return {hash_loc, loc, keyword_end};
-    }
-
-    void operator()(const directive_def &arg) {
+    void operator()(const def_directive &arg) {
       auto &ast = this->ast;
       auto id = arg.id;
       auto md = arg.md;
       auto mi = md->getMacroInfo();
       auto loc = md->getLocation();
 
-      ast.dump_kind(md->getKind());
-      ast.out << "Directive";
+      switch (md->getKind()) {
+      case MacroDirective::MD_Define:
+        ast.out << "DefDirective";
+        break;
+      case MacroDirective::MD_Undefine:
+        ast.out << "UndefDirective";
+        break;
+      case MacroDirective::MD_Visibility:
+        ast.out << "VisibilityDirective";
+        break;
+      }
+
       ast.dumper->dumpPointer(md);
       if (auto prev = md->getPrevious()) {
         ast.out << " prev";
@@ -1328,7 +1288,7 @@ private:
       }
 
       SourceRange range;
-      if (auto locations = find_define_locations(loc);
+      if (auto locations = ast.find_define_locations(loc);
           locations.hash_loc.isValid()) {
         range.setBegin(locations.hash_loc);
         range.setEnd(get_macro_end(mi, id));
@@ -1350,70 +1310,51 @@ private:
       ast.dumper->AddChild([&ast, id, mi] { ast.dump_macro(mi, id); });
     }
 
-    template <typename T> void dump_if(T &&arg) {
-      ast.out << "Directive";
+    void operator()(const if_directive &arg) {
+      ast.out << "IfDirective";
       ast.dumper->dumpPointer(&arg);
-      ast.dumper->dumpSourceRange({find_if_locations(arg.loc).hash_loc,
-                                   find_if_locations(arg.end_loc).hash_loc});
+      ast.dumper->dumpSourceRange(arg.range);
+
+      ast.out << ' ' << tok::getPPKeywordSpelling(arg.kind);
+      if (arg.has_else)
+        ast.out << " has_else";
     }
 
-    template <typename T> void dump_condition(T &&arg) {
-      auto &out = ast.out;
-      auto &dumper = ast.dumper;
-
-      dumper->AddChild([&out, &dumper, &arg,
-                        range = SourceRange{arg.range.getBegin(),
-                                            next_space(arg.range.getEnd())}] {
-        out << "ConditionalPPExpr";
-        dumper->dumpSourceRange(range);
-
-        out << ' ';
-        switch (arg.value) {
-        case pp_callback::CVK_NotEvaluated:
-          out << "NotEvaluated";
-          break;
-        case pp_callback::CVK_False:
-          out << "False";
-          break;
-        case pp_callback::CVK_True:
-          out << "True";
-          break;
-        }
-      });
-    }
-
-    void operator()(const directive_if &arg) {
-      ast.out << "If";
-      dump_if(arg);
-      dump_condition(arg);
-    }
-
-    void operator()(const directive_elif &arg) {
-      ast.out << "Elif";
-      dump_if(arg);
-      dump_condition(arg);
-    }
-
-    void operator()(const directive_else &arg) {
-      ast.out << "Else";
-      dump_if(arg);
-    }
-
-    void operator()(const directive_endif &arg) {
-      ast.out << "EndifDirective";
+    void operator()(const if_directive::cond &arg) {
+      ast.out << "ConditionalPPExpr";
       ast.dumper->dumpPointer(&arg);
-      ast.dumper->dumpSourceRange({find_if_locations(arg.if_loc).hash_loc,
-                                   find_if_locations(arg.loc).keyword_end});
+      ast.dumper->dumpSourceRange(arg.range);
+
+      ast.out << ' ';
+      switch (arg.value) {
+      case pp_callback::CVK_NotEvaluated:
+        ast.out << "NotEvaluated";
+        break;
+      case pp_callback::CVK_False:
+        ast.out << "False";
+        break;
+      case pp_callback::CVK_True:
+        ast.out << "True";
+        break;
+      }
     }
 
-    void operator()(const operator_defined &arg) {}
-    void operator()(const directive_ifdef &arg) {}
-    void operator()(const directive_ifndef &arg) {}
-    void operator()(const directive_elifdef_taken &arg) {}
-    void operator()(const directive_elifdef_skiped &arg) {}
-    void operator()(const directive_elifndef_taken &arg) {}
-    void operator()(const directive_elifndef_skiped &arg) {}
-    void operator()(const directive_expansion &arg) {}
+    void operator()(const if_directive::block &arg) {
+      ast.out << "CompoundPPStmt";
+      ast.dumper->dumpPointer(&arg);
+      ast.dumper->dumpSourceRange(arg.range);
+    }
+
+    void operator()(const if_directive::defined &arg) {
+      ast.out << "DefinedPPOperator";
+      ast.dumper->dumpPointer(&arg);
+      ast.dumper->dumpSourceRange(arg.range);
+      ast.out << ' ' << arg.id->getName();
+      ast.dumper->dumpPointer(arg.mi);
+    }
+
+    void operator()(const expansion::node *node) { ast.dump_expansion(*node); }
+
     void operator()(const directive_inclusion &arg) {}
   };
 
@@ -1499,7 +1440,7 @@ private:
           dumper->dumpLocation(last_expansion_loc);
           out << " 0";
           // MACRO_FOO(a, b, c, e, f, g);
-          // ^~~expanded_decl           ^~~expansion_decl
+          // ^~~expanded_decl           ^~~macro_expansion
           v = find(last_expansion_loc, FIND_OPTION_UPPER_BOUND);
           assert(v && v->is_expansion());
           dumper->dumpPointer(v->get_expansion());
@@ -1533,85 +1474,103 @@ private:
     directive_nodes[dir].children.emplace_back(directive_nodes.size() - 1);
   }
 
-  void add_defined_operator() {
-    for (auto &item : defined_queue) {
-      directives.push_back(item);
-      add_directive();
-    }
-    defined_queue.clear();
+  template <typename T, typename... U> void add_directive(U &&... args) {
+    directives.push_back(T{std::forward<U>(args)...});
+    add_directive();
   }
 
-  void add_expansion_directive() {
+  void add_expansion() {
     assert(expanding_stack.empty());
 
-    unsigned k = last_macro_expansion.second;
-    auto expected_macro_size = macros.size() - last_macro_expansion.first;
-    auto expected_token_size = expansions.size() - last_macro_expansion.second;
+    unsigned macro = last_expansion.first;
+    unsigned token = last_expansion.second;
+    auto expected_macro_size = macros.size() - macro;
+    auto expected_token_size = macro_tokens.size() - token;
 
-    directive_expansion exp;
+    expansion exp;
     exp.pool.reserve(expected_macro_size + expected_token_size);
 
-    index_macro(last_macro_expansion.first, macros.size());
-    make_macro_expansion(-1, last_macro_expansion.first, macros.size(), k,
-                         exp.root, exp.pool);
+    index_macro(macro, macros.size());
+    make_expansion(-1, macro, macros.size(), token, exp.root, exp.pool);
     assert(exp.pool.size() == expected_macro_size + expected_token_size);
 
     if (!exp.pool.empty()) {
-      if (expected_token_size == 0)
-        trivial_expansions.push_back(exp.pool.front().i);
+      last_expansion.first = macros.size();
+      last_expansion.second = macro_tokens.size();
 
-      directives.emplace_back(std::move(exp));
-      last_macro_expansion.first = macros.size();
-      last_macro_expansion.second = expansions.size();
-      add_directive();
+      std::vector<std::tuple<SourceLocation, unsigned, bool>> order;
+      order.reserve(exp.root.children.size() + defined_queue.size());
+      for (size_t i = 0; i < exp.root.children.size(); ++i) {
+        auto node = exp.root.children[i];
+        assert(!node->token);
+        order.emplace_back(macros[node->i].range.getBegin(), i, true);
+      }
+      for (size_t i = 0; i < defined_queue.size(); ++i) {
+        order.emplace_back(defined_queue[i].tok_loc, i, false);
+      }
+
+      std::sort(order.begin(), order.end(), [](auto &a, auto &b) {
+        return std::get<0>(a) < std::get<0>(b);
+      });
+
+      for (auto &item : order) {
+        auto i = std::get<1>(item);
+        if (std::get<2>(item))
+          add_directive<expansion::node *>(exp.root.children[i]);
+        else
+          add_directive<if_directive::defined>(std::move(defined_queue[i]));
+      }
+
+      expansions.push_back(std::move(exp));
+    } else {
+      for (auto &item : defined_queue)
+        add_directive<if_directive::defined>(std::move(item));
     }
+
+    defined_queue.clear();
   }
 
-  void make_macro_expansion(int parent, unsigned begin, unsigned end,
-                            unsigned &k, macro_expansion_node &host,
-                            std::vector<macro_expansion_node> &pool) {
+  void make_expansion(int parent, unsigned begin, unsigned end, unsigned &k,
+                      expansion::node &host,
+                      std::vector<expansion::node> &pool) {
     for (auto i = begin; i < end; ++i) {
-      make_macro_expansion_token(parent, k, host, pool);
+      make_expansion(parent, k, host, pool);
       auto &node = pool.emplace_back(i, false);
       host.children.emplace_back(&node);
-      make_macro_expansion(i, i + 1, macros[i].remote + 1, k, node, pool);
+      make_expansion(i, i + 1, macros[i].remote + 1, k, node, pool);
       i = macros[i].remote;
     }
 
-    make_macro_expansion_token(parent, k, host, pool);
+    make_expansion(parent, k, host, pool);
   }
 
-  void make_macro_expansion_token(int at, unsigned &k,
-                                  macro_expansion_node &host,
-                                  std::vector<macro_expansion_node> &pool) {
-    unsigned n = expansions.size();
-    while (k < n && expansions[k].first == at) {
+  void make_expansion(int at, unsigned &k, expansion::node &host,
+                      std::vector<expansion::node> &pool) {
+    unsigned n = macro_tokens.size();
+    while (k < n && macro_tokens[k].first == at) {
       host.children.emplace_back(&pool.emplace_back(k, true));
       ++k;
     }
   }
 
-  void dump_macro_expansion(const macro_expansion_node &node) {
-    dumper->AddChild([&, this] {
-      if (node.token)
-        dump_token(expansions[node.i].second,
-                   macros[expansions[node.i].first].info);
-      else
-        dump_macro_expansion(macros[node.i]);
+  void dump_expansion(const expansion::node &node) {
+    if (node.token)
+      dump_token(macro_tokens[node.i].second,
+                 macros[macro_tokens[node.i].first].info);
+    else
+      dump_macro(macros[node.i]);
 
-      for (auto child : node.children) {
-        dump_macro_expansion(*child);
-      }
-    });
+    for (auto child : node.children)
+      dumper->AddChild([child, this] { dump_expansion(*child); });
   }
 
-  void dump_macro_expansion(const expansion_decl &macro) {
-    out << "ExpansionDecl";
-    dumper->dumpPointer(&macro);
+  void dump_macro(const macro_expansion &macro) {
+    out << "MacroExpansion";
+    dumper->dumpPointer(macro.info);
     dumper->dumpSourceRange(macro.range);
+    out << ' ' << macro.token.getIdentifierInfo()->getName();
     if (macro.fast)
       out << " fast";
-    dump_macro_ref(macro.info, macro.token.getIdentifierInfo()->getName());
   }
 
   bool is_in_scratch_space(SourceLocation loc) {
@@ -1781,19 +1740,17 @@ private:
   std::optional<TextNodeDumper> dumper;
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<unsigned, 8> inclusion_stack;
-  llvm::SmallVector<operator_defined, 8> defined_queue;
+  llvm::SmallVector<if_directive::defined, 8> defined_queue;
   llvm::DenseMap<const MacroInfo *, const IdentifierInfo *> defined_map;
-  std::vector<test_decl> tests;
-  std::vector<expansion_decl> macros;
-  std::vector<std::pair<unsigned, Token>> expansions; // with replacements
-  std::vector<unsigned> trivial_expansions;           // without replacements
-  std::pair<unsigned, unsigned> last_macro_expansion;
-  std::vector<std::variant<directive_def, directive_if, directive_elif,
-                           directive_else, directive_endif, operator_defined,
-                           directive_ifdef, directive_ifndef,
-                           directive_elifdef_taken, directive_elifdef_skiped,
-                           directive_elifndef_taken, directive_elifndef_skiped,
-                           directive_expansion, directive_inclusion>>
+  std::vector<macro_test> tests;
+  std::vector<macro_expansion> macros;
+  std::vector<std::pair<unsigned, Token>> macro_tokens; // with replacements
+  std::vector<unsigned> trivial_expansions;             // without replacements
+  std::vector<expansion> expansions;
+  std::pair<unsigned, unsigned> last_expansion;
+  std::vector<std::variant<def_directive, if_directive, if_directive::cond,
+                           if_directive::block, if_directive::defined,
+                           directive_inclusion, expansion::node *>>
       directives;
   unsigned dir; // index of the present directive_node
   std::vector<directive_node> directive_nodes;

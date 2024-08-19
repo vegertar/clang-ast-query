@@ -1632,7 +1632,7 @@ ArgIndices: INTEGER
       yyerror(&@$, uctx, "require a [1, %lu] index: %lld", ARG_INDICES_MAX, $1.u);
       YYERROR;
     }
-    $$ = 0U << $1.u;
+    $$ = 1U << ($1.u - 1);
   }
  | ArgIndices INTEGER
   {
@@ -1640,7 +1640,7 @@ ArgIndices: INTEGER
       yyerror(&@$, uctx, "require a [1, %lu] index: %lld", ARG_INDICES_MAX, $2.u);
       YYERROR;
     }
-    $$ = $1 | (0U << $2.u);
+    $$ = $1 | (1U << ($2.u - 1));
   }
 
 Text: OPT_Text DQNAME { $$ = $2; }
