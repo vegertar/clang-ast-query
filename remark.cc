@@ -40,15 +40,20 @@ static inline const char *get_macro_kind(const MacroInfo *info) {
   }
 }
 
-static inline SourceLocation get_macro_end(const MacroInfo *info,
+static inline SourceLocation get_macro_end(const MacroInfo *mi,
                                            const IdentifierInfo *id) {
-  if (auto body = info->tokens(); !body.empty()) {
+  if (auto body = mi->tokens(); !body.empty()) {
     auto &last_token = body.back();
     return last_token.getLocation().getLocWithOffset(last_token.getLength());
   }
 
-  return info->getDefinitionEndLoc().getLocWithOffset(
-      info->isFunctionLike() ? 1 : id->getName().size());
+  return mi->getDefinitionEndLoc().getLocWithOffset(
+      mi->isFunctionLike() ? 1 : id->getLength());
+}
+
+static inline SourceRange get_macro_range(const MacroInfo *mi,
+                                          const IdentifierInfo *id) {
+  return {mi->getDefinitionLoc(), get_macro_end(mi, id)};
 }
 
 class expanded_decl {
@@ -79,20 +84,9 @@ private:
   expanded_decl *prev;
 };
 
-struct macro_test {
-  IdentifierInfo *ii;
-  MacroInfo *mi;
-  SourceRange sr;
-
-  macro_test(const Token &token, const MacroDefinition &md)
-      : ii(token.getIdentifierInfo()), mi(md.getMacroInfo()),
-        sr(token.getLocation(),
-           token.getLocation().getLocWithOffset(token.getLength())) {}
-};
-
 struct macro_expansion {
-  Token token; // TODO: use IdentifierInfo instead
-  MacroInfo *info;
+  IdentifierInfo *identifier;
+  MacroInfo *macro;
   SourceRange range;
   int parent;
   unsigned remote;
@@ -164,10 +158,59 @@ private:
   static const std::uintptr_t mask = 3;
 };
 
-struct semantic_token {
-  SourceRange range;
-  int kind;
-  bool is_pp;
+class semantic_token {
+public:
+  semantic_token(SourceRange range, unsigned kind) : kind(kind) {
+    this->range = range;
+    this->option = 0;
+  }
+
+  semantic_token(SourceRange range, const Decl *p)
+      : semantic_token(range, reinterpret_cast<uintptr_t>(p)) {
+    this->is_decl = 1;
+  }
+
+  // semantic_token(SourceLocation loc, SourceLocation::UIntTy offset,
+  //                const Decl *p)
+  //     : kind(reinterpret_cast<uintptr_t>(p)) {
+  //   this->loc = loc;
+  //   this->offset = offset;
+  //   this->option = 0;
+  //   this->is_decl = 1;
+  //   this->is_expansion = 1;
+  //   assert(offset > 0);
+  // }
+
+  // semantic_token(SourceLocation loc, const macro_expansion *p)
+  //     : kind(reinterpret_cast<uintptr_t>(p)) {
+  //   this->loc = loc;
+  //   this->offset = 0;
+  //   this->option = 0;
+  //   this->is_expansion = 1;
+  // }
+
+  void set_comment(bool v) { is_comment = v; }
+
+private:
+  uintptr_t kind;
+
+  union {
+    SourceRange range;
+    struct {
+      SourceLocation loc;
+      SourceLocation::UIntTy offset;
+    };
+  };
+
+  union {
+    unsigned char option;
+    struct {
+      unsigned char is_pp : 1;
+      unsigned char is_comment : 1;
+      unsigned char is_decl : 1;
+      unsigned char is_expansion : 1;
+    };
+  };
 
   static constexpr std::pair<const char *, const char *> token_names[] = {
 #define TOK(X) {"TOKEN", #X},
@@ -175,6 +218,13 @@ struct semantic_token {
 #define PUNCTUATOR(X, Y) {"PUNCTUATION", #X},
 #include "clang/Basic/TokenKinds.def"
       {nullptr, nullptr}};
+
+  static constexpr const char *comment_names[] = {
+      "invalid",           "bcpl_comment",
+      "c_comment",         "bcpl_slash_comment",
+      "bcpl_excl_comment", "java_doc_comment",
+      "qt_comment",        "merged_comment",
+  };
 
   static std::pair<const char *, const char *> token_name(int kind) {
     std::pair<const char *, const char *> v = semantic_token::token_names[kind];
@@ -189,14 +239,27 @@ struct semantic_token {
 
   std::pair<const char *, const char *> token_name() {
     std::pair<const char *, const char *> v = {};
-    if (!is_pp) {
-      v = semantic_token::token_name(kind);
-    } else {
-      v.first = "PPKEYWORD";
-      v.second =
-          tok::getPPKeywordSpelling(static_cast<tok::PPKeywordKind>(kind));
+    if (is_expansion) {
+      // TODO:
     }
-    return v;
+
+    if (is_decl) {
+      return {"IDENTIFIER",
+              kind ? reinterpret_cast<const Decl *>(kind)->getDeclKindName()
+                   : "undefined"};
+    }
+
+    if (is_comment) {
+      assert(kind < sizeof(comment_names) / sizeof(*comment_names));
+      return {"COMMENT", comment_names[kind]};
+    }
+
+    if (is_pp) {
+      return {"PPKEYWORD",
+              tok::getPPKeywordSpelling(static_cast<tok::PPKeywordKind>(kind))};
+    }
+
+    return semantic_token::token_name(kind);
   }
 };
 
@@ -281,130 +344,12 @@ protected:
   }
 
   void HandleTranslationUnit(ASTContext &ctx) override {
-    // Some macros are built-in and do not trigger callbacks,
-    // so we explicitly define them.
-    for (auto &macro : tests) {
-      if (macro.mi) {
-        if (auto iter = defined_map.find(macro.mi); iter == defined_map.end()) {
-          assert(macro.mi->isBuiltinMacro());
-          auto md = pp.getLocalMacroDirective(macro.ii);
-          assert(md->getMacroInfo() == macro.mi);
-          directives.emplace_back(def_directive{macro.ii, md});
-          add_directive();
-        }
-      }
-    }
-
-    dump_preprocessor_directives();
-    auto &sm = ctx.getSourceManager();
-    const auto file = sm.getFileEntryRefForID(sm.getMainFileID());
-    const auto &filename = file->getName();
-    char cwd[PATH_MAX];
-
-    out << "#TU:" << filename << '\n';
-    out << "#TS:" << time(NULL) << '\n';
-    out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
-
-    for (auto range : inactive_regions) {
-      out << "#INACTIVE:";
-      dumper->dumpSourceRange(range);
-      out << '\n';
-    }
-
-    for (auto &token : semantic_tokens) {
-      std::pair<const char *, const char *> name = token.token_name();
-
-      out << "#TOK-KIND:";
-      dumper->dumpSourceRange(token.range);
-      out << " \"" << name.first << ' ' << name.second << "\"\n";
-    }
-
-    for (auto &macro : tests) {
-      out << "#TOK-KIND:";
-      dumper->dumpSourceRange(macro.sr);
-      out << " \"IDENTIFIER " << get_macro_kind(macro.mi) << "\"\n";
-
-      if (macro.mi) {
-        out << "#TOK-DECL:";
-        dumper->dumpLocation(macro.sr.getBegin());
-        out << " -2"; // use offset of -2 for testing only macros
-        dumper->dumpPointer(macro.mi);
-        out << '\n';
-      }
-    }
-
-    // Dump all root macro expansion ranges to make their locations indexable.
-    for (auto &macro : macros) {
-      if (macro.parent == -1) {
-        SourceLocation loc = sm.getExpansionLoc(macro.token.getLocation());
-        SourceLocation tok_end = loc.getLocWithOffset(macro.token.getLength());
-        SourceLocation end =
-            macro.range.getBegin() == macro.range.getEnd()
-                ? tok_end
-                : sm.getExpansionLoc(macro.range.getEnd()).getLocWithOffset(1);
-
-        out << "#TOK-KIND:";
-        dumper->dumpSourceRange({loc, tok_end});
-        out << " \"IDENTIFIER " << get_macro_kind(macro.info) << "\"\n";
-
-        out << "#LOC-EXP:";
-        dumper->dumpSourceRange({loc, end});
-        out << '\n';
-
-        // Index the macro to be used by #TOK-DECL in
-        // dump_token_expansion().
-        index(end, index_value_t(&macro), true);
-      }
-    }
-
     visitor.TraverseDecl(ctx.getTranslationUnitDecl());
+    traverse_comments(ctx);
+    traverse_tokens();
 
-    if (exported_symbols.size()) {
-      out << "#EXPORTED:";
-      for (auto p : exported_symbols)
-        dumper->dumpPointer(p);
-      out << '\n';
-    }
-
-    if (!ctx.Comments.empty()) {
-      static const char *comment_names[] = {
-          "invalid",           "bcpl_comment",
-          "c_comment",         "bcpl_slash_comment",
-          "bcpl_excl_comment", "java_doc_comment",
-          "qt_comment",        "merged_comment",
-      };
-
-      for (auto begin = sm.fileinfo_begin(), end = sm.fileinfo_end();
-           begin != end; ++begin) {
-        auto fid = sm.translateFile(begin->first);
-        if (auto comments = ctx.Comments.getCommentsInFile(fid)) {
-          for (auto &item : *comments) {
-            auto raw_comment = item.second;
-            assert(raw_comment);
-            out << "#TOK-KIND:";
-            dumper->dumpSourceRange(raw_comment->getSourceRange());
-
-            assert(static_cast<int>(raw_comment->getKind()) <
-                   sizeof(comment_names) / sizeof(*comment_names));
-            out << " \"COMMENT " << comment_names[raw_comment->getKind()]
-                << "\"\n";
-          }
-        }
-      }
-    }
-
-    if (!trivial_expansions.empty()) {
-      for (auto i : trivial_expansions) {
-        auto &macro = macros[i];
-        out << "#TOK-DECL:";
-        dumper->dumpLocation(macro.token.getLocation());
-        out << " 0";
-        dumper->dumpPointer(&macro);
-        out << '\n';
-      }
-    }
-
-    dump_token_expansion();
+    dump_preprocessor();
+    dump_remarks(ctx);
   }
 
 private:
@@ -511,16 +456,17 @@ private:
     bool shouldTraversePostOrder() const { return use_post_order; }
 
   private:
-    // #EXP-EXPR: dump the relevant expressions at the macro expansion point
+    // #EXP-EXPR: dump the relevant expressions at the macro expansion_tree
+    // point
     void remark_exp_expr(const Expr *e) {
-      auto loc = e->getExprLoc();
-      if (loc.isMacroID()) {
-        auto &sm = ast.pp.getSourceManager();
-        ast.out << "#EXP-EXPR:";
-        ast.dumper->dumpLocation(sm.getExpansionLoc(loc));
-        ast.dumper->dumpPointer(e);
-        ast.out << '\n';
-      }
+      // auto loc = e->getExprLoc();
+      // if (loc.isMacroID()) {
+      //   auto &sm = ast.pp.getSourceManager();
+      //   ast.out << "#EXP-EXPR:";
+      //   ast.dumper->dumpLocation(sm.getExpansionLoc(loc));
+      //   ast.dumper->dumpPointer(e);
+      //   ast.out << '\n';
+      // }
     }
 
     template <typename D> void remark_imported_decl(const D *d) {
@@ -528,21 +474,21 @@ private:
     }
 
     template <typename D> void remark_exported_decl(const D *d) {
-      ast.exported_symbols.push_back(d);
+      // ast.exported_symbols.push_back(d);
     }
 
     void remark_decl_def(const void *decl, const void *def) {
-      ast.out << "#DECL-DEF:";
-      ast.dumper->dumpPointer(decl);
-      ast.dumper->dumpPointer(def);
-      ast.out << '\n';
+      // ast.out << "#DECL-DEF:";
+      // ast.dumper->dumpPointer(decl);
+      // ast.dumper->dumpPointer(def);
+      // ast.out << '\n';
     }
 
     void remark_var_type(const void *var, const void *type) {
-      ast.out << "#VAR-TYPE:";
-      ast.dumper->dumpPointer(var);
-      ast.dumper->dumpPointer(type);
-      ast.out << '\n';
+      // ast.out << "#VAR-TYPE:";
+      // ast.dumper->dumpPointer(var);
+      // ast.dumper->dumpPointer(type);
+      // ast.out << '\n';
     }
 
     bool index_named(const NamedDecl *d, SourceLocation loc = {}) {
@@ -651,42 +597,39 @@ private:
     explicit pp_callback(ast_consumer &ast) : ast(ast) {}
 
     void MacroDefined(const Token &token, const MacroDirective *md) override {
-      ast.defined_map[md->getMacroInfo()] = token.getIdentifierInfo();
-      ast.directives.emplace_back(def_directive{token.getIdentifierInfo(), md});
-      ast.add_directive();
+      ast.add_directive<def_directive>(token.getIdentifierInfo(), md);
     }
 
     void MacroExpands(const Token &token, const MacroDefinition &def,
                       SourceRange range, const MacroArgs *args) override {
       auto &expanding_stack = ast.expanding_stack;
-      auto &macros = ast.macros;
-      auto remote = macros.size();
+      auto &macro_expansions = ast.macro_expansions;
+      auto remote = macro_expansions.size();
       int parent = expanding_stack.empty() ? -1 : expanding_stack.back();
+
       assert(parent == -1 ? token.getLocation() == range.getBegin() : true);
-      macros.emplace_back(
-          token, def.getMacroInfo(),
-          SourceRange{range.getBegin(),
-                      parent != -1 ? range.getEnd()
-                                   : range.getBegin() == range.getEnd()
-                                         ? token.getLocation().getLocWithOffset(
-                                               token.getLength())
-                                         : range.getEnd().getLocWithOffset(1)},
-          parent, remote);
+
+      range.setEnd(range.getBegin() == range.getEnd()
+                       ? token.getLocation().getLocWithOffset(token.getLength())
+                       : range.getEnd().getLocWithOffset(1));
+
+      macro_expansions.emplace_back(token.getIdentifierInfo(),
+                                    def.getMacroInfo(), range, parent, remote);
       expanding_stack.push_back(remote);
 
       // Update remote field up to the root
       while (parent != -1) {
-        auto &macro = macros[parent];
+        auto &macro = macro_expansions[parent];
         macro.remote = remote;
         parent = macro.parent;
       }
     }
 
     void MacroExpanded(const MacroInfo *mi, bool fast) override {
-      assert(!ast.expanding_stack.empty() && "Unpaired macro expansion");
+      assert(!ast.expanding_stack.empty() && "Unpaired macro expansion_tree");
       auto top = ast.expanding_stack.back();
-      assert(ast.macros[top].info == mi);
-      ast.macros[top].fast = fast;
+      assert(ast.macro_expansions[top].macro == mi);
+      ast.macro_expansions[top].fast = fast;
       ast.expanding_stack.pop_back();
     }
 
@@ -728,7 +671,7 @@ private:
         auto cond = std::get_if<if_directive::cond>(cond_expr);
         assert(cond);
         // The original end is the position of the last token
-        cond->range.setEnd(ast.next_space(cond->range.getEnd()));
+        cond->range.setEnd(ast.find_space(cond->range.getEnd()));
 
         auto then_node = &ast.directive_nodes[parent_node->children[1]];
         auto then_stmt = &ast.directives[then_node->i];
@@ -793,10 +736,10 @@ private:
 
     void Defined(const Token &token, const MacroDefinition &md,
                  SourceRange range) override {
-      ast.tests.emplace_back(token, md);
-      ast.defined_queue.emplace_back(range, token.getLocation(),
-                                     token.getIdentifierInfo(),
-                                     md.getMacroInfo());
+      auto tok_loc = token.getLocation();
+      ast.defined_queue.emplace_back(
+          SourceRange{tok_loc, tok_loc.getLocWithOffset(token.getLength())},
+          token.getIdentifierInfo(), md.getMacroInfo());
     }
 
     void InclusionDirective(SourceLocation hash_loc, const Token &include_tok,
@@ -810,18 +753,13 @@ private:
       auto include_ii = include_tok.getIdentifierInfo();
       assert(include_ii);
 
-      ast.directives.emplace_back(directive_inclusion{
+      add_sub_directive<directive_inclusion>(
           hash_loc,
-          include_tok.getLocation(),
-          {filename_range.getBegin(), filename_range.getEnd()},
-          include_ii->getName(),
-          filename,
-          file ? file->getFileEntry().tryGetRealPathName() : "",
-          is_angled,
-      });
-
+          SourceRange{filename_range.getBegin(), filename_range.getEnd()},
+          include_ii->getName(), filename,
+          file ? file->getFileEntry().tryGetRealPathName() : "", is_angled);
       ast.inclusion_stack.push_back(ast.directives.size() - 1);
-      // add_sub_directive();
+      ast.add_expansion();
     }
 
     void FileChanged(SourceLocation loc, FileChangeReason reason,
@@ -876,7 +814,7 @@ private:
         return;
       }
 
-      ast.inactive_regions.push_back(range);
+      // ast.inactive_regions.push_back(range);
     }
 
     void EndOfMainFile() override { assert(ast.inclusion_stack.empty()); }
@@ -913,8 +851,8 @@ private:
           range,
           !!mi == !is_ndef ? pp_callback::CVK_True : pp_callback::CVK_False,
           true);
-      ast.add_directive<if_directive::defined>(range, tok_loc,
-                                               token.getIdentifierInfo(), mi);
+      ast.add_directive<if_directive::defined>(range, token.getIdentifierInfo(),
+                                               mi);
       add_sup_directive<if_directive::block>();
     }
 
@@ -960,9 +898,10 @@ private:
     ast_consumer &ast;
   };
 
-  struct expansion {
+  struct expansion_tree {
     struct node {
-      unsigned i; // index of macros or macro_tokens if the token field is true
+      unsigned i; // index of macro_expansions or macro_replacements if the
+                  // token field is true
       bool token;
       llvm::SmallVector<node *, 4> children;
     };
@@ -970,9 +909,9 @@ private:
     node root; // only root.children is available
     std::vector<node> pool;
 
-    expansion() = default;
-    expansion(expansion &&) = default;
-    expansion(const expansion &) = delete;
+    expansion_tree() = default;
+    expansion_tree(expansion_tree &&) = default;
+    expansion_tree(const expansion_tree &) = delete;
   };
 
   struct def_directive {
@@ -999,7 +938,6 @@ private:
 
     struct defined {
       SourceRange range;
-      SourceLocation tok_loc;
       const IdentifierInfo *id;
       const MacroInfo *mi;
     };
@@ -1012,7 +950,6 @@ private:
 
   struct directive_inclusion {
     SourceLocation hash_loc;
-    SourceLocation loc;
     SourceRange range;
     StringRef kind;
     StringRef filename;
@@ -1088,7 +1025,7 @@ private:
   void dump_macro(const MacroInfo *mi, const IdentifierInfo *id) {
     out << "MacroPPDecl";
     dumper->dumpPointer(mi);
-    dumper->dumpSourceRange({mi->getDefinitionLoc(), get_macro_end(mi, id)});
+    dumper->dumpSourceRange(get_macro_range(mi, id));
 
     out << ' ';
     dump_name(id);
@@ -1101,7 +1038,7 @@ private:
   void on_token_lexed(const Token &token) {
     // Collect all tokens to dump in later.
     if (!token.isAnnotation())
-      tokens.push_back(token);
+      syntax_tokens.push_back(syntax::Token(token));
 
     auto loc = token.getLocation();
     if (loc.isFileID()) {
@@ -1109,13 +1046,14 @@ private:
     } else {
       // The fast-expanded token is expanded at the parent macro, in this case
       // the expanding_stack will be empty in advance.
-      macro_tokens.emplace_back(
-          expanding_stack.empty() ? macros.size() - 1 : expanding_stack.back(),
-          token);
+      macro_replacements.emplace_back(expanding_stack.empty()
+                                          ? macro_expansions.size() - 1
+                                          : expanding_stack.back(),
+                                      token);
     }
   }
 
-  void dump_preprocessor_directives() {
+  void dump_preprocessor() {
     dumper->AddChild([this] {
       out << "Preprocessor";
       dumper->dumpPointer(&pp);
@@ -1123,6 +1061,17 @@ private:
         dump_directive(directive_nodes[child]);
       }
     });
+  }
+
+  void dump_remarks(ASTContext &ctx) {
+    auto &sm = ctx.getSourceManager();
+    const auto file = sm.getFileEntryRefForID(sm.getMainFileID());
+    const auto &filename = file->getName();
+    char cwd[PATH_MAX];
+
+    out << "#TU:" << filename << '\n';
+    out << "#TS:" << time(NULL) << '\n';
+    out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
   }
 
   char get(SourceLocation loc, bool *invalid = nullptr) {
@@ -1137,7 +1086,8 @@ private:
                                 pp.getSourceManager(), pp.getLangOpts());
   }
 
-  SourceLocation prev(SourceLocation loc, bool space, bool *invalid = nullptr) {
+  SourceLocation rfind(SourceLocation loc, bool space,
+                       bool *invalid = nullptr) {
     bool err = false;
     int curr = 0;
     SourceLocation last = loc;
@@ -1161,15 +1111,15 @@ private:
     return err ? last : loc;
   }
 
-  SourceLocation prev_space(SourceLocation loc, bool *invalid = nullptr) {
-    return prev(loc, true, invalid);
+  SourceLocation rfind_space(SourceLocation loc, bool *invalid = nullptr) {
+    return rfind(loc, true, invalid);
   }
 
-  SourceLocation prev_non_space(SourceLocation loc, bool *invalid = nullptr) {
-    return prev(loc, false, invalid);
+  SourceLocation rfind_non_space(SourceLocation loc, bool *invalid = nullptr) {
+    return rfind(loc, false, invalid);
   }
 
-  SourceLocation next(SourceLocation loc, bool space, bool *invalid = nullptr) {
+  SourceLocation find(SourceLocation loc, bool space, bool *invalid = nullptr) {
     bool err = false;
     int curr = 0;
     while ((curr = get(loc, &err)) && !err) {
@@ -1191,38 +1141,28 @@ private:
     return loc;
   }
 
-  SourceLocation next_space(SourceLocation loc, bool *invalid = nullptr) {
-    return next(loc, true, invalid);
+  SourceLocation find_space(SourceLocation loc, bool *invalid = nullptr) {
+    return find(loc, true, invalid);
   }
 
-  SourceLocation next_non_space(SourceLocation loc, bool *invalid = nullptr) {
-    return next(loc, false, invalid);
+  SourceLocation find_non_space(SourceLocation loc, bool *invalid = nullptr) {
+    return find(loc, false, invalid);
   }
 
   directive_locations find_define_locations(SourceLocation loc) {
     if (loc.isInvalid())
       return {};
 
-    bool err = false;
-    auto keyword_last = prev_non_space(loc.getLocWithOffset(-1), &err);
-    assert(!err);
+    bool invalid = false;
+    auto keyword_last = rfind_non_space(loc.getLocWithOffset(-1), &invalid);
+    assert(!invalid);
 
-    auto keyword_rend = prev_space(keyword_last.getLocWithOffset(-1), &err);
-    // If there's an error, keyword_rend is the file start.
-    auto keyword_loc = keyword_rend.getLocWithOffset(err ? 0 : 1);
+    auto keyword_loc = keyword_last.getLocWithOffset(-5);
     auto keyword_end = keyword_last.getLocWithOffset(1);
-    auto text = get(keyword_loc, keyword_end);
+    assert(get(keyword_loc, keyword_end) == "define");
 
-    SourceLocation hash_loc;
-    if (text[0] == '#') {
-      hash_loc = keyword_loc;
-      keyword_loc = keyword_loc.getLocWithOffset(1);
-    } else {
-      assert(text[0] == 'd');
-      hash_loc = prev_non_space(keyword_rend.getLocWithOffset(-1));
-    }
-
-    return {hash_loc, keyword_loc, keyword_end};
+    return {rfind_non_space(keyword_loc.getLocWithOffset(-1)), keyword_loc,
+            keyword_end};
   }
 
   directive_locations find_if_locations(SourceLocation loc) {
@@ -1230,51 +1170,14 @@ private:
     auto prev = get(hash_loc);
 
     if (std::isspace(prev))
-      hash_loc = prev_non_space(hash_loc.getLocWithOffset(-1));
+      hash_loc = rfind_non_space(hash_loc.getLocWithOffset(-1));
     else
       assert(prev == '#');
 
     /* if/elif/else/endif */
-    SourceLocation keyword_end = next_space(loc.getLocWithOffset(1));
+    SourceLocation keyword_end = find_space(loc.getLocWithOffset(1));
 
     return {hash_loc, loc, keyword_end};
-  }
-
-  // void add_pp_defined(SourceLocation loc) {
-  //   semantic_tokens.emplace_back(
-  //       SourceRange{loc, loc.getLocWithOffset(7) /* defined */},
-  //       tok::pp_defined, true);
-  // }
-
-  // void add_pp_if(SourceLocation loc, tok::PPKeywordKind kind) {
-  //   auto &sm = pp.getSourceManager();
-  //   SourceLocation hash_loc = loc.getLocWithOffset(-1);
-  //   auto prev = get(hash_loc);
-
-  //   if (std::isspace(prev))
-  //     hash_loc = rfind(hash_loc.getLocWithOffset(-1), not_space);
-  //   else
-  //     assert(prev == '#');
-
-  //   semantic_tokens.emplace_back(
-  //       SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
-  //   semantic_tokens.emplace_back(
-  //       SourceRange{loc, find(loc.getLocWithOffset(2) /* if/elif/else/endif
-  //       */,
-  //                             std::isspace)},
-  //       kind, true);
-  // }
-
-  // void add_pp_include(SourceLocation hash_loc, SourceLocation loc) {
-  //   semantic_tokens.emplace_back(
-  //       SourceRange{hash_loc, hash_loc.getLocWithOffset(1)}, tok::hash);
-  //   semantic_tokens.emplace_back(
-  //       SourceRange{loc, loc.getLocWithOffset(7) /* include */},
-  //       tok::pp_include, true);
-  // }
-
-  void add_tok(SourceRange range, int kind) {
-    semantic_tokens.emplace_back(range, kind);
   }
 
   bool is_written_internally(SourceLocation loc) {
@@ -1296,7 +1199,7 @@ private:
 
       switch (md->getKind()) {
       case MacroDirective::MD_Define:
-        ast.out << "DefDirective";
+        ast.out << "DefineDirective";
         break;
       case MacroDirective::MD_Undefine:
         ast.out << "UndefDirective";
@@ -1319,13 +1222,14 @@ private:
         range.setEnd(get_macro_end(mi, id));
 
         if (!ast.is_written_internally(locations.hash_loc)) {
-          ast.semantic_tokens.emplace_back(
-              SourceRange{locations.hash_loc,
-                          locations.hash_loc.getLocWithOffset(1)},
-              tok::hash);
-          ast.semantic_tokens.emplace_back(
-              SourceRange{locations.keyword_loc, locations.keyword_end},
-              tok::pp_define, true);
+          // TODO:
+          // ast.semantic_tokens.emplace_back(
+          //     SourceRange{locations.hash_loc,
+          //                 locations.hash_loc.getLocWithOffset(1)},
+          //     tok::hash);
+          // ast.semantic_tokens.emplace_back(
+          //     SourceRange{locations.keyword_loc, locations.keyword_end},
+          //     tok::pp_define, true);
         }
       }
 
@@ -1377,15 +1281,23 @@ private:
       ast.dumper->dumpPointer(&arg);
       ast.dumper->dumpSourceRange(arg.range);
       ast.out << ' ';
-      ast.dumper->dumpLocation(arg.tok_loc);
-      ast.out << ' ';
       ast.dump_name(arg.id);
       ast.dumper->dumpPointer(arg.mi);
     }
 
-    void operator()(const expansion::node *node) { ast.dump_expansion(*node); }
+    void operator()(const expansion_tree::node *node) {
+      ast.dump_expansion(*node);
+    }
 
-    void operator()(const directive_inclusion &arg) {}
+    void operator()(const directive_inclusion &arg) {
+      ast.out << "InclusionDirective";
+      ast.dumper->dumpPointer(&arg);
+      ast.dumper->dumpSourceRange(arg.range);
+      if (arg.angled)
+        ast.out << " angled";
+      ast.out << ' ' << arg.kind << " '" << arg.filename << "' '" << arg.path
+              << "'";
+    }
   };
 
   void dump_directive(const directive_node &node) {
@@ -1397,86 +1309,81 @@ private:
     });
   }
 
-  void dump_token_expansion() {
-    assert(!tokens.empty());
-    assert(tokens.back().getKind() == tok::eof);
+  void traverse_comments(ASTContext &ctx) {
+    if (!ctx.Comments.empty()) {
+      auto &sm = ctx.getSourceManager();
+      for (auto begin = sm.fileinfo_begin(), end = sm.fileinfo_end();
+           begin != end; ++begin) {
+        auto fid = sm.translateFile(begin->first);
+        if (auto comments = ctx.Comments.getCommentsInFile(fid)) {
+          for (auto &item : *comments) {
+            auto raw_comment = item.second;
+            assert(raw_comment);
+            semantic_tokens
+                .emplace_back(raw_comment->getSourceRange(),
+                              raw_comment->getKind())
+                .set_comment(true);
+          }
+        }
+      }
+    }
+  }
+
+  void traverse_tokens() {
+    assert(!syntax_tokens.empty());
+    assert(syntax_tokens.back().kind() == tok::eof);
 
     auto &sm = pp.getSourceManager();
     SourceLocation last_loc;
     SourceLocation last_expansion_loc;
     int index_of_last_expansion_loc = -1;
-    unsigned indexable_tokens = 0;
-    unsigned indexed_tokens = 0;
 
-    for (unsigned i = 0, e = tokens.size(); i < e; ++i) {
-      syntax::Token token(tokens[i]);
-      auto loc = token.location();
-      auto kind = token.kind();
-      const Decl *d = nullptr;
-
-      if (kind == tok::identifier) {
-        ++indexable_tokens;
-
-        if (loc.isFileID()) {
-          auto v = find(loc, FIND_OPTION_EQUAL);
-          if ((d = v ? v->get_decl() : nullptr)) {
-            ++indexed_tokens;
-            out << "#TOK-DECL:";
-            dumper->dumpLocation(loc);
-            dumper->dumpPointer(d);
-            out << '\n';
-          }
-        }
-      }
+    for (unsigned i = 0; i < syntax_tokens.size(); ++i) {
+      auto loc = syntax_tokens[i].location();
+      auto kind = syntax_tokens[i].kind();
 
       if (loc.isFileID() && kind != tok::eof) {
-        out << "#TOK-KIND:";
-        dumper->dumpSourceRange({loc, token.endLocation()});
-        auto name = semantic_token::token_name(kind);
-        out << " \"" << name.first << ' '
-            << (d ? d->getDeclKindName() : name.second) << "\"\n";
+        SourceRange range(loc, syntax_tokens[i].endLocation());
+        if (kind == tok::identifier) {
+          auto v = find(loc, find_option::EQUAL);
+          semantic_tokens.emplace_back(range, v ? v->get_decl() : nullptr);
+        } else {
+          semantic_tokens.emplace_back(range, kind);
+        }
       }
 
       auto expansion_loc = sm.getExpansionLoc(loc);
       if (expansion_loc != last_expansion_loc) {
         if (last_loc.isMacroID()) {
-          auto v = find(last_expansion_loc, FIND_OPTION_EQUAL);
+          auto v = find(last_expansion_loc, find_option::EQUAL);
           auto d = v ? v->get_expanded_decl() : nullptr;
           int j = i - 1;
 
           while (d && j > index_of_last_expansion_loc) {
-            syntax::Token t(tokens[j]);
-            if (t.kind() == tok::identifier) {
-              out << "#TOK-DECL:";
-              dumper->dumpLocation(t.location());
-              out << ' ' << j - index_of_last_expansion_loc;
-
+            if (syntax_tokens[j].kind() == tok::identifier) {
               const Decl *p = nullptr;
-              if (t.location() == d->get_location()) {
-                ++indexed_tokens;
+              if (syntax_tokens[j].location() == d->get_location()) {
                 p = d->get_decl();
                 auto prev = d->get_previous();
                 delete d;
                 d = prev;
               }
-              dumper->dumpPointer(p);
-              out << '\n';
+
+              // semantic_tokens.emplace_back(syntax_tokens[j].location(),
+              //                              j - index_of_last_expansion_loc,
+              //                              p);
             }
             --j;
           }
+          assert(!d && "All expanded_decls are visited");
 
-          // Ending with an explicit zero-offset and the macro.
-          out << "#TOK-DECL:";
-          dumper->dumpLocation(last_expansion_loc);
-          out << " 0";
           // MACRO_FOO(a, b, c, e, f, g);
           // ^~~expanded_decl           ^~~macro_expansion
-          v = find(last_expansion_loc, FIND_OPTION_UPPER_BOUND);
-          assert(v && v->is_expansion());
-          dumper->dumpPointer(v->get_expansion());
-          out << '\n';
+          // v = find(last_expansion_loc, find_option::UPPER_BOUND);
+          // assert(v && v->is_expansion());
 
-          assert(!d && "All expanded_decls are visited");
+          // semantic_tokens.emplace_back(last_expansion_loc,
+          // v->get_expansion());
         }
 
         last_loc = loc;
@@ -1484,15 +1391,6 @@ private:
         index_of_last_expansion_loc = i - 1;
       }
     }
-
-    out << "## tokens(total/indexable/indexed):" << tokens.size() << '/'
-        << indexable_tokens;
-    if (indexable_tokens)
-      out << '(' << (indexable_tokens * 100 / tokens.size()) << "%)";
-    out << '/' << indexed_tokens;
-    if (indexed_tokens)
-      out << '(' << (indexed_tokens * 100 / indexable_tokens) << "%)";
-    out << '\n';
   }
 
   void lift_directive() { dir = directive_nodes[dir].parent; }
@@ -1512,35 +1410,37 @@ private:
   void add_expansion() {
     assert(expanding_stack.empty());
 
-    unsigned macro = last_expansion.first;
-    unsigned token = last_expansion.second;
-    auto expected_macro_size = macros.size() - macro;
-    auto expected_token_size = macro_tokens.size() - token;
+    auto macro = last_expansion.first;
+    auto token = last_expansion.second;
+    auto expected_macro_size = macro_expansions.size() - macro;
+    auto expected_token_size = macro_replacements.size() - token;
 
-    expansion exp;
+    expansion_tree exp;
     exp.pool.reserve(expected_macro_size + expected_token_size);
 
-    index_macro(macro, macros.size());
-    make_expansion(-1, macro, macros.size(), token, exp.root, exp.pool);
+    index_macro(macro, macro_expansions.size());
+    make_expansion(-1, macro, macro_expansions.size(), token, exp.root,
+                   exp.pool);
     assert(exp.pool.size() == expected_macro_size + expected_token_size);
 
     if (!exp.pool.empty()) {
-      last_expansion.first = macros.size();
-      last_expansion.second = macro_tokens.size();
+      last_expansion.first = macro_expansions.size();
+      last_expansion.second = macro_replacements.size();
 
       if (defined_queue.empty()) {
         for (auto node : exp.root.children)
-          add_directive<expansion::node *>(node);
+          add_directive<expansion_tree::node *>(node);
       } else {
         std::vector<std::tuple<SourceLocation, unsigned, bool>> order;
         order.reserve(exp.root.children.size() + defined_queue.size());
-        for (size_t i = 0; i < exp.root.children.size(); ++i) {
+        for (unsigned i = 0; i < exp.root.children.size(); ++i) {
           auto node = exp.root.children[i];
           assert(!node->token);
-          order.emplace_back(macros[node->i].range.getBegin(), i, true);
+          order.emplace_back(macro_expansions[node->i].range.getBegin(), i,
+                             true);
         }
-        for (size_t i = 0; i < defined_queue.size(); ++i) {
-          order.emplace_back(defined_queue[i].tok_loc, i, false);
+        for (unsigned i = 0; i < defined_queue.size(); ++i) {
+          order.emplace_back(defined_queue[i].range.getBegin(), i, false);
         }
 
         std::sort(order.begin(), order.end(), [](auto &a, auto &b) {
@@ -1550,7 +1450,7 @@ private:
         for (auto &item : order) {
           auto i = std::get<1>(item);
           if (std::get<2>(item))
-            add_directive<expansion::node *>(exp.root.children[i]);
+            add_directive<expansion_tree::node *>(exp.root.children[i]);
           else
             add_directive<if_directive::defined>(std::move(defined_queue[i]));
         }
@@ -1566,47 +1466,48 @@ private:
   }
 
   void make_expansion(int parent, unsigned begin, unsigned end, unsigned &k,
-                      expansion::node &host,
-                      std::vector<expansion::node> &pool) {
+                      expansion_tree::node &host,
+                      std::vector<expansion_tree::node> &pool) {
     for (auto i = begin; i < end; ++i) {
       make_expansion(parent, k, host, pool);
       auto &node = pool.emplace_back(i, false);
       host.children.emplace_back(&node);
-      make_expansion(i, i + 1, macros[i].remote + 1, k, node, pool);
-      i = macros[i].remote;
+      make_expansion(i, i + 1, macro_expansions[i].remote + 1, k, node, pool);
+      i = macro_expansions[i].remote;
     }
 
     make_expansion(parent, k, host, pool);
   }
 
-  void make_expansion(int at, unsigned &k, expansion::node &host,
-                      std::vector<expansion::node> &pool) {
-    unsigned n = macro_tokens.size();
-    while (k < n && macro_tokens[k].first == at) {
+  void make_expansion(int at, unsigned &k, expansion_tree::node &host,
+                      std::vector<expansion_tree::node> &pool) {
+    unsigned n = macro_replacements.size();
+    while (k < n && macro_replacements[k].first == at) {
       host.children.emplace_back(&pool.emplace_back(k, true));
       ++k;
     }
   }
 
-  void dump_expansion(const expansion::node &node) {
+  void dump_expansion(const expansion_tree::node &node) {
     if (node.token)
-      dump_token(macro_tokens[node.i].second,
-                 macros[macro_tokens[node.i].first].info);
+      dump_token(macro_replacements[node.i].second,
+                 macro_expansions[macro_replacements[node.i].first].macro);
     else
-      dump_macro(macros[node.i]);
+      dump_macro(macro_expansions[node.i]);
 
     for (auto child : node.children)
       dumper->AddChild([child, this] { dump_expansion(*child); });
   }
 
-  void dump_macro(const macro_expansion &macro) {
+  void dump_macro(const macro_expansion &me) {
     out << "MacroExpansion";
-    dumper->dumpPointer(macro.info);
-    dumper->dumpSourceRange(macro.range);
-    out << ' ';
-    dump_name(macro.token.getIdentifierInfo());
-    if (macro.fast)
+    dumper->dumpPointer(&me);
+    dumper->dumpSourceRange(me.range);
+    if (me.fast)
       out << " fast";
+    out << ' ';
+    dump_name(me.identifier);
+    dumper->dumpPointer(me.macro);
   }
 
   bool is_in_scratch_space(SourceLocation loc) {
@@ -1643,25 +1544,25 @@ private:
     }
   }
 
-  enum find_option {
-    FIND_OPTION_LOWER_BOUND,
-    FIND_OPTION_EQUAL,
-    FIND_OPTION_UPPER_BOUND,
+  enum class find_option {
+    LOWER_BOUND,
+    EQUAL,
+    UPPER_BOUND,
   };
 
   const index_value_t *find(SourceLocation loc,
-                            find_option opt = FIND_OPTION_LOWER_BOUND) const {
+                            find_option opt = find_option::LOWER_BOUND) const {
     assert(loc.isFileID());
 
     FileID fid;
     unsigned offset;
     std::tie(fid, offset) = pp.getSourceManager().getDecomposedLoc(loc);
     if (auto i = indices.find(fid); i != indices.end()) {
-      auto j = opt == FIND_OPTION_EQUAL
+      auto j = opt == find_option::EQUAL
                    ? i->second.find(offset)
-                   : opt == FIND_OPTION_LOWER_BOUND
+                   : opt == find_option::LOWER_BOUND
                          ? i->second.lower_bound(offset)
-                         : opt == FIND_OPTION_UPPER_BOUND
+                         : opt == find_option::UPPER_BOUND
                                ? i->second.upper_bound(offset)
                                : i->second.end();
       if (j != i->second.end())
@@ -1673,12 +1574,12 @@ private:
 
   void index_macro(unsigned begin, unsigned end) {
     while (begin < end) {
-      auto &macro = macros[begin++];
-      auto end_loc = macro.info->getDefinitionEndLoc();
+      auto &item = macro_expansions[begin++];
+      auto end_loc = item.macro->getDefinitionEndLoc();
       if (end_loc.isValid())
-        index(end_loc, index_value_t(macro.info));
+        index(end_loc, index_value_t(item.macro));
       else
-        assert(macro.info->isBuiltinMacro());
+        assert(item.macro->isBuiltinMacro());
     }
   }
 
@@ -1750,7 +1651,9 @@ private:
 
     if (is_arg) {
       out << " arg";
-      add_tok({loc, loc.getLocWithOffset(token_length)}, token.getKind());
+      // TODO: semantic_tokens.emplace_back({loc,
+      // loc.getLocWithOffset(token_length)},
+      //                              token.getKind());
     }
   }
 
@@ -1780,25 +1683,20 @@ private:
   llvm::SmallVector<unsigned, 8> expanding_stack;
   llvm::SmallVector<unsigned, 8> inclusion_stack;
   llvm::SmallVector<if_directive::defined, 8> defined_queue;
-  llvm::DenseMap<const MacroInfo *, const IdentifierInfo *> defined_map;
-  std::vector<macro_test> tests;
-  std::vector<macro_expansion> macros;
-  std::vector<std::pair<unsigned, Token>> macro_tokens; // with replacements
-  std::vector<unsigned> trivial_expansions;             // without replacements
-  std::vector<expansion> expansions;
+  std::vector<macro_expansion> macro_expansions;
+  std::vector<std::pair<unsigned, Token>> macro_replacements;
+  std::vector<expansion_tree> expansions;
   std::pair<unsigned, unsigned> last_expansion;
   std::vector<std::variant<def_directive, if_directive, if_directive::cond,
                            if_directive::block, if_directive::defined,
-                           directive_inclusion, expansion::node *>>
+                           directive_inclusion, expansion_tree::node *>>
       directives;
   unsigned dir; // index of the present directive_node
   std::vector<directive_node> directive_nodes;
   llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
-  std::vector<Token> tokens;
-  std::vector<SourceRange> inactive_regions;
-  std::vector<const void *> exported_symbols;
+  std::vector<syntax::Token> syntax_tokens;
   std::vector<semantic_token> semantic_tokens;
-}; // namespace
+};
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
                                              CompilerInstance &compiler,
