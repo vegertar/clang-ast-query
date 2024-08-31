@@ -8,17 +8,19 @@
 int reads(FILE *fp, struct string *s, const char *escape) {
   assert(fp && s);
 
+  fseek(fp, 0, SEEK_END);
+  long fsize = ftell(fp);
+  assert(fsize < (string_size_t)-1);
+  string_reserve(s, fsize);
+  fseek(fp, 0, SEEK_SET);
+
   char buffer[BUFSIZ];
   size_t n = 0;
   while ((n = fread(buffer, 1, sizeof(buffer), fp))) {
-    string_reserve(s, s->i + n + 1);
-
     if (escape)
       ESCAPE(escape, buffer, n, s);
     else
       string_append(s, buffer, n);
-
-    s->data[s->i] = 0;
   }
 
   if (ferror(fp)) {

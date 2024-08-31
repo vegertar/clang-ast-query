@@ -16,10 +16,15 @@
     yylloc->first_column = yylloc->last_column;                               \
   } while (0)
 
-#define EOL()                                                                 \
+#define LINE_STEP()                                                           \
   do {                                                                        \
     yylloc->last_line++;                                                      \
     yylloc->last_column = 1;                                                  \
+  } while (0)
+
+#define EOL()                                                                 \
+  do {                                                                        \
+    LINE_STEP();                                                              \
     return TOK_EOL;                                                           \
   } while (0)
 

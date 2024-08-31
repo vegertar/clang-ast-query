@@ -411,6 +411,16 @@ typedef struct {
   };
 } Node;
 
+// Exchanging information with the parser.
+typedef struct {
+  // Whether or not to emit error messages.
+  int silent;
+  // The current input line.
+  const char *line;
+  // The custom data.
+  void *data;
+} UserContext;
+
 #undef Raw
 #undef Attr
 #undef Comment

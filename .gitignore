@@ -8,6 +8,7 @@
 !/parse-requires.h
 !/parse-provides.h
 !/parse-impl.c
+!/parse-error.c
 !/options.h
 !/pp.h
 !/main.c
@@ -21,6 +22,8 @@
 !/string.c
 !/string_set.h
 !/string_set.c
+!/build.h
+!/build.c
 !/sql.h
 !/sql.c
 !/html.h

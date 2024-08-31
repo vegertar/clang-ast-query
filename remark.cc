@@ -1751,10 +1751,13 @@ int print_line(char *line, size_t n, size_t cap, void *data) {
 } // namespace
 
 int remark(const char *code, size_t size, const char *filename, char **opts,
-           int n,
            int (*parse_line)(char *line, size_t n, size_t cap, void *data),
            void *data) {
-  std::vector<std::string> args(opts, opts + n);
+  std::vector<std::string> args;
+  if (opts) {
+    while (*opts)
+      args.push_back(*opts++);
+  }
   args.push_back("-Xclang");
   args.push_back("-ast-dump");
   args.push_back("-fno-color-diagnostics");
