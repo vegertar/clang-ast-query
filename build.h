@@ -3,8 +3,8 @@
 #include "array.h"
 
 enum input_kind {
-  IK_TEXT,
   IK_C,
+  IK_TEXT,
   IK_SQL,
   IK_NUMS,
 };
@@ -45,8 +45,8 @@ extern struct input_list input_list;
 
 enum output_kind {
   OK_NIL,
-  OK_SQL,
   OK_TEXT,
+  OK_SQL,
   OK_HTML,
   OK_NUMS,
 };
@@ -54,7 +54,8 @@ enum output_kind {
 struct output {
   int kind;
   char *file;
-  int silent;
+  unsigned char silent : 1;
+  unsigned char noparse : 1;
 };
 
 int build_output(struct output o);

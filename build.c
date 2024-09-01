@@ -52,18 +52,23 @@ struct parse_context {
 
 typedef int (*build_t)(struct input i);
 
-static int parse_line_and_dump(char *line, size_t n, size_t cap, YYLTYPE *lloc,
-                               UserContext *uctx) {
-  if (lloc->last_column != 1) {
-    // There was an error, we step the line manually
-    lloc->last_line++;
-    lloc->last_column = 1;
-  }
-  uctx->line = line;
+static int parse_and_dump(char *line, size_t n, size_t cap, YYLTYPE *lloc,
+                          UserContext *uctx) {
+  int err = 0;
 
-  int err = parse_line(line, n, cap, lloc, uctx, parse);
-  if (uctx->data)
-    fwrite(line, n, 1, uctx->data);
+  if (!output.noparse) {
+    if (lloc->last_column != 1) {
+      // There was an error, we step the line manually
+      lloc->last_line++;
+      lloc->last_column = 1;
+    }
+    uctx->line = line;
+    err = parse_line(line, n, cap, lloc, uctx, parse);
+  }
+
+  if (!err && uctx->data)
+    err = fwrite(line, 1, n, uctx->data) < n;
+
   return err;
 }
 
@@ -75,17 +80,17 @@ static int parse_text(FILE *in, FILE *out) {
 
   while (!err && fgets(line, sizeof(line), in)) {
     n = strlen(line);
-    err = parse_line_and_dump(line, n, sizeof(line), &ctx.lloc, &ctx.uctx);
+    err = parse_and_dump(line, n, sizeof(line), &ctx.lloc, &ctx.uctx);
   }
 
   return err;
 }
 
-static int parse_line_to_remark(char *line, size_t n, size_t cap, void *data) {
+static int remark_line(char *line, size_t n, size_t cap, void *data) {
   struct parse_context *ctx = data;
 
   // Parsing failure does not abort the remark process, so count the errors
-  ctx->errs += !!parse_line_and_dump(line, n, cap, &ctx->lloc, &ctx->uctx);
+  ctx->errs += !!parse_and_dump(line, n, cap, &ctx->lloc, &ctx->uctx);
   return ctx->errs;
 }
 
@@ -98,7 +103,7 @@ static int parse_c(const struct input *i, FILE *out) {
   if (!(err = reads(in, &input_content, NULL))) {
     struct parse_context ctx = PARSE_CONTEXT_INIT(out);
     err = remark(string_get(&input_content), string_len(&input_content),
-                 ALT(i->tu, i->file), i->opts, parse_line_to_remark, &ctx);
+                 ALT(i->tu, i->file), i->opts, remark_line, &ctx);
     err += !!ctx.errs;
   }
 
@@ -133,13 +138,16 @@ static int parse_text_only(struct input i) {
   return err;
 }
 
-static int parse_c_and_dump(struct input i) {
+static int remark_c_and_dump(struct input i) {
 #ifdef USE_CLANG_TOOL
   struct output_file of;
   if (open_output(&of))
     return -1;
 
+  _Bool noparse = output.noparse;
+  output.noparse = 1;
   int err = parse_c(&i, of.file);
+  output.noparse = noparse;
 
   close_output(&of);
   return err;
@@ -149,10 +157,10 @@ static int parse_c_and_dump(struct input i) {
 #endif // USE_CLANG_TOOL
 }
 
-static int parse_c_only(struct input i) {
+static int remark_c_only(struct input i) {
   char *file = output.file;
   output.file = NULL;
-  int err = parse_c_and_dump(i);
+  int err = remark_c_and_dump(i);
   output.file = file;
   return err;
 }
@@ -169,12 +177,15 @@ struct builder {
 static struct builder builders[128] = {
 #define IOB(a, b, c) [IO(IK_##a, OK_##b)] = {c, #a " -> " #b}
     IOB(TEXT, NIL, parse_text_only),
-    IOB(TEXT, TEXT, parse_text_and_dump),
-    IOB(TEXT, HTML, NULL),
+    IOB(TEXT, TEXT, NULL),
+    IOB(TEXT, SQL, NULL),  // TODO:
+    IOB(TEXT, HTML, NULL), // TODO:
 
-    IOB(C, NIL, parse_c_only),
-    IOB(C, TEXT, parse_c_and_dump),
-    IOB(C, HTML, NULL),
+    IOB(C, NIL, remark_c_only),
+    IOB(C, TEXT, remark_c_and_dump),
+    IOB(C, SQL, NULL),  // TODO:
+    IOB(C, HTML, NULL), // TODO:
+
 #undef IOB
 };
 

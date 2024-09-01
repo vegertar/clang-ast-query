@@ -30,8 +30,8 @@ int main(int argc, char **argv) {
       printf("  -d         enable debug\n");
       printf("  -s         parse silently\n");
       printf("  -C         treat the default input file as C code\n");
-      printf("  -c         the alias of -xt if no -xs given\n");
-      printf("  -x         the alias of -xs\n");
+      printf("  -c         the alias of -xs if no -xt given\n");
+      printf("  -x         the alias of -xt\n");
       printf("  -xs[ql]    output AST in SQLite3 database\n");
       printf("  -xt[ext]   output AST in text format\n");
       printf("  -i NAME    set the TU name\n");
@@ -60,11 +60,11 @@ int main(int argc, char **argv) {
       break;
     case 'x':
       if (!optarg)
-        output_kind = OK_SQL;
-      else if (strcmp(optarg, "sql") == 0 || strcmp(optarg, "s") == 0)
-        output_kind = OK_SQL;
+        output_kind = OK_TEXT;
       else if (strcmp(optarg, "text") == 0 || strcmp(optarg, "t") == 0)
         output_kind = OK_TEXT;
+      else if (strcmp(optarg, "sql") == 0 || strcmp(optarg, "s") == 0)
+        output_kind = OK_SQL;
       else
         return fprintf(stderr, "invalid output format: %s\n", optarg);
       break;
@@ -88,10 +88,12 @@ int main(int argc, char **argv) {
     const char *dot = NULL;
 
     if (n == 2 && s[0] == '-' && i + 1 < argc) {
-      // handle -o
+      // handle -o and -c
 
       if (s[1] == 'o')
         output_file = argv[++i];
+      else if (s[1] == 'c')
+        c_flag = 1;
     } else if (n > 2 && (dot = strrchr(s, '.')) && dot != s) {
       // handle input files
 
@@ -119,7 +121,7 @@ int main(int argc, char **argv) {
   // Handle the default case of output
   if (output_kind == OK_NIL) {
     if (c_flag) // for the similar usage of command `cc -o a.o -c a.c`
-      output_kind = OK_TEXT;
+      output_kind = OK_SQL;
     else if (output_file) // for the similar usage of command `cc -o a.out a.o`
       output_kind = OK_HTML;
   }
