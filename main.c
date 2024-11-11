@@ -32,8 +32,8 @@ int main(int argc, char **argv) {
       printf("  -C         treat the default input file as C code\n");
       printf("  -c         the alias of -xs if no -xt given\n");
       printf("  -x         the alias of -xt\n");
-      printf("  -xs[ql]    output AST in SQLite3 database\n");
-      printf("  -xt[ext]   output AST in text format\n");
+      printf("  -xd        output AST in SQLite3 database\n");
+      printf("  -xt        output AST in text format\n");
       printf("  -i NAME    set the TU name\n");
       printf("  -o OUTPUT  specify the output file\n");
       return 0;
@@ -61,10 +61,10 @@ int main(int argc, char **argv) {
     case 'x':
       if (!optarg)
         output_kind = OK_TEXT;
-      else if (strcmp(optarg, "text") == 0 || strcmp(optarg, "t") == 0)
+      else if (strcmp(optarg, "t") == 0)
         output_kind = OK_TEXT;
-      else if (strcmp(optarg, "sql") == 0 || strcmp(optarg, "s") == 0)
-        output_kind = OK_SQL;
+      else if (strcmp(optarg, "d") == 0)
+        output_kind = OK_DATA;
       else
         return fprintf(stderr, "invalid output format: %s\n", optarg);
       break;
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
       if (strcmp(ext, "c") == 0) {
         kind = IK_C;
       } else if (strcmp(ext, "o") == 0) {
-        kind = IK_SQL;
+        kind = IK_DATA;
       } else {
         kind = input_kind;
       }
@@ -112,18 +112,32 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Use the default file if no Clang options provided
+  // Setup the default input if no Clang options provided
   add_input_if_empty({input_kind, ALT(argv[optind], "/dev/stdin"), tu_name});
 
   if (debug_flag)
     yydebug = 1;
 
-  // Handle the default case of output
+  // Handle the default output kind
   if (output_kind == OK_NIL) {
-    if (c_flag) // for the similar usage of command `cc -o a.o -c a.c`
-      output_kind = OK_SQL;
-    else if (output_file) // for the similar usage of command `cc -o a.out a.o`
+    if (c_flag) // for the similar usage of command `cc -c a.c`
+      output_kind = OK_DATA;
+    else // for the similar usage of command `cc a.c`
       output_kind = OK_HTML;
+  }
+
+  // Setup the default output file
+  if (!output_file) {
+    switch (output_kind) {
+    case OK_DATA:
+      output_file = "a.data";
+      break;
+    case OK_HTML:
+      output_file = "a.html";
+      break;
+    default:
+      break;
+    }
   }
 
   return build_output((struct output){output_kind, output_file, silent_flag});

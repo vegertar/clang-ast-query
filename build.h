@@ -5,7 +5,7 @@
 enum input_kind {
   IK_C,
   IK_TEXT,
-  IK_SQL,
+  IK_DATA,
   IK_NUMS,
 };
 
@@ -46,7 +46,7 @@ extern struct input_list input_list;
 enum output_kind {
   OK_NIL,
   OK_TEXT,
-  OK_SQL,
+  OK_DATA,
   OK_HTML,
   OK_NUMS,
 };

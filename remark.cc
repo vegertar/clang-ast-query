@@ -160,7 +160,7 @@ private:
 
 class semantic_token {
 public:
-  semantic_token(SourceRange range, unsigned kind) : kind(kind) {
+  semantic_token(SourceRange range, uintptr_t kind) : kind(kind) {
     this->range = range;
     this->option = 0;
   }
@@ -191,6 +191,12 @@ public:
 
   void set_comment(bool v) { is_comment = v; }
 
+  void dump(raw_ostream &out, TextNodeDumper &dumper) {
+    auto v = token_name();
+    out << v.first << ' ' << v.second;
+    dumper.dumpSourceRange(range); // TODO: handle expansion locations
+  }
+
 private:
   uintptr_t kind;
 
@@ -199,7 +205,7 @@ private:
     struct {
       SourceLocation loc;
       SourceLocation::UIntTy offset;
-    };
+    } /* expansion */;
   };
 
   union {
@@ -1069,9 +1075,15 @@ private:
     const auto &filename = file->getName();
     char cwd[PATH_MAX];
 
-    out << "#TU:" << filename << '\n';
-    out << "#TS:" << time(NULL) << '\n';
-    out << "#CWD:" << getcwd(cwd, sizeof(cwd)) << '\n';
+    out << "#TU " << filename << '\n';
+    out << "#TS " << time(NULL) << '\n';
+    out << "#CWD " << getcwd(cwd, sizeof(cwd)) << '\n';
+
+    for (auto &st : semantic_tokens) {
+      out << '#';
+      st.dump(out, *dumper);
+      out << '\n';
+    }
   }
 
   char get(SourceLocation loc, bool *invalid = nullptr) {

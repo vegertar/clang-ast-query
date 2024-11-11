@@ -186,6 +186,7 @@ typedef enum {
   NG_Literal,
   NG_Operator,
   NG_CastExpr,
+  NG_Preprocessor,
 } NodeGroup;
 
 typedef struct {
@@ -279,6 +280,7 @@ typedef struct {
       const char *name;
       BareType type;
     });
+    Raw(Preprocessor, { uintptr_t pointer; });
 
     Attr(Mode, { const char *name; });
     Attr(NoThrow, {});
@@ -381,6 +383,7 @@ typedef struct {
     Stmt(Label, { const char *name; });
     Stmt(Continue, {});
     Stmt(Break, {});
+    Stmt(Do, {});
 
     Expr(Paren, {});
     Expr(
@@ -393,6 +396,7 @@ typedef struct {
     Expr(OffsetOf, {});
     Expr(
         UnaryExprOrTypeTrait, { BareType argument_type; }, grp_trait);
+    Expr(Stmt, {});
 
     Literal(Integer, { Integer value; });
     Literal(Character, { char value; });

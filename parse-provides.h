@@ -1,8 +1,14 @@
+#include "string_set.h"
 #include "util.h"
 
 extern long ts;
 extern char tu[PATH_MAX];
 extern char cwd[PATH_MAX];
+
+typedef DECL_ARRAY(ANON, Node) NodeList;
+
+extern NodeList all_nodes;
+extern StringSet all_strings;
 
 #define YY_DECL                                                                \
   yytoken_kind_t yylex(YYSTYPE *yylval, YYLTYPE *yylloc,                       \

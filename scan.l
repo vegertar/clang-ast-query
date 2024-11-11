@@ -1,5 +1,6 @@
 /* Disable Flex features we don't need, to avoid warnings. */
 %option nodefault noinput nounput noyywrap
+%x comment
 
 %{
 #include "parse.h"
@@ -104,7 +105,7 @@ CLASS (struct|union|enum)
 
 INC_DEC ("'--'"|"'++'")
 
-UNARY_PREFIX ({INC_DEC}|"'-'"|"'+'"|"'*'"|"'&'"|"'~'"|"'!'")
+UNARY_PREFIX ({INC_DEC}|"'-'"|"'+'"|"'*'"|"'&'"|"'~'"|"'!'"|"'__extension__'")
 
 SRC ([^ <:]+|"<scratch space>"|"<command line>"|"<built-in>")
 
@@ -124,6 +125,7 @@ Enum                            RAW(Enum);
 Typedef                         RAW(Typedef);
 Record                          RAW(Record);
 Field                           RAW(Field);
+Preprocessor                    RAW(Preprocessor);
 
 ModeAttr                        ATTR(Mode);
 NoThrowAttr                     ATTR(NoThrow);
@@ -184,6 +186,7 @@ DefaultStmt                     STMT(Default);
 LabelStmt                       STMT(Label);
 ContinueStmt                    STMT(Continue);
 BreakStmt                       STMT(Break);
+DoStmt                          STMT(Do);
 
 ParenExpr                       EXPR(Paren);
 DeclRefExpr                     EXPR(DeclRef);
@@ -194,6 +197,7 @@ ArraySubscriptExpr              EXPR(ArraySubscript);
 InitListExpr                    EXPR(InitList);
 OffsetOfExpr                    EXPR(OffsetOf);
 UnaryExprOrTypeTraitExpr        EXPR(UnaryExprOrTypeTrait);
+StmtExpr                        EXPR(Stmt);
 
 IntegerLiteral                  LITERAL(Integer);
 CharacterLiteral                LITERAL(Character);
@@ -241,6 +245,7 @@ ImplicitCastExpr                CAST_EXPR(Implicit);
 "'<<='"                         OPT(LeftShiftAssignment, Operator);
 "'--'"                          OPT(Decrement, Operator);
 "'++'"                          OPT(Increment, Operator);
+"'__extension__'"               OPT(Extension, Operator);
 
 "->"                            OPT(arrow, MemberExpr);
 "."                             OPT(dot, MemberExpr);
@@ -305,7 +310,9 @@ prefix/" "{UNARY_PREFIX}        OPT(prefix, UnaryOperator);
 postfix/" "{INC_DEC}            OPT(postfix, UnaryOperator);
 "cannot overflow"               OPT(cannot_overflow, UnaryOperator);
 
-"Text="                         OPT(Text, FullComment);
+"Text="                         BEGIN(comment); OPT(Text, FullComment);
+<comment>.*                     SET(TEXT, add_static(yytext + 1, yyleng - 2));
+<comment>\n                     BEGIN(INITIAL); EOL();
 
 "ComputeResultTy="              OPT(ComputeResultTy, CompoundAssignOperator);
 "ComputeLHSTy="                 OPT(ComputeLHSTy, CompoundAssignOperator);

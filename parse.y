@@ -74,6 +74,7 @@
     Typedef
     Record
     Field
+    Preprocessor
 
     ModeAttr
     NoThrowAttr
@@ -134,6 +135,7 @@
     LabelStmt
     ContinueStmt
     BreakStmt
+    DoStmt
 
     ParenExpr
     DeclRefExpr
@@ -144,6 +146,7 @@
     InitListExpr
     OffsetOfExpr
     UnaryExprOrTypeTraitExpr
+    StmtExpr
 
     IntegerLiteral
     CharacterLiteral
@@ -193,6 +196,7 @@
     OPT_LeftShiftAssignment
     OPT_Decrement
     OPT_Increment
+    OPT_Extension
 
     /* MemberExpr */
     OPT_arrow
@@ -288,6 +292,7 @@
     ANAME
     SQNAME
     DQNAME
+    TEXT
     SRC
 %nterm
   <Node>
@@ -298,6 +303,7 @@
     TypedefNode
     RecordNode
     FieldNode
+    PreprocessorNode
 
     ModeAttrNode
     NoThrowAttrNode
@@ -358,6 +364,7 @@
     LabelStmtNode
     ContinueStmtNode
     BreakStmtNode
+    DoStmtNode
 
     ParenExprNode
     DeclRefExprNode
@@ -368,6 +375,7 @@
     InitListExprNode
     OffsetOfExprNode
     UnaryExprOrTypeTraitExprNode
+    StmtExprNode
 
     IntegerLiteralNode
     CharacterLiteralNode
@@ -415,8 +423,8 @@
   <BareType>
     BareType
     argument_type
-    ComputeLHSTy
-    ComputeResultTy
+    TagComputeLHSTy
+    TagComputeResultTy
   <intptr_t>
     parent
     prev
@@ -450,7 +458,7 @@
     object_kind
   <const char *>
     name
-    Text
+    TagText
 %%
 
 // Naming conventions:
@@ -474,6 +482,7 @@ Node: NULL { $$.node = 0;  }
  | TypedefNode
  | RecordNode
  | FieldNode
+ | PreprocessorNode
 
  | ModeAttrNode
  | NoThrowAttrNode
@@ -534,6 +543,7 @@ Node: NULL { $$.node = 0;  }
  | LabelStmtNode
  | ContinueStmtNode
  | BreakStmtNode
+ | DoStmtNode
 
  | ParenExprNode
  | DeclRefExprNode
@@ -544,6 +554,7 @@ Node: NULL { $$.node = 0;  }
  | InitListExprNode
  | OffsetOfExprNode
  | UnaryExprOrTypeTraitExprNode
+ | StmtExprNode
 
  | IntegerLiteralNode
  | CharacterLiteralNode
@@ -590,6 +601,12 @@ FieldNode: Field POINTER SQNAME BareType
     $$.Field.pointer = $2.u;
     $$.Field.name = $3;
     $$.Field.type = $4;
+  }
+
+PreprocessorNode: Preprocessor POINTER
+  {
+    $$.Preprocessor.node = $1;
+    $$.Preprocessor.pointer = $2.u;
   }
 
 ModeAttrNode: ModeAttr Attr NAME
@@ -729,7 +746,7 @@ ParagraphCommentNode: ParagraphComment Comment
     $$.ParagraphComment.self = $2;
   }
 
-TextCommentNode: TextComment Comment Text
+TextCommentNode: TextComment Comment TagText
   {
     $$.TextComment.node = $1;
     $$.TextComment.self = $2;
@@ -985,6 +1002,12 @@ BreakStmtNode: BreakStmt Stmt
     $$.BreakStmt.self = $2;
   }
 
+DoStmtNode: DoStmt Stmt
+  {
+    $$.DoStmt.node = $1;
+    $$.DoStmt.self = $2;
+  }
+
 ParenExprNode: ParenExpr Expr
   {
     $$.ParenExpr.node = $1;
@@ -1051,6 +1074,12 @@ UnaryExprOrTypeTraitExprNode: UnaryExprOrTypeTraitExpr Expr Trait argument_type 
     $$.UnaryExprOrTypeTraitExpr.argument_type = $4;
   }
 
+StmtExprNode: StmtExpr Expr {}
+  {
+    $$.StmtExpr.node = $1;
+    $$.StmtExpr.self = $2;
+  }
+
 IntegerLiteralNode: IntegerLiteral Expr INTEGER
   {
     $$.IntegerLiteral.node = $1;
@@ -1096,7 +1125,7 @@ BinaryOperatorNode: BinaryOperator Expr Operator
   }
 
 ConditionalOperatorNode: ConditionalOperator Expr {}
-CompoundAssignOperatorNode: CompoundAssignOperator Expr Operator ComputeLHSTy ComputeResultTy {}
+CompoundAssignOperatorNode: CompoundAssignOperator Expr Operator TagComputeLHSTy TagComputeResultTy {}
   {
     $$.CompoundAssignOperator.node = $1;
     $$.CompoundAssignOperator.self = $2;
@@ -1232,6 +1261,7 @@ Operator: OPT_Comma
  | OPT_LeftShiftAssignment
  | OPT_Decrement
  | OPT_Increment
+ | OPT_Extension
 
 Cast: OPT_IntegralCast
  | OPT_LValueToRValue
@@ -1317,11 +1347,11 @@ ArgIndices: INTEGER
     $$ = $1 | (1U << ($2.u - 1));
   }
 
-Text: OPT_Text DQNAME { $$ = $2; }
+TagText: OPT_Text TEXT { $$ = $2; }
 
-ComputeLHSTy: OPT_ComputeLHSTy BareType { $$ = $2; }
+TagComputeLHSTy: OPT_ComputeLHSTy BareType { $$ = $2; }
 
-ComputeResultTy: OPT_ComputeResultTy BareType { $$ = $2; }
+TagComputeResultTy: OPT_ComputeResultTy BareType { $$ = $2; }
 
 opt_inline:   { $$ = 0; }
  | OPT_inline { $$ = 1; }

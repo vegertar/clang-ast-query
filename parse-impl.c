@@ -1,12 +1,8 @@
 #include "scan.h"
-#include "string_set.h"
 #include "test.h"
-#include <stdlib.h>
 
-typedef DECL_ARRAY(ANON, Node) NodeList;
-
-const char *last_loc_src;
-unsigned last_loc_line;
+static const char *last_loc_src;
+static unsigned last_loc_line;
 
 NodeList all_nodes;
 StringSet all_strings;

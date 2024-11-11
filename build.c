@@ -1,8 +1,10 @@
 #include "build.h"
 #include "parse.h"
 #include "remark.h"
+#include "sql.h"
 #include "util.h"
 #include <time.h>
+#include <unistd.h>
 
 struct input_list input_list;
 static struct string input_content;
@@ -13,15 +15,21 @@ struct output_file {
   char tmp[PATH_MAX];
 };
 
-static int open_output(struct output_file *of) {
-  of->tmp[0] = 0;
+#define FILL_TMP(tmp)                                                          \
+  do {                                                                         \
+    assert(output.file);                                                       \
+    if (!starts_with(output.file, "/dev/")) {                                  \
+      char str[8];                                                             \
+      snprintf(tmp, sizeof(tmp), "%s.tmp-%s", output.file,                     \
+               rands(str, sizeof(str)));                                       \
+    } else {                                                                   \
+      tmp[0] = 0;                                                              \
+    }                                                                          \
+  } while (0)
 
+static int open_output(struct output_file *of) {
   if (output.file) {
-    if (!starts_with(output.file, "/dev/")) {
-      char str[8];
-      snprintf(of->tmp, sizeof(of->tmp), "%s.tmp-%s", output.file,
-               rands(str, sizeof(str)));
-    }
+    FILL_TMP(of->tmp);
     if (!(of->file = open_file(of->tmp[0] ? of->tmp : output.file, "w")))
       return -1;
   } else {
@@ -89,7 +97,7 @@ static int parse_text(FILE *in, FILE *out) {
 static int remark_line(char *line, size_t n, size_t cap, void *data) {
   struct parse_context *ctx = data;
 
-  // Parsing failure does not abort the remark process, so count the errors
+  // Parsing failure does not abort the remark process, so we count the errors
   ctx->errs += !!parse_and_dump(line, n, cap, &ctx->lloc, &ctx->uctx);
   return ctx->errs;
 }
@@ -104,7 +112,8 @@ static int parse_c(const struct input *i, FILE *out) {
     struct parse_context ctx = PARSE_CONTEXT_INIT(out);
     err = remark(string_get(&input_content), string_len(&input_content),
                  ALT(i->tu, i->file), i->opts, remark_line, &ctx);
-    err += !!ctx.errs;
+    if (!err)
+      err = ctx.errs;
   }
 
   fclose(in);
@@ -137,6 +146,21 @@ static int parse_text_only(struct input i) {
   output.file = file;
   return err;
 }
+
+static int parse_text_and_store(struct input i) {
+  int err = parse_text_only(i);
+  if (!err && output.file) {
+    char tmp[PATH_MAX];
+    FILL_TMP(tmp);
+
+    if ((err = sql(tmp)) || (err = rename(tmp, output.file)))
+      unlink(tmp);
+  }
+
+  return err;
+}
+
+static int parse_text_and_render(struct input i) { return 0; }
 
 static int remark_c_and_dump(struct input i) {
 #ifdef USE_CLANG_TOOL
@@ -176,14 +200,15 @@ struct builder {
 
 static struct builder builders[128] = {
 #define IOB(a, b, c) [IO(IK_##a, OK_##b)] = {c, #a " -> " #b}
+
     IOB(TEXT, NIL, parse_text_only),
-    IOB(TEXT, TEXT, NULL),
-    IOB(TEXT, SQL, NULL),  // TODO:
-    IOB(TEXT, HTML, NULL), // TODO:
+    IOB(TEXT, TEXT, parse_text_and_dump),
+    IOB(TEXT, DATA, parse_text_and_store),
+    IOB(TEXT, HTML, parse_text_and_render),
 
     IOB(C, NIL, remark_c_only),
     IOB(C, TEXT, remark_c_and_dump),
-    IOB(C, SQL, NULL),  // TODO:
+    IOB(C, DATA, NULL),  // TODO:
     IOB(C, HTML, NULL), // TODO:
 
 #undef IOB
@@ -200,7 +225,7 @@ int build_output(struct output o) {
     unsigned k = IO(i.kind, o.kind);
     assert(k < sizeof(builders) / sizeof(*builders));
     if (!builders[k].build) {
-      fprintf(stderr, "Not allowed build yet: %s\n", builders[k].info);
+      fprintf(stderr, "Not allowed building yet: %s\n", builders[k].info);
       err = 1;
     } else {
       err = builders[k].build(i);
