@@ -957,8 +957,8 @@ private:
   struct directive_inclusion {
     SourceLocation hash_loc;
     SourceRange range;
-    StringRef kind;
-    StringRef filename;
+    StringRef name;
+    StringRef file;
     StringRef path;
     bool angled;
   };
@@ -1227,6 +1227,7 @@ private:
         ast.dumper->dumpPointer(prev);
       }
 
+      // The range is starting from hash and ends past the macro body.
       SourceRange range;
       if (auto locations = ast.find_define_locations(loc);
           locations.hash_loc.isValid()) {
@@ -1247,6 +1248,7 @@ private:
 
       ast.dumper->dumpSourceRange(range);
       ast.out << ' ';
+      // The location is just the macro name.
       ast.dumper->dumpLocation(loc);
       ast.dumper->AddChild([&ast, id, mi] { ast.dump_macro(mi, id); });
     }
@@ -1304,10 +1306,14 @@ private:
     void operator()(const directive_inclusion &arg) {
       ast.out << "InclusionDirective";
       ast.dumper->dumpPointer(&arg);
-      ast.dumper->dumpSourceRange(arg.range);
+      // Similar to #define, the range is starting from hash.
+      ast.dumper->dumpSourceRange({arg.hash_loc, arg.range.getEnd()});
+      ast.out << ' ';
+      // The location is the left quotation mark.
+      ast.dumper->dumpLocation(arg.range.getBegin());
       if (arg.angled)
         ast.out << " angled";
-      ast.out << ' ' << arg.kind << " '" << arg.filename << "' '" << arg.path
+      ast.out << ' ' << arg.name << " '" << arg.file << "' '" << arg.path
               << "'";
     }
   };

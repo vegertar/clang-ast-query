@@ -160,6 +160,10 @@
     CStyleCastExpr
     ImplicitCastExpr
 
+    DefineDirective
+    InclusionDirective
+    MacroPPDecl
+
   <enum yytokentype>
     /* Operator */
     OPT_Comma
@@ -284,14 +288,17 @@
     OPT_ComputeResultTy
     OPT_ComputeLHSTy
 
+    /* InclusionDirective */
+    OPT_angled
+
   <Integer>
     INTEGER
     POINTER
   <const char *>
     NAME
     ANAME
-    SQNAME
-    DQNAME
+    SQTEXT
+    DQTEXT
     TEXT
     SRC
 %nterm
@@ -388,10 +395,18 @@
 
     CStyleCastExprNode
     ImplicitCastExprNode
+
+    DefineDirectiveNode
+    InclusionDirectiveNode
+    MacroPPDeclNode
   <AttrSelf>
     Attr
   <CommentSelf>
     Comment
+  <DirectiveSelf>
+    Directive
+  <PPDeclSelf>
+    PPDecl
   <DeclSelf>
     Decl
   <TypeSelf>
@@ -443,6 +458,7 @@
     opt_Inherited
     opt_Implicit
     opt_undeserialized_declarations
+    opt_angled
   <enum yytokentype>
     MemberAccess
     Operator
@@ -568,13 +584,17 @@ Node: NULL { $$.node = 0;  }
  | CStyleCastExprNode
  | ImplicitCastExprNode
 
+ | DefineDirectiveNode
+ | InclusionDirectiveNode
+ | MacroPPDeclNode
+
 IntValueNode: IntValue INTEGER
   {
     $$.IntValue.node = $1;
     $$.IntValue.value = $2;
   }
 
-EnumNode: Enum POINTER SQNAME
+EnumNode: Enum POINTER SQTEXT
   {
     $$.Enum.node = $1;
     $$.Enum.pointer = $2.u;
@@ -595,7 +615,7 @@ RecordNode: Record POINTER BareType
     $$.Record.type = $3;
   }
 
-FieldNode: Field POINTER SQNAME BareType
+FieldNode: Field POINTER SQTEXT BareType
   {
     $$.Field.node = $1;
     $$.Field.pointer = $2.u;
@@ -629,7 +649,7 @@ NonNullAttrNode: NonNullAttr Attr ArgIndices
     $$.NonNullAttr.arg_indices = $3;
   }
 
-AsmLabelAttrNode: AsmLabelAttr Attr DQNAME opt_IsLiteralLabel
+AsmLabelAttrNode: AsmLabelAttr Attr DQTEXT opt_IsLiteralLabel
   {
     $$.AsmLabelAttr.node = $1;
     $$.AsmLabelAttr.self = $2;
@@ -637,7 +657,7 @@ AsmLabelAttrNode: AsmLabelAttr Attr DQNAME opt_IsLiteralLabel
     $$.AsmLabelAttr.opt_IsLiteralLabel = $4;
   }
 
-DeprecatedAttrNode: DeprecatedAttr Attr DQNAME DQNAME
+DeprecatedAttrNode: DeprecatedAttr Attr DQTEXT DQTEXT
   {
     $$.DeprecatedAttr.node = $1;
     $$.DeprecatedAttr.self = $2;
@@ -693,7 +713,7 @@ GNUInlineAttrNode: GNUInlineAttr Attr
     $$.GNUInlineAttr.self = $2;
   }
 
-AllocSizeAttrNode: AllocSizeAttr Attr INTEGER integer {}
+AllocSizeAttrNode: AllocSizeAttr Attr INTEGER integer
   {
     $$.AllocSizeAttr.node = $1;
     $$.AllocSizeAttr.self = $2;
@@ -701,7 +721,7 @@ AllocSizeAttrNode: AllocSizeAttr Attr INTEGER integer {}
     $$.AllocSizeAttr.position2 = $4.u;
   }
 
-WarnUnusedResultAttrNode: WarnUnusedResultAttr Attr NAME DQNAME {}
+WarnUnusedResultAttrNode: WarnUnusedResultAttr Attr NAME DQTEXT
   {
     $$.WarnUnusedResultAttr.node = $1;
     $$.WarnUnusedResultAttr.self = $2;
@@ -857,38 +877,38 @@ BuiltinTypeNode: BuiltinType Type
     $$.BuiltinType.self = $2;
   }
 
-RecordTypeNode: RecordType Type {} 
+RecordTypeNode: RecordType Type
   {
     $$.RecordType.node = $1;
     $$.RecordType.self = $2;
   }
 
-PointerTypeNode: PointerType Type {}
+PointerTypeNode: PointerType Type
   {
     $$.PointerType.node = $1;
     $$.PointerType.self = $2;
   }
 
-ConstantArrayTypeNode: ConstantArrayType Type INTEGER {}
+ConstantArrayTypeNode: ConstantArrayType Type INTEGER
   {
     $$.ConstantArrayType.node = $1;
     $$.ConstantArrayType.self = $2;
     $$.ConstantArrayType.size = $3.u;
   }
 
-ElaboratedTypeNode: ElaboratedType Type {}
+ElaboratedTypeNode: ElaboratedType Type
   {
     $$.ElaboratedType.node = $1;
     $$.ElaboratedType.self = $2;
   }
 
-TypedefTypeNode: TypedefType Type {}
+TypedefTypeNode: TypedefType Type
   {
     $$.TypedefType.node = $1;
     $$.TypedefType.self = $2;
   }
 
-QualTypeNode: QualType Type opt_const opt_volatile {}
+QualTypeNode: QualType Type opt_const opt_volatile
   {
     $$.QualType.node = $1;
     $$.QualType.self = $2;
@@ -896,20 +916,20 @@ QualTypeNode: QualType Type opt_const opt_volatile {}
     $$.QualType.opt_volatile = $4;
   }
 
-EnumTypeNode: EnumType Type {}
+EnumTypeNode: EnumType Type
   {
     $$.EnumType.node = $1;
     $$.EnumType.self = $2;
   }
 
-FunctionProtoTypeNode: FunctionProtoType Type NAME {}
+FunctionProtoTypeNode: FunctionProtoType Type NAME
   {
     $$.FunctionProtoType.node = $1;
     $$.FunctionProtoType.self = $2;
     $$.FunctionProtoType.name = $3;
   }
 
-ParenTypeNode: ParenType Type {}
+ParenTypeNode: ParenType Type
   {
     $$.ParenType.node = $1;
     $$.ParenType.self = $2;
@@ -983,7 +1003,7 @@ DefaultStmtNode: DefaultStmt Stmt
     $$.DefaultStmt.self = $2;
   }
 
-LabelStmtNode: LabelStmt Stmt SQNAME
+LabelStmtNode: LabelStmt Stmt SQTEXT
   {
     $$.LabelStmt.node = $1;
     $$.LabelStmt.self = $2;
@@ -1014,7 +1034,7 @@ ParenExprNode: ParenExpr Expr
     $$.ParenExpr.self = $2;
   }
 
-DeclRefExprNode: DeclRefExpr Expr DeclRef non_odr_use {}
+DeclRefExprNode: DeclRefExpr Expr DeclRef non_odr_use
   {
     $$.DeclRefExpr.node = $1;
     $$.DeclRefExpr.self = $2;
@@ -1025,44 +1045,44 @@ DeclRefExprNode: DeclRefExpr Expr DeclRef non_odr_use {}
 #undef obj
   }
 
-ConstantExprNode: ConstantExpr Expr {}
+ConstantExprNode: ConstantExpr Expr
   {
     $$.ConstantExpr.node = $1;
     $$.ConstantExpr.self = $2;
   }
 
-CallExprNode: CallExpr Expr {}
+CallExprNode: CallExpr Expr
   {
     $$.CallExpr.node = $1;
     $$.CallExpr.self = $2;
   }
 
-MemberExprNode: MemberExpr Expr Member {}
+MemberExprNode: MemberExpr Expr Member
   {
     $$.MemberExpr.node = $1;
     $$.MemberExpr.self = $2;
     $$.MemberExpr.member = $3;
   }
 
-ArraySubscriptExprNode: ArraySubscriptExpr Expr {}
+ArraySubscriptExprNode: ArraySubscriptExpr Expr
   {
     $$.ArraySubscriptExpr.node = $1;
     $$.ArraySubscriptExpr.self = $2;
   }
 
-InitListExprNode: InitListExpr Expr {}
+InitListExprNode: InitListExpr Expr
   {
     $$.InitListExpr.node = $1;
     $$.InitListExpr.self = $2;
   }
 
-OffsetOfExprNode: OffsetOfExpr Expr {}
+OffsetOfExprNode: OffsetOfExpr Expr
   {
     $$.OffsetOfExpr.node = $1;
     $$.OffsetOfExpr.self = $2;
   }
 
-UnaryExprOrTypeTraitExprNode: UnaryExprOrTypeTraitExpr Expr Trait argument_type {}
+UnaryExprOrTypeTraitExprNode: UnaryExprOrTypeTraitExpr Expr Trait argument_type
   {
     $$.UnaryExprOrTypeTraitExpr.node = $1;
     $$.UnaryExprOrTypeTraitExpr.self = $2;
@@ -1074,7 +1094,7 @@ UnaryExprOrTypeTraitExprNode: UnaryExprOrTypeTraitExpr Expr Trait argument_type 
     $$.UnaryExprOrTypeTraitExpr.argument_type = $4;
   }
 
-StmtExprNode: StmtExpr Expr {}
+StmtExprNode: StmtExpr Expr
   {
     $$.StmtExpr.node = $1;
     $$.StmtExpr.self = $2;
@@ -1094,7 +1114,7 @@ CharacterLiteralNode: CharacterLiteral Expr INTEGER
     $$.CharacterLiteral.value = $3.i;
   }
 
-StringLiteralNode: StringLiteral Expr DQNAME
+StringLiteralNode: StringLiteral Expr DQTEXT
   {
     $$.StringLiteral.node = $1;
     $$.StringLiteral.self = $2;
@@ -1124,8 +1144,13 @@ BinaryOperatorNode: BinaryOperator Expr Operator
 #undef obj
   }
 
-ConditionalOperatorNode: ConditionalOperator Expr {}
-CompoundAssignOperatorNode: CompoundAssignOperator Expr Operator TagComputeLHSTy TagComputeResultTy {}
+ConditionalOperatorNode: ConditionalOperator Expr
+  {
+    $$.ConditionalOperator.node = $1;
+    $$.ConditionalOperator.self = $2;
+  }
+
+CompoundAssignOperatorNode: CompoundAssignOperator Expr Operator TagComputeLHSTy TagComputeResultTy
   {
     $$.CompoundAssignOperator.node = $1;
     $$.CompoundAssignOperator.self = $2;
@@ -1160,6 +1185,31 @@ ImplicitCastExprNode: ImplicitCastExpr Expr Cast opt_part_of_explicit_cast
     $$.ImplicitCastExpr.opt_part_of_explicit_cast = $4;
   }
 
+DefineDirectiveNode: DefineDirective Directive
+  {
+    $$.DefineDirective.node = $1;
+    $$.DefineDirective.self = $2;
+  }
+
+InclusionDirectiveNode: InclusionDirective Directive opt_angled NAME SQTEXT SQTEXT
+  {
+    $$.InclusionDirective.node = $1;
+    $$.InclusionDirective.self = $2;
+    $$.InclusionDirective.opt_angled = $3;
+    $$.InclusionDirective.name = $4;
+    $$.InclusionDirective.file = $5;
+    $$.InclusionDirective.path = $6;
+  }
+
+MacroPPDeclNode: MacroPPDecl PPDecl NAME SQTEXT SQTEXT
+  {
+    $$.MacroPPDecl.node = $1;
+    $$.MacroPPDecl.self = $2;
+    $$.MacroPPDecl.name = $3;
+    $$.MacroPPDecl.parameters = $4;
+    $$.MacroPPDecl.replacement = $5;
+  }
+
 Attr: POINTER AngledRange opt_Inherited opt_Implicit
   {
     $$.pointer = $1.u;
@@ -1169,6 +1219,20 @@ Attr: POINTER AngledRange opt_Inherited opt_Implicit
   }
 
 Comment: POINTER AngledRange
+  {
+    $$.pointer = $1.u;
+    $$.range = $2;
+  }
+
+Directive: POINTER prev AngledRange Loc
+  {
+    $$.pointer = $1.u;
+    $$.prev = $2;
+    $$.range = $3;
+    $$.loc = $4;
+  }
+
+PPDecl: POINTER AngledRange
   {
     $$.pointer = $1.u;
     $$.range = $2;
@@ -1285,13 +1349,13 @@ Class: OPT_struct
 PrefixOrPostfix: OPT_prefix
  | OPT_postfix
 
-Label: SQNAME POINTER
+Label: SQTEXT POINTER
   {
     $$.name = $1;
     $$.pointer = $2.u;
   }
 
-DeclRef: NAME POINTER SQNAME BareType
+DeclRef: NAME POINTER SQTEXT BareType
   {
     $$.decl = $1;
     $$.pointer = $2.u;
@@ -1327,8 +1391,8 @@ ColLoc: COL ':' INTEGER
     $$ = (Loc){last_loc_src, last_loc_line, $3.u};
   }
 
-BareType: SQNAME      { $$ = (BareType){$1}; }
- | SQNAME ':' SQNAME  { $$ = (BareType){$1, $3}; }
+BareType: SQTEXT      { $$ = (BareType){$1}; }
+ | SQTEXT ':' SQTEXT  { $$ = (BareType){$1, $3}; }
 
 ArgIndices: INTEGER
   {
@@ -1394,6 +1458,9 @@ opt_Implicit:   { $$ = 0; }
 
 opt_undeserialized_declarations:    { $$ = 0; }
  | OPT_undeserialized_declarations  { $$ = 1; }
+
+opt_angled:   { $$ = 0; }
+ | OPT_angled { $$ = 1; }
 
 storage: { $$ = 0; }
  | OPT_extern

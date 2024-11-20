@@ -22,7 +22,7 @@
     SubtractionAssignment, MultiplicationAssignment, DivisionAssignment,       \
     RemainderAssignment, BitwiseXORAssignment, BitwiseORAssignment,            \
     BitwiseANDAssignment, RightShift, RightShiftAssignment, LeftShift,         \
-    LeftShiftAssignment, Decrement, Increment)
+    LeftShiftAssignment, Decrement, Increment, Extension)
 
 #define grp_cast                                                               \
   _(cast, IntegralCast, LValueToRValue, FunctionToPointerDecay,                \
@@ -142,6 +142,34 @@
 #define IS_OPERATOR(...) IS_EXPR(grp_operator, ##__VA_ARGS__)
 #define IS_CAST_EXPR(...) IS_EXPR(grp_cast, ##__VA_ARGS__)
 
+#define OF_DIRECTIVE(...)                                                      \
+  WITH_OPTIONS(__VA_ARGS__);                                                   \
+  uintptr_t pointer, prev;                                                     \
+  AngledRange range;                                                           \
+  Loc loc
+
+#define IS_DIRECTIVE(...)                                                      \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    DirectiveSelf self;                                                        \
+    struct {                                                                   \
+      OF_DIRECTIVE(__VA_ARGS__);                                               \
+    };                                                                         \
+  }
+
+#define OF_PPDECL(...)                                                         \
+  uintptr_t pointer;                                                           \
+  AngledRange range
+
+#define IS_PPDECL(...)                                                         \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    PPDeclSelf self;                                                           \
+    struct {                                                                   \
+      OF_PPDECL(__VA_ARGS__);                                                  \
+    };                                                                         \
+  }
+
 #define IS(X, Y, ...)                                                          \
   {                                                                            \
     IS_##X(__VA_ARGS__);                                                       \
@@ -158,6 +186,8 @@
 #define Literal(X, Y, ...) struct IS(EXPR, Y, ##__VA_ARGS__) X##Literal
 #define Operator(X, Y, ...) struct IS(OPERATOR, Y, ##__VA_ARGS__) X##Operator
 #define CastExpr(X, Y, ...) struct IS(CAST_EXPR, Y, ##__VA_ARGS__) X##CastExpr
+#define Directive(X, Y, ...) struct IS(DIRECTIVE, Y, ##__VA_ARGS__) X##Directive
+#define PPDecl(X, Y, ...) struct IS(PPDECL, Y, ##__VA_ARGS__) X##PPDecl
 
 #define INTEGER                                                                \
   {                                                                            \
@@ -187,6 +217,8 @@ typedef enum {
   NG_Operator,
   NG_CastExpr,
   NG_Preprocessor,
+  NG_Directive,
+  NG_PPDecl,
 } NodeGroup;
 
 typedef struct {
@@ -255,6 +287,14 @@ typedef struct {
 typedef struct {
   OF_EXPR();
 } ExprSelf;
+
+typedef struct {
+  OF_DIRECTIVE();
+} DirectiveSelf;
+
+typedef struct {
+  OF_PPDECL();
+} PPDeclSelf;
 
 typedef struct {
   union {
@@ -412,6 +452,22 @@ typedef struct {
 
     CastExpr(CStyle, {});
     CastExpr(Implicit, {}, part_of_explicit_cast);
+
+    Directive(Define, {});
+    Directive(
+        Inclusion,
+        {
+          const char *name;
+          const char *file;
+          const char *path;
+        },
+        angled);
+
+    PPDecl(Macro, {
+      const char *name;
+      const char *parameters;
+      const char *replacement;
+    });
   };
 } Node;
 

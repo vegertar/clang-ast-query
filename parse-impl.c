@@ -26,7 +26,7 @@ const char *add_string(struct string s) {
 void parse_init() {
   assert(all_strings.n == 0 && "Has initialized");
   const char *string_set_size = getenv("STRING_SET_SIZE");
-  int n = string_set_size ? atoi(string_set_size) : 10099;
+  int n = string_set_size ? atoi(string_set_size) : 20071;
   TOGGLE(log_string_set_size, fprintf(stderr, "string set size is %d\n", n));
   StringSet_reserve(&all_strings, n);
 }

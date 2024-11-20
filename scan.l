@@ -66,6 +66,8 @@
 #define LITERAL(X) VAL(X##Literal, | (NG_Literal << KIND_WIDTH))
 #define OPERATOR(X) VAL(X##Operator, | (NG_Operator << KIND_WIDTH))
 #define CAST_EXPR(X) VAL(X##CastExpr, | (NG_CastExpr << KIND_WIDTH))
+#define DIRECTIVE(X) VAL(X##Directive, | (NG_Directive << KIND_WIDTH))
+#define PPDECL(X) VAL(X##PPDecl, | (NG_PPDecl << KIND_WIDTH))
 
 #define SET(X, value, ...)                                                    \
   do {                                                                        \
@@ -109,9 +111,9 @@ UNARY_PREFIX ({INC_DEC}|"'-'"|"'+'"|"'*'"|"'&'"|"'~'"|"'!'"|"'__extension__'")
 
 SRC ([^ <:]+|"<scratch space>"|"<command line>"|"<built-in>")
 
-SQNAME ('((?:[^'\\]|\\.)*)')
+SQTEXT ('((?:[^'\\]|\\.)*)')
 
-DQNAME (\"((?:[^"\\]|\\.)*)\")
+DQTEXT (\"((?:[^"\\]|\\.)*)\")
 
 %%
 
@@ -211,6 +213,10 @@ CompoundAssignOperator          OPERATOR(CompoundAssign);
 CStyleCastExpr                  CAST_EXPR(CStyle);
 ImplicitCastExpr                CAST_EXPR(Implicit);
 
+DefineDirective                 DIRECTIVE(Define);
+InclusionDirective              DIRECTIVE(Inclusion);
+MacroPPDecl                     PPDECL(Macro);
+
 "','"                           OPT(Comma, Operator);
 "'%'"                           OPT(Remainder, Operator);
 "'/'"                           OPT(Division, Operator);
@@ -306,6 +312,8 @@ IsLiteralLabel                  OPT(IsLiteralLabel, AsmLabelAttr);
 Inherited                       OPT(Inherited, Attr);
 Implicit                        OPT(Implicit, Attr);
 
+angled                          OPT(angled, InclusionDirective);
+
 prefix/" "{UNARY_PREFIX}        OPT(prefix, UnaryOperator);
 postfix/" "{INC_DEC}            OPT(postfix, UnaryOperator);
 "cannot overflow"               OPT(cannot_overflow, UnaryOperator);
@@ -329,8 +337,8 @@ col/:[0-9]+                     TOK(COL);
 
 {INDENT}/[^ \n]                 SET(INDENT, yyleng);
 {SRC}/:[0-9]+:[0-9]+            SET(SRC, add_static(yytext, yyleng));
-{SQNAME}                        SET(SQNAME, add_static(yytext + 1, yyleng - 2));
-{DQNAME}                        SET(DQNAME, add_static(yytext + 1, yyleng - 2));
+{SQTEXT}                        SET(SQTEXT, add_static(yytext + 1, yyleng - 2));
+{DQTEXT}                        SET(DQTEXT, add_static(yytext + 1, yyleng - 2));
 "\xE2\x80\x8B"{ANAME}           SET(ANAME, add_static(yytext + 3, yyleng - 3));
 "\xE2\x80\x8B"{NAME}            SET(NAME, add_static(yytext + 3, yyleng - 3));
 {NAME}                          SET(NAME, add_static(yytext, yyleng));
