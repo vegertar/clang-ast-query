@@ -834,6 +834,7 @@ private:
         ast.lift_directive();
 
       add_sub_directive<if_directive>(elif ? tok::pp_elif : tok::pp_if, loc,
+                                      range.getBegin(),
                                       SourceRange{locations.hash_loc});
       add_sub_directive<if_directive::cond>(range, value);
       ast.add_expansion();
@@ -851,7 +852,7 @@ private:
       if (kind == tok::pp_elifdef || kind == tok::pp_elifndef)
         ast.lift_directive();
 
-      add_sub_directive<if_directive>(kind, loc,
+      add_sub_directive<if_directive>(kind, loc, range.getBegin(),
                                       SourceRange{locations.hash_loc});
       add_sub_directive<if_directive::cond>(
           range,
@@ -867,7 +868,8 @@ private:
       auto locations = ast.find_if_locations(loc);
 
       add_sup_directive<if_directive>(ndef ? tok::pp_elifndef : tok::pp_elifdef,
-                                      loc, SourceRange{locations.hash_loc});
+                                      loc, range.getBegin(),
+                                      SourceRange{locations.hash_loc});
       add_sub_directive<if_directive::cond>(
           range, pp_callback::CVK_NotEvaluated, true);
       add_sup_directive<if_directive::block>();
@@ -928,6 +930,7 @@ private:
   struct if_directive {
     tok::PPKeywordKind kind;
     SourceLocation loc;
+    SourceLocation cond_loc;
     SourceRange range;
     bool has_else;
 
@@ -1257,7 +1260,9 @@ private:
       ast.out << "IfDirective";
       ast.dumper->dumpPointer(&arg);
       ast.dumper->dumpSourceRange(arg.range);
-
+      ast.out << ' ';
+      // The location is the beginning of the condition.
+      ast.dumper->dumpLocation(arg.cond_loc);
       ast.out << ' ' << tok::getPPKeywordSpelling(arg.kind);
       if (arg.has_else)
         ast.out << " has_else";

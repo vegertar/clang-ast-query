@@ -162,7 +162,9 @@
 
     DefineDirective
     InclusionDirective
+    IfDirective
     MacroPPDecl
+    ConditionalPPExpr
 
   <enum yytokentype>
     /* Operator */
@@ -291,6 +293,14 @@
     /* InclusionDirective */
     OPT_angled
 
+    /* IfDirective */
+    OPT_ifndef
+
+    /* ConditionValue */
+    OPT_NotEvaluated
+    OPT_False
+    OPT_True
+
   <Integer>
     INTEGER
     POINTER
@@ -397,14 +407,18 @@
     ImplicitCastExprNode
 
     DefineDirectiveNode
-    InclusionDirectiveNode
     MacroPPDeclNode
+    InclusionDirectiveNode
+    IfDirectiveNode
+    ConditionalPPExprNode
   <AttrSelf>
     Attr
   <CommentSelf>
     Comment
   <DirectiveSelf>
     Directive
+  <PPExprSelf>
+    PPExpr
   <PPDeclSelf>
     PPDecl
   <DeclSelf>
@@ -466,6 +480,8 @@
     Trait
     Class
     PrefixOrPostfix
+    If
+    ConditionValue
     storage
     init_style
     used_or_referenced
@@ -585,8 +601,10 @@ Node: NULL { $$.node = 0;  }
  | ImplicitCastExprNode
 
  | DefineDirectiveNode
- | InclusionDirectiveNode
  | MacroPPDeclNode
+ | InclusionDirectiveNode
+ | IfDirectiveNode
+ | ConditionalPPExprNode
 
 IntValueNode: IntValue INTEGER
   {
@@ -1191,6 +1209,15 @@ DefineDirectiveNode: DefineDirective Directive
     $$.DefineDirective.self = $2;
   }
 
+MacroPPDeclNode: MacroPPDecl PPDecl NAME SQTEXT SQTEXT
+  {
+    $$.MacroPPDecl.node = $1;
+    $$.MacroPPDecl.self = $2;
+    $$.MacroPPDecl.name = $3;
+    $$.MacroPPDecl.parameters = $4;
+    $$.MacroPPDecl.replacement = $5;
+  }
+
 InclusionDirectiveNode: InclusionDirective Directive opt_angled NAME SQTEXT SQTEXT
   {
     $$.InclusionDirective.node = $1;
@@ -1201,13 +1228,23 @@ InclusionDirectiveNode: InclusionDirective Directive opt_angled NAME SQTEXT SQTE
     $$.InclusionDirective.path = $6;
   }
 
-MacroPPDeclNode: MacroPPDecl PPDecl NAME SQTEXT SQTEXT
+IfDirectiveNode: IfDirective Directive If
   {
-    $$.MacroPPDecl.node = $1;
-    $$.MacroPPDecl.self = $2;
-    $$.MacroPPDecl.name = $3;
-    $$.MacroPPDecl.parameters = $4;
-    $$.MacroPPDecl.replacement = $5;
+    $$.IfDirective.node = $1;
+    $$.IfDirective.self = $2;
+
+#define obj $$.IfDirective
+    SET_OPTIONS(obj, $3, ifx);
+#undef obj
+
+  }
+
+ConditionalPPExprNode: ConditionalPPExpr PPExpr opt_implicit ConditionValue
+  {
+    $$.ConditionalPPExpr.node = $1;
+    $$.ConditionalPPExpr.self = $2;
+    $$.ConditionalPPExpr.opt_implicit = $3;
+    $$.ConditionalPPExpr.value = $4;
   }
 
 Attr: POINTER AngledRange opt_Inherited opt_Implicit
@@ -1230,6 +1267,12 @@ Directive: POINTER prev AngledRange Loc
     $$.prev = $2;
     $$.range = $3;
     $$.loc = $4;
+  }
+
+PPExpr: POINTER AngledRange
+  {
+    $$.pointer = $1.u;
+    $$.range = $2;
   }
 
 PPDecl: POINTER AngledRange
@@ -1338,6 +1381,12 @@ Cast: OPT_IntegralCast
  | OPT_ArrayToPointerDecay
  | OPT_IntegralToFloating
  | OPT_IntegralToPointer
+
+If: OPT_ifndef
+
+ConditionValue: OPT_NotEvaluated
+ | OPT_False
+ | OPT_True
 
 Trait: OPT_alignof
  | OPT_sizeof

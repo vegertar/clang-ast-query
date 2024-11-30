@@ -9,6 +9,7 @@
 #define grp_value_kind _(value_kind, lvalue)
 #define grp_object_kind _(object_kind, bitfield)
 #define grp_class _(class, struct, union, enum)
+#define grp_ifx _(ifx, ifndef)
 #define grp_storage _(storage, extern, static)
 #define grp_init_style _(init_style, cinit, callinit, listinit, parenlistinit)
 #define grp_trait _(trait, alignof, sizeof)
@@ -158,6 +159,7 @@
   }
 
 #define OF_PPDECL(...)                                                         \
+  WITH_OPTIONS(__VA_ARGS__);                                                   \
   uintptr_t pointer;                                                           \
   AngledRange range
 
@@ -167,6 +169,20 @@
     PPDeclSelf self;                                                           \
     struct {                                                                   \
       OF_PPDECL(__VA_ARGS__);                                                  \
+    };                                                                         \
+  }
+
+#define OF_PPEXPR(...)                                                         \
+  WITH_OPTIONS(__VA_ARGS__);                                                   \
+  uintptr_t pointer;                                                           \
+  AngledRange range
+
+#define IS_PPEXPR(...)                                                         \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    PPExprSelf self;                                                           \
+    struct {                                                                   \
+      OF_PPEXPR(__VA_ARGS__);                                                  \
     };                                                                         \
   }
 
@@ -188,6 +204,7 @@
 #define CastExpr(X, Y, ...) struct IS(CAST_EXPR, Y, ##__VA_ARGS__) X##CastExpr
 #define Directive(X, Y, ...) struct IS(DIRECTIVE, Y, ##__VA_ARGS__) X##Directive
 #define PPDecl(X, Y, ...) struct IS(PPDECL, Y, ##__VA_ARGS__) X##PPDecl
+#define PPExpr(X, Y, ...) struct IS(PPEXPR, Y, ##__VA_ARGS__) X##PPExpr
 
 #define INTEGER                                                                \
   {                                                                            \
@@ -219,6 +236,7 @@ typedef enum {
   NG_Preprocessor,
   NG_Directive,
   NG_PPDecl,
+  NG_PPExpr,
 } NodeGroup;
 
 typedef struct {
@@ -295,6 +313,10 @@ typedef struct {
 typedef struct {
   OF_PPDECL();
 } PPDeclSelf;
+
+typedef struct {
+  OF_PPEXPR();
+} PPExprSelf;
 
 typedef struct {
   union {
@@ -462,12 +484,16 @@ typedef struct {
           const char *path;
         },
         angled);
+    Directive(If, {}, grp_ifx);
 
     PPDecl(Macro, {
       const char *name;
       const char *parameters;
       const char *replacement;
     });
+
+    PPExpr(
+        Conditional, { uint8_t value; }, implicit);
   };
 } Node;
 
@@ -491,3 +517,5 @@ typedef struct {
 #undef Literal
 #undef Operator
 #undef CastExpr
+#undef Directive
+#undef PPDecl

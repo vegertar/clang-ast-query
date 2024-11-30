@@ -68,6 +68,7 @@
 #define CAST_EXPR(X) VAL(X##CastExpr, | (NG_CastExpr << KIND_WIDTH))
 #define DIRECTIVE(X) VAL(X##Directive, | (NG_Directive << KIND_WIDTH))
 #define PPDECL(X) VAL(X##PPDecl, | (NG_PPDecl << KIND_WIDTH))
+#define PPEXPR(X) VAL(X##PPExpr, | (NG_PPExpr << KIND_WIDTH))
 
 #define SET(X, value, ...)                                                    \
   do {                                                                        \
@@ -214,8 +215,10 @@ CStyleCastExpr                  CAST_EXPR(CStyle);
 ImplicitCastExpr                CAST_EXPR(Implicit);
 
 DefineDirective                 DIRECTIVE(Define);
-InclusionDirective              DIRECTIVE(Inclusion);
 MacroPPDecl                     PPDECL(Macro);
+InclusionDirective              DIRECTIVE(Inclusion);
+IfDirective                     DIRECTIVE(If);
+ConditionalPPExpr               PPEXPR(Conditional);
 
 "','"                           OPT(Comma, Operator);
 "'%'"                           OPT(Remainder, Operator);
@@ -289,7 +292,7 @@ enum                            OPT(enum, RecordDecl);
 "<undeserialized declarations>" OPT(undeserialized_declarations, Decl);
 used                            OPT(used, Decl);
 referenced                      OPT(referenced, Decl);
-implicit                        OPT(implicit, Decl);
+implicit                        OPT(implicit, Decl, PPExpr);
 
 cinit                           OPT(cinit, VarDecl);
 callinit                        OPT(callinit, VarDecl);
@@ -313,6 +316,12 @@ Inherited                       OPT(Inherited, Attr);
 Implicit                        OPT(Implicit, Attr);
 
 angled                          OPT(angled, InclusionDirective);
+
+ifndef                          OPT(ifndef, IfDirective);
+
+NotEvaluated                    OPT(NotEvaluated, ConditionalPPExpr);
+False                           OPT(False, ConditionalPPExpr);
+True                            OPT(True, ConditionalPPExpr);
 
 prefix/" "{UNARY_PREFIX}        OPT(prefix, UnaryOperator);
 postfix/" "{INC_DEC}            OPT(postfix, UnaryOperator);
