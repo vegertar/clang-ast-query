@@ -69,6 +69,9 @@
 #define DIRECTIVE(X) VAL(X##Directive, | (NG_Directive << KIND_WIDTH))
 #define PPDECL(X) VAL(X##PPDecl, | (NG_PPDecl << KIND_WIDTH))
 #define PPEXPR(X) VAL(X##PPExpr, | (NG_PPExpr << KIND_WIDTH))
+#define PPOPERATOR(X) VAL(X##PPOperator, | (NG_PPOperator << KIND_WIDTH))
+#define PPSTMT(X) VAL(X##PPStmt, | (NG_PPStmt << KIND_WIDTH))
+#define EXPANSION(X) VAL(X##Expansion, | (NG_Expansion << KIND_WIDTH))
 
 #define SET(X, value, ...)                                                    \
   do {                                                                        \
@@ -219,6 +222,9 @@ MacroPPDecl                     PPDECL(Macro);
 InclusionDirective              DIRECTIVE(Inclusion);
 IfDirective                     DIRECTIVE(If);
 ConditionalPPExpr               PPEXPR(Conditional);
+DefinedPPOperator               PPOPERATOR(Defined);
+CompoundPPStmt                  PPSTMT(Compound);
+MacroExpansion                  EXPANSION(Macro);
 
 "','"                           OPT(Comma, Operator);
 "'%'"                           OPT(Remainder, Operator);
@@ -303,7 +309,7 @@ non_odr_use_unevaluated         OPT(non_odr_use_unevaluated, DeclRefExpr);
 non_odr_use_constant            OPT(non_odr_use_constant, DeclRefExpr);
 non_odr_use_discarded           OPT(non_odr_use_discarded, DeclRefExpr);
 
-has_else                        OPT(has_else, IfStmt);
+has_else                        OPT(has_else, IfStmt, IfDirective);
 
 bitfield                        OPT(bitfield, Stmt);
 lvalue                          OPT(lvalue, Stmt);
@@ -317,7 +323,14 @@ Implicit                        OPT(Implicit, Attr);
 
 angled                          OPT(angled, InclusionDirective);
 
+if                              OPT(if, IfDirective);
+ifdef                           OPT(ifdef, IfDirective);
 ifndef                          OPT(ifndef, IfDirective);
+elif                            OPT(elif, IfDirective);
+elifdef                         OPT(elifdef, IfDirective);
+elifndef                        OPT(elifndef, IfDirective);
+
+fast                            OPT(fast, MacroExpansion);
 
 NotEvaluated                    OPT(NotEvaluated, ConditionalPPExpr);
 False                           OPT(False, ConditionalPPExpr);

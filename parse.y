@@ -165,6 +165,9 @@
     IfDirective
     MacroPPDecl
     ConditionalPPExpr
+    DefinedPPOperator
+    CompoundPPStmt
+    MacroExpansion
 
   <enum yytokentype>
     /* Operator */
@@ -294,12 +297,20 @@
     OPT_angled
 
     /* IfDirective */
+    OPT_if
+    OPT_ifdef
     OPT_ifndef
+    OPT_elif
+    OPT_elifdef
+    OPT_elifndef
 
     /* ConditionValue */
     OPT_NotEvaluated
     OPT_False
     OPT_True
+
+    /* MacroExpansion */
+    OPT_fast
 
   <Integer>
     INTEGER
@@ -411,14 +422,24 @@
     InclusionDirectiveNode
     IfDirectiveNode
     ConditionalPPExprNode
+    DefinedPPOperatorNode
+    CompoundPPStmtNode
+    MacroExpansionNode
+
   <AttrSelf>
     Attr
   <CommentSelf>
     Comment
   <DirectiveSelf>
     Directive
+  <ExpansionSelf>
+    Expansion
   <PPExprSelf>
     PPExpr
+  <PPOperatorSelf>
+    PPOperator
+  <PPStmtSelf>
+    PPStmt
   <PPDeclSelf>
     PPDecl
   <DeclSelf>
@@ -435,8 +456,8 @@
     ArgIndices
   <Member>
     Member
-  <MemberDecl>
-    MemberDecl
+  <MemberFace>
+    MemberFace
   <Integer>
     integer
   <Label>
@@ -473,8 +494,9 @@
     opt_Implicit
     opt_undeserialized_declarations
     opt_angled
+    opt_fast
   <enum yytokentype>
-    MemberAccess
+    MemberCall
     Operator
     Cast
     Trait
@@ -605,6 +627,9 @@ Node: NULL { $$.node = 0;  }
  | InclusionDirectiveNode
  | IfDirectiveNode
  | ConditionalPPExprNode
+ | DefinedPPOperatorNode
+ | CompoundPPStmtNode
+ | MacroExpansionNode
 
 IntValueNode: IntValue INTEGER
   {
@@ -1228,7 +1253,7 @@ InclusionDirectiveNode: InclusionDirective Directive opt_angled NAME SQTEXT SQTE
     $$.InclusionDirective.path = $6;
   }
 
-IfDirectiveNode: IfDirective Directive If
+IfDirectiveNode: IfDirective Directive If opt_has_else
   {
     $$.IfDirective.node = $1;
     $$.IfDirective.self = $2;
@@ -1237,7 +1262,17 @@ IfDirectiveNode: IfDirective Directive If
     SET_OPTIONS(obj, $3, ifx);
 #undef obj
 
+    $$.IfDirective.opt_has_else = $4;
   }
+
+MacroExpansionNode: MacroExpansion Expansion opt_fast NAME POINTER
+ {
+    $$.MacroExpansion.node = $1;
+    $$.MacroExpansion.self = $2;
+    $$.MacroExpansion.opt_fast = $3;
+    $$.MacroExpansion.macro.name = $4;
+    $$.MacroExpansion.macro.pointer = $5.u;
+ }
 
 ConditionalPPExprNode: ConditionalPPExpr PPExpr opt_implicit ConditionValue
   {
@@ -1246,6 +1281,20 @@ ConditionalPPExprNode: ConditionalPPExpr PPExpr opt_implicit ConditionValue
     $$.ConditionalPPExpr.opt_implicit = $3;
     $$.ConditionalPPExpr.value = $4;
   }
+
+DefinedPPOperatorNode: DefinedPPOperator PPOperator NAME POINTER
+ {
+    $$.DefinedPPOperator.node = $1;
+    $$.DefinedPPOperator.self = $2;
+    $$.DefinedPPOperator.macro.name = $3;
+    $$.DefinedPPOperator.macro.pointer = $4.u;
+ }
+
+CompoundPPStmtNode: CompoundPPStmt PPStmt
+ {
+    $$.CompoundPPStmt.node = $1;
+    $$.CompoundPPStmt.self = $2;
+ }
 
 Attr: POINTER AngledRange opt_Inherited opt_Implicit
   {
@@ -1269,7 +1318,25 @@ Directive: POINTER prev AngledRange Loc
     $$.loc = $4;
   }
 
+Expansion: POINTER AngledRange
+  {
+    $$.pointer = $1.u;
+    $$.range = $2;
+  }
+
 PPExpr: POINTER AngledRange
+  {
+    $$.pointer = $1.u;
+    $$.range = $2;
+  }
+
+PPOperator: POINTER AngledRange
+  {
+    $$.pointer = $1.u;
+    $$.range = $2;
+  }
+
+PPStmt: POINTER AngledRange
   {
     $$.pointer = $1.u;
     $$.range = $2;
@@ -1320,19 +1387,19 @@ Expr: Stmt BareType value_kind object_kind
     $$.object_kind = $4;
   }
 
-Member: MemberAccess MemberDecl POINTER
+Member: MemberCall MemberFace POINTER
   {
     $$.dot = $1 == TOK_OPT_dot;
     $$.anonymous = $2.anonymous;
-    $$.name = $2.name;
-    $$.pointer = $3.u;
+    $$.ref.name = $2.name;
+    $$.ref.pointer = $3.u;
   }
 
-MemberAccess: OPT_arrow
+MemberCall: OPT_arrow
  | OPT_dot
 
-MemberDecl: NAME { $$ = (MemberDecl){0, $1}; }
- | ANAME         { $$ = (MemberDecl){1, $1}; }
+MemberFace: NAME { $$ = (MemberFace){0, $1}; }
+ | ANAME         { $$ = (MemberFace){1, $1}; }
 
 Operator: OPT_Comma
  | OPT_Remainder
@@ -1382,7 +1449,12 @@ Cast: OPT_IntegralCast
  | OPT_IntegralToFloating
  | OPT_IntegralToPointer
 
-If: OPT_ifndef
+If: OPT_if
+ | OPT_ifdef
+ | OPT_ifndef
+ | OPT_elif
+ | OPT_elifdef
+ | OPT_elifndef
 
 ConditionValue: OPT_NotEvaluated
  | OPT_False
@@ -1407,8 +1479,8 @@ Label: SQTEXT POINTER
 DeclRef: NAME POINTER SQTEXT BareType
   {
     $$.decl = $1;
-    $$.pointer = $2.u;
-    $$.name = $3;
+    $$.ref.pointer = $2.u;
+    $$.ref.name = $3;
     $$.type = $4;
   }
 
@@ -1510,6 +1582,9 @@ opt_undeserialized_declarations:    { $$ = 0; }
 
 opt_angled:   { $$ = 0; }
  | OPT_angled { $$ = 1; }
+
+opt_fast:   { $$ = 0; }
+ | OPT_fast { $$ = 1; }
 
 storage: { $$ = 0; }
  | OPT_extern

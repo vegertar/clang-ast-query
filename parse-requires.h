@@ -9,7 +9,7 @@
 #define grp_value_kind _(value_kind, lvalue)
 #define grp_object_kind _(object_kind, bitfield)
 #define grp_class _(class, struct, union, enum)
-#define grp_ifx _(ifx, ifndef)
+#define grp_ifx _(ifx, if, ifdef, ifndef, elif, elifdef, elifndef)
 #define grp_storage _(storage, extern, static)
 #define grp_init_style _(init_style, cinit, callinit, listinit, parenlistinit)
 #define grp_trait _(trait, alignof, sizeof)
@@ -186,6 +186,48 @@
     };                                                                         \
   }
 
+#define OF_PPOPERATOR(...)                                                     \
+  WITH_OPTIONS(__VA_ARGS__);                                                   \
+  uintptr_t pointer;                                                           \
+  AngledRange range
+
+#define IS_PPOPERATOR(...)                                                     \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    PPOperatorSelf self;                                                       \
+    struct {                                                                   \
+      OF_PPOPERATOR(__VA_ARGS__);                                              \
+    };                                                                         \
+  }
+
+#define OF_PPSTMT(...)                                                         \
+  WITH_OPTIONS(__VA_ARGS__);                                                   \
+  uintptr_t pointer;                                                           \
+  AngledRange range
+
+#define IS_PPSTMT(...)                                                         \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    PPStmtSelf self;                                                           \
+    struct {                                                                   \
+      OF_PPSTMT(__VA_ARGS__);                                                  \
+    };                                                                         \
+  }
+
+#define OF_EXPANSION(...)                                                      \
+  WITH_OPTIONS(__VA_ARGS__);                                                   \
+  uintptr_t pointer;                                                           \
+  AngledRange range
+
+#define IS_EXPANSION(...)                                                      \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    ExpansionSelf self;                                                        \
+    struct {                                                                   \
+      OF_EXPANSION(__VA_ARGS__);                                               \
+    };                                                                         \
+  }
+
 #define IS(X, Y, ...)                                                          \
   {                                                                            \
     IS_##X(__VA_ARGS__);                                                       \
@@ -205,6 +247,10 @@
 #define Directive(X, Y, ...) struct IS(DIRECTIVE, Y, ##__VA_ARGS__) X##Directive
 #define PPDecl(X, Y, ...) struct IS(PPDECL, Y, ##__VA_ARGS__) X##PPDecl
 #define PPExpr(X, Y, ...) struct IS(PPEXPR, Y, ##__VA_ARGS__) X##PPExpr
+#define PPOperator(X, Y, ...)                                                  \
+  struct IS(PPOPERATOR, Y, ##__VA_ARGS__) X##PPOperator
+#define PPStmt(X, Y, ...) struct IS(PPSTMT, Y, ##__VA_ARGS__) X##PPStmt
+#define Expansion(X, Y, ...) struct IS(EXPANSION, Y, ##__VA_ARGS__) X##Expansion
 
 #define INTEGER                                                                \
   {                                                                            \
@@ -237,6 +283,9 @@ typedef enum {
   NG_Directive,
   NG_PPDecl,
   NG_PPExpr,
+  NG_PPOperator,
+  NG_PPStmt,
+  NG_Expansion,
 } NodeGroup;
 
 typedef struct {
@@ -258,29 +307,29 @@ typedef struct {
 typedef struct {
   const char *name;
   uintptr_t pointer;
-} Label;
+} Ref;
 
 typedef struct {
   const char *decl;
-  uintptr_t pointer;
-  const char *name;
+  Ref ref;
   BareType type;
 } DeclRef;
 
 typedef struct {
   _Bool anonymous;
   const char *name;
-} MemberDecl;
+} MemberFace;
 
 typedef struct {
   uint8_t dot : 1;
   uint8_t anonymous : 1;
-  const char *name;
-  uintptr_t pointer;
+  Ref ref;
 } Member;
 
 typedef unsigned ArgIndices;
 typedef Range AngledRange;
+typedef Ref Label;
+typedef Ref Macro;
 
 typedef struct {
   OF_ATTR();
@@ -317,6 +366,18 @@ typedef struct {
 typedef struct {
   OF_PPEXPR();
 } PPExprSelf;
+
+typedef struct {
+  OF_PPOPERATOR();
+} PPOperatorSelf;
+
+typedef struct {
+  OF_PPSTMT();
+} PPStmtSelf;
+
+typedef struct {
+  OF_EXPANSION();
+} ExpansionSelf;
 
 typedef struct {
   union {
@@ -484,7 +545,7 @@ typedef struct {
           const char *path;
         },
         angled);
-    Directive(If, {}, grp_ifx);
+    Directive(If, {}, grp_ifx, has_else);
 
     PPDecl(Macro, {
       const char *name;
@@ -494,6 +555,13 @@ typedef struct {
 
     PPExpr(
         Conditional, { uint8_t value; }, implicit);
+
+    PPOperator(Defined, { Macro macro; });
+
+    PPStmt(Compound, {});
+
+    Expansion(
+        Macro, { Macro macro; }, fast);
   };
 } Node;
 
@@ -519,3 +587,7 @@ typedef struct {
 #undef CastExpr
 #undef Directive
 #undef PPDecl
+#undef PPExpr
+#undef PPOperator
+#undef PPStmt
+#undef EXPANSION
