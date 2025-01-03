@@ -32,8 +32,8 @@ int main(int argc, char **argv) {
       printf("  -C         treat the default input file as C code\n");
       printf("  -c         the alias of -xs if no -xt given\n");
       printf("  -x         the alias of -xt\n");
-      printf("  -xd        output AST in SQLite3 database\n");
-      printf("  -xt        output AST in text format\n");
+      printf("  -xd        dump AST as data (SQLite3)\n");
+      printf("  -xt        dump AST as text\n");
       printf("  -i NAME    set the TU name\n");
       printf("  -o OUTPUT  specify the output file\n");
       return 0;

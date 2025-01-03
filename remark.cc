@@ -84,6 +84,11 @@ private:
   expanded_decl *prev;
 };
 
+struct macro_reference {
+  const IdentifierInfo *identifier;
+  const MacroInfo *macro;
+};
+
 struct macro_expansion {
   IdentifierInfo *identifier;
   MacroInfo *macro;
@@ -94,32 +99,48 @@ struct macro_expansion {
 };
 
 class index_value_t {
+  static const std::uintptr_t mask = 7;
+  static const std::uintptr_t bits = 8;
+
+  template <typename T> static constexpr bool is_compatible() {
+    return alignof(T) >= bits && alignof(T) % bits == 0;
+  }
+
 public:
-  explicit index_value_t(const MacroInfo *p) : data((void *)p) {
-    static_assert(alignof(MacroInfo) >= 4 && alignof(MacroInfo) % 4 == 0);
-    assert(is_macro() && get_raw() == p);
+  index_value_t() : data(nullptr) {}
+
+  explicit index_value_t(const IdentifierInfo *p) : data((void *)p) {
+    static_assert(is_compatible<IdentifierInfo>());
+    assert(is_ident() && get_raw() == p);
   }
 
   explicit index_value_t(const Decl *p) : data((char *)p + 1) {
-    static_assert(alignof(Decl) >= 4 && alignof(Decl) % 4 == 0);
+    static_assert(is_compatible<Decl>());
     assert(is_decl() && get_raw() == p);
   }
 
   explicit index_value_t(expanded_decl *p) : data((char *)p + 2) {
-    static_assert(alignof(expanded_decl) >= 4 &&
-                  alignof(expanded_decl) % 4 == 0);
+    static_assert(is_compatible<expanded_decl>());
     assert(is_expanded_decl() && get_raw() == p);
   }
 
   explicit index_value_t(const macro_expansion *p) : data((char *)p + 3) {
-    static_assert(alignof(macro_expansion) >= 4 &&
-                  alignof(macro_expansion) % 4 == 0);
+    static_assert(is_compatible<macro_expansion>());
     assert(is_expansion() && get_raw() == p);
+  }
+
+  explicit index_value_t(const macro_reference *p) : data((char *)p + 4) {
+    static_assert(is_compatible<macro_reference>());
+    assert(is_macro() && get_raw() == p);
   }
 
   int kind() const { return ((std::uintptr_t)data & mask); }
 
-  bool is_macro() const { return kind() == 0; }
+  operator bool() const { return is_valid(); }
+
+  bool is_valid() const { return kind() || data; }
+
+  bool is_ident() const { return data && kind() == 0; }
 
   bool is_decl() const { return kind() == 1; }
 
@@ -127,9 +148,11 @@ public:
 
   bool is_expansion() const { return kind() == 3; }
 
-  const MacroInfo *get_macro() const {
-    assert(is_macro());
-    return (const MacroInfo *)get_raw();
+  bool is_macro() const { return kind() == 4; }
+
+  const IdentifierInfo *get_ident() const {
+    assert(is_ident());
+    return (const IdentifierInfo *)get_raw();
   }
 
   const Decl *get_decl() const {
@@ -147,6 +170,11 @@ public:
     return (const macro_expansion *)get_raw();
   }
 
+  const macro_reference *get_macro() const {
+    assert(is_macro());
+    return (const macro_reference *)get_raw();
+  }
+
   void *get_raw() const { return (void *)((std::uintptr_t)data & ~mask); }
 
   bool operator==(index_value_t other) const {
@@ -155,7 +183,6 @@ public:
 
 private:
   void *data;
-  static const std::uintptr_t mask = 3;
 };
 
 class semantic_token {
@@ -356,6 +383,8 @@ protected:
 
     dump_preprocessor();
     dump_remarks(ctx);
+
+    cleanup_indices();
   }
 
 private:
@@ -1089,6 +1118,15 @@ private:
     }
   }
 
+  void cleanup_indices() {
+    for (auto &item1 : indices) {
+      for (auto &item2 : item1.second) {
+        if (item2.second.is_macro())
+          delete item2.second.get_macro();
+      }
+    }
+  }
+
   char get(SourceLocation loc, bool *invalid = nullptr) {
     auto s = Lexer::getSourceText(
         CharSourceRange::getCharRange({loc, loc.getLocWithOffset(1)}),
@@ -1369,7 +1407,7 @@ private:
         SourceRange range(loc, syntax_tokens[i].endLocation());
         if (kind == tok::identifier) {
           auto v = find(loc, find_option::EQUAL);
-          semantic_tokens.emplace_back(range, v ? v->get_decl() : nullptr);
+          semantic_tokens.emplace_back(range, v ? v.get_decl() : nullptr);
         } else {
           semantic_tokens.emplace_back(range, kind);
         }
@@ -1379,7 +1417,7 @@ private:
       if (expansion_loc != last_expansion_loc) {
         if (last_loc.isMacroID()) {
           auto v = find(last_expansion_loc, find_option::EQUAL);
-          auto d = v ? v->get_expanded_decl() : nullptr;
+          auto d = v ? v.get_expanded_decl() : nullptr;
           int j = i - 1;
 
           while (d && j > index_of_last_expansion_loc) {
@@ -1573,13 +1611,15 @@ private:
     UPPER_BOUND,
   };
 
-  const index_value_t *find(SourceLocation loc,
-                            find_option opt = find_option::LOWER_BOUND) const {
+  index_value_t find(SourceLocation loc,
+                     find_option opt = find_option::LOWER_BOUND,
+                     SourceLocation *at = nullptr) const {
     assert(loc.isFileID());
 
     FileID fid;
     unsigned offset;
-    std::tie(fid, offset) = pp.getSourceManager().getDecomposedLoc(loc);
+    auto &sm = pp.getSourceManager();
+    std::tie(fid, offset) = sm.getDecomposedLoc(loc);
     if (auto i = indices.find(fid); i != indices.end()) {
       auto j = opt == find_option::EQUAL
                    ? i->second.find(offset)
@@ -1588,11 +1628,14 @@ private:
                          : opt == find_option::UPPER_BOUND
                                ? i->second.upper_bound(offset)
                                : i->second.end();
-      if (j != i->second.end())
-        return &j->second;
+      if (j != i->second.end()) {
+        if (at)
+          *at = sm.getComposedLoc(fid, j->first);
+        return j->second;
+      }
     }
 
-    return nullptr;
+    return {};
   }
 
   void index_macro(unsigned begin, unsigned end) {
@@ -1600,18 +1643,31 @@ private:
       auto &item = macro_expansions[begin++];
       auto end_loc = item.macro->getDefinitionEndLoc();
       if (end_loc.isValid())
-        index(end_loc, index_value_t(item.macro));
+        index_macro(end_loc, item.identifier, item.macro);
       else
         assert(item.macro->isBuiltinMacro());
     }
   }
 
-  const MacroInfo *find_macro(SourceLocation loc) const {
-    if (auto v = find(loc); v && v->is_macro()) {
-      auto macro = v->get_macro();
-      if (SourceRange(macro->getDefinitionLoc(), macro->getDefinitionEndLoc())
+  void index_macro(SourceLocation loc, const IdentifierInfo *ii,
+                   const MacroInfo *mi) {
+    auto v = find(loc, find_option::EQUAL);
+    if (v) {
+      assert(v.is_macro());
+      auto p = v.get_macro();
+      assert(p->identifier == ii && p->macro == mi);
+    } else {
+      index(loc, index_value_t(new macro_reference{ii, mi}));
+    }
+  }
+
+  const macro_reference *find_macro(SourceLocation loc) const {
+    if (auto v = find(loc); v.is_macro()) {
+      auto p = v.get_macro();
+      if (SourceRange(p->macro->getDefinitionLoc(),
+                      p->macro->getDefinitionEndLoc())
               .fullyContains({loc, loc}))
-        return macro;
+        return p;
     }
 
     return nullptr;
@@ -1622,46 +1678,40 @@ private:
     auto raw_loc = token.getLocation();
     auto loc = skip_scratch_space(raw_loc);
     bool is_arg = false;
-    const MacroInfo *macro = nullptr;
+    const macro_reference *ref = nullptr;
 
     if (provider && loc.isMacroID()) {
-      auto spelling_loc = sm.getSpellingLoc(loc);
-      macro = find_macro(spelling_loc);
-      if (!macro) {
+      ref = find_macro(sm.getSpellingLoc(loc));
+      if (!ref) {
         assert(sm.isMacroArgExpansion(loc));
         is_arg = true;
       }
     }
 
-    out << '/';
-    out.escape('/');
-    auto token_length = dump_token_content(token);
-    out.escape(0);
-    out << '/';
-
-    SourceLocation origin_loc;
-    if (macro && macro != provider) {
-      out << " macro";
-      dumper->dumpPointer(macro);
-
-      SourceRange range(macro->getDefinitionLoc(),
-                        macro->getDefinitionEndLoc());
+    SourceLocation ref_loc;
+    if (ref && ref->macro != provider) {
+      SourceRange range(ref->macro->getDefinitionLoc(),
+                        ref->macro->getDefinitionEndLoc());
 
       auto caller_loc = loc;
       do {
         caller_loc = sm.getImmediateMacroCallerLoc(caller_loc);
         auto spelling_loc = sm.getSpellingLoc(caller_loc);
         if (!range.fullyContains({spelling_loc, spelling_loc})) {
-          origin_loc = caller_loc;
+          ref_loc = caller_loc;
           break;
         }
       } while (caller_loc.isMacroID());
     }
 
-    dumper->dumpSourceRange({loc, raw_loc});
-    if (origin_loc.isValid()) {
-      out << ' ';
-      dumper->dumpLocation(origin_loc);
+    out << "Token ";
+    dumper->dumpLocation(raw_loc);
+
+    if (is_arg) {
+      out << " is_arg";
+      // TODO: semantic_tokens.emplace_back({loc,
+      // loc.getLocWithOffset(token_length)},
+      //                              token.getKind());
     }
 
     if (token.hasLeadingSpace())
@@ -1672,12 +1722,17 @@ private:
     else if (loc != raw_loc)
       out << " paste";
 
-    if (is_arg) {
-      out << " arg";
-      // TODO: semantic_tokens.emplace_back({loc,
-      // loc.getLocWithOffset(token_length)},
-      //                              token.getKind());
+    if (ref_loc.isValid()) {
+      out << " Macro";
+      dumper->dumpPointer(ref->macro);
+      out << ' ';
+      dump_name(ref->identifier);
+      out << ' ';
+      dumper->dumpLocation(ref_loc);
     }
+
+    out << " \u200A";
+    auto token_length = dump_token_content(token);
   }
 
   void dump_name(const IdentifierInfo *id) { out << "\u200B" << id->getName(); }

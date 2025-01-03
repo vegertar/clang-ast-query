@@ -14,6 +14,7 @@
 #define grp_init_style _(init_style, cinit, callinit, listinit, parenlistinit)
 #define grp_trait _(trait, alignof, sizeof)
 #define grp_prefix_or_postfix _(prefix_or_postfix, prefix, postfix)
+#define grp_stringified_or_paste _(stringified_or_paste, stringified, paste)
 
 #define grp_operator                                                           \
   _(operator, Comma, Remainder, Division, Multiplication, Subtraction,         \
@@ -40,13 +41,24 @@
 #define GROUP_WIDTH 8
 #define KIND_WIDTH 16
 
-#define IS_NODE()                                                              \
+#define IS_NODE(...)                                                           \
   union {                                                                      \
     uint32_t node;                                                             \
     struct {                                                                   \
       uint32_t kind : KIND_WIDTH;                                              \
       uint32_t group : GROUP_WIDTH;                                            \
       uint32_t level : LEVEL_WIDTH;                                            \
+    };                                                                         \
+  }
+
+#define OF_RAW(...) WITH_OPTIONS(__VA_ARGS__)
+
+#define IS_RAW(...)                                                            \
+  IS_NODE();                                                                   \
+  union {                                                                      \
+    RawSelf self;                                                              \
+    struct {                                                                   \
+      OF_RAW(__VA_ARGS__);                                                     \
     };                                                                         \
   }
 
@@ -234,7 +246,7 @@
     struct Y;                                                                  \
   }
 
-#define Raw(X, Y, ...) struct IS(NODE, Y, ##__VA_ARGS__) X
+#define Raw(X, Y, ...) struct IS(RAW, Y, ##__VA_ARGS__) X
 #define Attr(X, Y, ...) struct IS(ATTR, Y, ##__VA_ARGS__) X##Attr
 #define Comment(X, Y, ...) struct IS(COMMENT, Y, ##__VA_ARGS__) X##Comment
 #define Decl(X, Y, ...) struct IS(DECL, Y, ##__VA_ARGS__) X##Decl
@@ -280,6 +292,7 @@ typedef enum {
   NG_Operator,
   NG_CastExpr,
   NG_Preprocessor,
+  NG_Token,
   NG_Directive,
   NG_PPDecl,
   NG_PPExpr,
@@ -330,6 +343,18 @@ typedef unsigned ArgIndices;
 typedef Range AngledRange;
 typedef Ref Label;
 typedef Ref Macro;
+
+typedef struct {
+  Macro macro;
+  Loc loc;
+} MacroRef;
+
+typedef struct {
+#pragma push_macro("OPTIONS_TYPE")
+#define OPTIONS_TYPE uint32_t
+  OF_RAW();
+#pragma pop_macro("OPTIONS_TYPE")
+} RawSelf;
 
 typedef struct {
   OF_ATTR();
@@ -385,6 +410,8 @@ typedef struct {
       IS_NODE();
     };
 
+#pragma push_macro("OPTIONS_TYPE")
+#define OPTIONS_TYPE uint32_t
     Raw(IntValue, { Integer value; });
     Raw(Enum, {
       uintptr_t pointer;
@@ -404,6 +431,15 @@ typedef struct {
       BareType type;
     });
     Raw(Preprocessor, { uintptr_t pointer; });
+    Raw(
+        Token,
+        {
+          Loc loc;
+          const char *text;
+          MacroRef ref;
+        },
+        is_arg, hasLeadingSpace, grp_stringified_or_paste);
+#pragma pop_macro("OPTIONS_TYPE")
 
     Attr(Mode, { const char *name; });
     Attr(NoThrow, {});

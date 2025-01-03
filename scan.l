@@ -132,6 +132,7 @@ Typedef                         RAW(Typedef);
 Record                          RAW(Record);
 Field                           RAW(Field);
 Preprocessor                    RAW(Preprocessor);
+Token                           RAW(Token);
 
 ModeAttr                        ATTR(Mode);
 NoThrowAttr                     ATTR(NoThrow);
@@ -332,6 +333,11 @@ elifndef                        OPT(elifndef, IfDirective);
 
 fast                            OPT(fast, MacroExpansion);
 
+hasLeadingSpace                 OPT(hasLeadingSpace, Token);
+is_arg                          OPT(is_arg, Token);
+stringified                     OPT(stringified, Token);
+paste                           OPT(paste, Token);
+
 NotEvaluated                    OPT(NotEvaluated, ConditionalPPExpr);
 False                           OPT(False, ConditionalPPExpr);
 True                            OPT(True, ConditionalPPExpr);
@@ -349,6 +355,7 @@ postfix/" "{INC_DEC}            OPT(postfix, UnaryOperator);
 
 "<invalid sloc>"                TOK(INVALID_SLOC);
 "<<<NULL>>>"                    TOK(NULL);
+Macro/" "{POINTER}              TOK(MACRO);
 prev/" "{POINTER}               TOK(PREV);
 parent/" "{POINTER}             TOK(PARENT);
 line/:[0-9]+:[0-9]+             TOK(LINE);
@@ -361,6 +368,7 @@ col/:[0-9]+                     TOK(COL);
 {SRC}/:[0-9]+:[0-9]+            SET(SRC, add_static(yytext, yyleng));
 {SQTEXT}                        SET(SQTEXT, add_static(yytext + 1, yyleng - 2));
 {DQTEXT}                        SET(DQTEXT, add_static(yytext + 1, yyleng - 2));
+"\xE2\x80\x8A".*                SET(TEXT, add_static(yytext + 3, yyleng - 3));
 "\xE2\x80\x8B"{ANAME}           SET(ANAME, add_static(yytext + 3, yyleng - 3));
 "\xE2\x80\x8B"{NAME}            SET(NAME, add_static(yytext + 3, yyleng - 3));
 {NAME}                          SET(NAME, add_static(yytext, yyleng));

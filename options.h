@@ -2,6 +2,8 @@
 
 #include "pp.h"
 
+#define OPTIONS_TYPE uint64_t
+
 #define NO(...) NO_I1(PP_NARG(__VA_ARGS__))
 #define NO_I1(n) NO_I2(n)
 #define NO_I2(n) n
@@ -9,7 +11,8 @@
 #define OPTIONS(...) OPTIONS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 #define OPTIONS_I1(n) OPTIONS_I2(n)
 #define OPTIONS_I2(n) OPTIONS##n
-#define OPTIONS1(a, ...) uint64_t opt_##a : 1;
+#define OPTIONS0()
+#define OPTIONS1(a, ...) OPTIONS_TYPE opt_##a : 1;
 
 #define optn(n, ...) opt##n(__VA_ARGS__)
 #define optn_(n, ...) optn(n, __VA_ARGS__)
@@ -59,6 +62,7 @@
 #define GROUPS(...) GROUPS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 #define GROUPS_I1(n) GROUPS_I2(n)
 #define GROUPS_I2(n) GROUPS##n
+#define GROUPS0()
 #define GROUPS1(a) grp_(grp_##a);
 
 #define grpn(n, ...) grp##n(__VA_ARGS__)
@@ -67,9 +71,9 @@
 #define grp__(name, ...) name, NO(__VA_ARGS__)
 
 // clang-format off
-#define grp1(a) uint64_t : 1
+#define grp1(a) OPTIONS_TYPE : 1
 // clang-format on
-#define grp2(a, n) uint64_t a : n
+#define grp2(a, n) OPTIONS_TYPE a : n
 
 #define OPTIONS2(a, ...)                                                       \
   OPTIONS1(a)                                                                  \
@@ -577,7 +581,7 @@
 
 #define WITH_OPTIONS(...)                                                      \
   union {                                                                      \
-    uint64_t options;                                                          \
+    OPTIONS_TYPE options;                                                      \
     struct {                                                                   \
       OPTIONS(__VA_ARGS__)                                                     \
     };                                                                         \

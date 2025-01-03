@@ -66,6 +66,7 @@
     NULL
     PREV
     PARENT
+    MACRO
   <unsigned>
     INDENT
 
@@ -75,6 +76,7 @@
     Record
     Field
     Preprocessor
+    Token
 
     ModeAttr
     NoThrowAttr
@@ -312,6 +314,12 @@
     /* MacroExpansion */
     OPT_fast
 
+    /* Token */
+    OPT_is_arg
+    OPT_hasLeadingSpace
+    OPT_stringified
+    OPT_paste
+
   <Integer>
     INTEGER
     POINTER
@@ -332,6 +340,7 @@
     RecordNode
     FieldNode
     PreprocessorNode
+    TokenNode
 
     ModeAttrNode
     NoThrowAttrNode
@@ -458,6 +467,9 @@
     Member
   <MemberFace>
     MemberFace
+  <MacroRef>
+    MacroRef
+    macro_ref
   <Integer>
     integer
   <Label>
@@ -495,6 +507,8 @@
     opt_undeserialized_declarations
     opt_angled
     opt_fast
+    opt_is_arg
+    opt_hasLeadingSpace
   <enum yytokentype>
     MemberCall
     Operator
@@ -504,6 +518,7 @@
     PrefixOrPostfix
     If
     ConditionValue
+    stringified_or_paste
     storage
     init_style
     used_or_referenced
@@ -517,7 +532,7 @@
 
 // Naming conventions:
 // - All lowercase leading names are optional non-terminal tokens.
-// - All "opt_" leading names are both optional and represent options.
+// - All "opt_" leading names are optional options.
 // - All "OPT_" leading names are necessary options.
 
 Start: Node EOL
@@ -537,6 +552,7 @@ Node: NULL { $$.node = 0;  }
  | RecordNode
  | FieldNode
  | PreprocessorNode
+ | TokenNode
 
  | ModeAttrNode
  | NoThrowAttrNode
@@ -670,6 +686,21 @@ PreprocessorNode: Preprocessor POINTER
   {
     $$.Preprocessor.node = $1;
     $$.Preprocessor.pointer = $2.u;
+  }
+
+TokenNode: Token Loc opt_is_arg opt_hasLeadingSpace stringified_or_paste macro_ref TEXT
+  {
+    $$.Token.node = $1;
+    $$.Token.loc = $2;
+    $$.Token.opt_is_arg = $3;
+    $$.Token.opt_hasLeadingSpace = $4;
+
+#define obj $$.Token
+    SET_OPTIONS(obj, $5, stringified_or_paste);
+#undef obj
+
+    $$.Token.ref = $6;
+    $$.Token.text = $7;
   }
 
 ModeAttrNode: ModeAttr Attr NAME
@@ -1484,6 +1515,13 @@ DeclRef: NAME POINTER SQTEXT BareType
     $$.type = $4;
   }
 
+MacroRef: MACRO POINTER NAME Loc
+  {
+    $$.macro.pointer = $2.u;
+    $$.macro.name = $3;
+    $$.loc = $4;
+  }
+
 AngledRange: '<' Range '>' { $$ = $2; }
 
 Range: Loc      { $$ = (Range){$1, $1}; }
@@ -1586,6 +1624,16 @@ opt_angled:   { $$ = 0; }
 opt_fast:   { $$ = 0; }
  | OPT_fast { $$ = 1; }
 
+opt_is_arg:   { $$ = 0; }
+ | OPT_is_arg { $$ = 1; }
+
+opt_hasLeadingSpace:    { $$ = 0; }
+ | OPT_hasLeadingSpace  { $$ = 1; }
+
+stringified_or_paste: { $$ = 0; }
+ | OPT_stringified
+ | OPT_paste
+
 storage: { $$ = 0; }
  | OPT_extern
  | OPT_static
@@ -1625,6 +1673,9 @@ prev:           { $$ = 0; }
 
 parent:           { $$ = 0; }
  | PARENT POINTER { $$ = $2.u; }
+
+macro_ref:  { $$ = (MacroRef){0}; }
+ | MacroRef
 
 %%
 
