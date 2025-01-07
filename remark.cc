@@ -18,6 +18,9 @@ namespace {
 
 using namespace clang;
 
+static inline const char *text_head = "\u200A";
+static inline const char *name_head = "\u200B";
+
 static inline const char *get_macro_kind(const MacroInfo *info) {
   if (!info)
     return "identifier";
@@ -220,7 +223,7 @@ public:
 
   void dump(raw_ostream &out, TextNodeDumper &dumper) {
     auto v = token_name();
-    out << v.first << ' ' << v.second;
+    out << name_head << v.first << ' ' << name_head << v.second;
     dumper.dumpSourceRange(range); // TODO: handle expansion locations
   }
 
@@ -1107,9 +1110,9 @@ private:
     const auto &filename = file->getName();
     char cwd[PATH_MAX];
 
-    out << "#TU " << filename << '\n';
+    out << "#TU " << text_head << filename << '\n';
     out << "#TS " << time(NULL) << '\n';
-    out << "#CWD " << getcwd(cwd, sizeof(cwd)) << '\n';
+    out << "#CWD " << text_head << getcwd(cwd, sizeof(cwd)) << '\n';
 
     for (auto &st : semantic_tokens) {
       out << '#';
@@ -1731,11 +1734,13 @@ private:
       dumper->dumpLocation(ref_loc);
     }
 
-    out << " \u200A";
+    out << ' ' << text_head;
     auto token_length = dump_token_content(token);
   }
 
-  void dump_name(const IdentifierInfo *id) { out << "\u200B" << id->getName(); }
+  void dump_name(const IdentifierInfo *id) {
+    out << name_head << id->getName();
+  }
 
   unsigned dump_token_content(const Token &token) {
     if (IdentifierInfo *ii = token.getIdentifierInfo()) {

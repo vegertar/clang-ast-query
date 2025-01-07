@@ -373,6 +373,11 @@ col/:[0-9]+                     TOK(COL);
 "\xE2\x80\x8B"{NAME}            SET(NAME, add_static(yytext + 3, yyleng - 3));
 {NAME}                          SET(NAME, add_static(yytext, yyleng));
 
+^"#TU "                         TOK(TU);
+^"#TS "                         TOK(TS);
+^"#CWD "                        TOK(CWD);
+^"#"                            TOK(REMARK);
+
 ":"|","|"<"|">"                 CHR();
 " "                             {}
 \n                              EOL();

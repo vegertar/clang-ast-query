@@ -4,6 +4,10 @@
 static const char *last_loc_src;
 static unsigned last_loc_line;
 
+long ts;
+char tu[PATH_MAX];
+char cwd[PATH_MAX];
+
 NodeList all_nodes;
 StringSet all_strings;
 

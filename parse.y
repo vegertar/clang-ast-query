@@ -67,6 +67,10 @@
     PREV
     PARENT
     MACRO
+    TU
+    TS
+    CWD
+    REMARK
   <unsigned>
     INDENT
 
@@ -544,6 +548,7 @@ Start: Node EOL
     $2.level = $1 / 2;
     // ast_push(&ast, $2);
   }
+ | Remark EOL
 
 Node: NULL { $$.node = 0;  }
  | IntValueNode
@@ -1676,6 +1681,15 @@ parent:           { $$ = 0; }
 
 macro_ref:  { $$ = (MacroRef){0}; }
  | MacroRef
+
+Remark: Meta
+ | REMARK Semantics
+
+Meta: TU TEXT
+ | TS INTEGER
+ | CWD TEXT
+
+Semantics: NAME NAME AngledRange
 
 %%
 
