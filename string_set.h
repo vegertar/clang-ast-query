@@ -3,8 +3,13 @@
 #include "string.h"
 #include <stdio.h>
 
+#define STRING_PROPERTY_TEXT 0U
+#define STRING_PROPERTY_FILE 1U
+#define STRING_PROPERTY_IDENTIFIER 2U
+
 typedef struct {
   HASH_size_t hash;
+  uint8_t property;
   struct string elem;
 } String;
 

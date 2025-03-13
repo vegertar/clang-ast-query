@@ -25,8 +25,13 @@ void StringSet_clear(StringSet *ss, int opt) {
 }
 
 const String *StringSet_add(StringSet *ss, const String *s) {
-  return ARRAY_hput((void *)ss, sizeof(String), StringSet_compare,
-                    StringSet_hash, NULL, NULL, s, StringSet_init);
+  size_t size = ss->i;
+  const String *y = ARRAY_hput((void *)ss, sizeof(String), StringSet_compare,
+                               StringSet_hash, NULL, NULL, s, StringSet_init);
+  // Update the property if it's not a new string
+  if (y && size == ss->i)
+    ((String *)y)->property |= s->property;
+  return y;
 }
 
 HASH_size_t StringSet_hash(const void *self, size_t size, const void *v) {
@@ -48,6 +53,7 @@ void *StringSet_init(void *dst, const void *src, size_t size) {
   const String *x = src;
   String *y = dst;
   y->hash = x->hash;
+  y->property = x->property;
   y->elem = string_dup(&x->elem);
   return y;
 }
@@ -121,7 +127,7 @@ TEST(StringSet, {
 
   for (unsigned i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
     struct string s = string_static(cases[i], strlen(cases[i]));
-    String x = {string_hash(&s), s};
+    String x = {string_hash(&s), 0, s};
     const String *y = StringSet_add(&ss, &x);
     TOGGLE(dump_string_set_if_full, {
       if (!y) {

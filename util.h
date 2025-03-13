@@ -38,6 +38,11 @@ static inline FILE *open_file(const char *filename, const char *mode) {
   return fp;
 }
 
+static inline void close_file(FILE *fp) {
+  if (fp)
+    fclose(fp);
+}
+
 int reads(FILE *fp, struct string *s, const char *escape);
 
 const char *expand_path(const char *cwd, unsigned n, const char *in, char *out);

@@ -327,7 +327,7 @@
   <Integer>
     INTEGER
     POINTER
-  <const char *>
+  <const String *>
     NAME
     ANAME
     SQTEXT
@@ -529,7 +529,7 @@
     non_odr_use
     value_kind
     object_kind
-  <const char *>
+  <const String *>
     name
     TagText
 %%
@@ -1690,6 +1690,9 @@ Meta: TU TEXT
  | CWD TEXT
 
 Semantics: NAME NAME AngledRange
+  {
+    SemanticsList_push(&all_semantics, (Semantics){$1, $2, $3});
+  }
 
 %%
 

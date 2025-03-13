@@ -24,8 +24,8 @@
 !/string_set.c
 !/build.h
 !/build.c
-!/sql.h
-!/sql.c
+!/store.h
+!/store.c
 !/html.h
 !/html.c
 !/remark.cc

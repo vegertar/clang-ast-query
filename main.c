@@ -130,10 +130,13 @@ int main(int argc, char **argv) {
   if (!output_file) {
     switch (output_kind) {
     case OK_DATA:
-      output_file = "a.data";
+      output_file = "a.sqlite";
       break;
     case OK_HTML:
       output_file = "a.html";
+      break;
+    case OK_TEXT:
+      output_file = "a.txt";
       break;
     default:
       break;

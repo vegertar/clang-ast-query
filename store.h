@@ -109,5 +109,6 @@
     }                                                                          \
   } while (0)
 
-int sql(const char *db_file);
-void sql_halt();
+int store_init(const char *db_file);
+int store();
+void store_halt();

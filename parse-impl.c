@@ -1,7 +1,7 @@
 #include "scan.h"
 #include "test.h"
 
-static const char *last_loc_src;
+static const String *last_loc_src;
 static unsigned last_loc_line;
 
 long ts;
@@ -10,9 +10,12 @@ char cwd[PATH_MAX];
 
 NodeList all_nodes;
 StringSet all_strings;
+SemanticsList all_semantics;
 
-const char *add_string(struct string s) {
-  String x = {string_hash(&s), s};
+static inline IMPL_ARRAY_CLEAR(SemanticsList, NULL);
+
+const String *add_string(struct string s, uint8_t property) {
+  String x = {string_hash(&s), property, s};
 
   const String *y = StringSet_add(&all_strings, &x);
   if (!y) {
@@ -24,11 +27,11 @@ const char *add_string(struct string s) {
     exit(-1);
   }
 
-  return string_get(&y->elem);
+  return y;
 }
 
 void parse_init() {
-  assert(all_strings.n == 0 && "Has initialized");
+  assert(all_strings.n == 0 && "Expect uninitialized");
   const char *string_set_size = getenv("STRING_SET_SIZE");
   int n = string_set_size ? atoi(string_set_size) : 20071;
   TOGGLE(log_string_set_size, fprintf(stderr, "string set size is %d\n", n));
@@ -41,6 +44,7 @@ void parse_halt() {
          fprintf(stderr, "The load factor of string set is %.2f\n",
                  (float)all_strings.i / all_strings.n));
   StringSet_clear(&all_strings, 1);
+  SemanticsList_clear(&all_semantics, 1);
 }
 
 int parse(YYLTYPE *lloc, const UserContext *uctx) {
@@ -62,6 +66,8 @@ int parse_line(char *line, size_t n, size_t cap, YYLTYPE *lloc,
                const UserContext *uctx,
                int (*parse_hook)(YYLTYPE *lloc, const UserContext *uctx)) {
   assert(n + 1 < cap);
+  assert(parse_hook);
+
   line[n + 1] = 0;
 
 #ifdef NDEBUG

@@ -1,7 +1,7 @@
 #include "build.h"
 #include "parse.h"
 #include "remark.h"
-#include "sql.h"
+#include "store.h"
 #include "util.h"
 #include <time.h>
 #include <unistd.h>
@@ -15,35 +15,67 @@ struct output_file {
   char tmp[PATH_MAX];
 };
 
-#define FILL_TMP(tmp)                                                          \
-  do {                                                                         \
-    assert(output.file);                                                       \
-    if (!starts_with(output.file, "/dev/")) {                                  \
-      char str[8];                                                             \
-      snprintf(tmp, sizeof(tmp), "%s.tmp-%s", output.file,                     \
-               rands(str, sizeof(str)));                                       \
-    } else {                                                                   \
-      tmp[0] = 0;                                                              \
-    }                                                                          \
-  } while (0)
+static inline _Bool needs_to_save_tmp(const char *filename) {
+  assert(filename);
+  return !starts_with(filename, "/dev/");
+}
 
-static int open_output(struct output_file *of) {
-  if (output.file) {
-    FILL_TMP(of->tmp);
-    if (!(of->file = open_file(of->tmp[0] ? of->tmp : output.file, "w")))
-      return -1;
-  } else {
-    of->file = NULL;
+static inline const char *get_tmp(struct output_file *of,
+                                  const char *filename) {
+  assert(of);
+  if (needs_to_save_tmp(filename)) {
+    char str[8];
+    snprintf(of->tmp, sizeof(of->tmp), "%s.tmp-%s", output.file,
+             rands(str, sizeof(str)));
+    return of->tmp;
   }
 
-  return 0;
+  of->tmp[0] = 0;
+  return NULL;
+}
+
+static int open_output(struct output_file *of) {
+  assert(of);
+  of->file = NULL;
+
+  int err = 0;
+  if (output.file) {
+    const char *tmp = get_tmp(of, output.file);
+    const char *filename = ALT(tmp, output.file);
+
+    switch (output.kind) {
+    case OK_TEXT:
+      of->file = open_file(filename, "w");
+      err = !of->file;
+      break;
+
+    case OK_DATA:
+      err = store_init(filename);
+      break;
+    }
+  }
+
+  return err;
 }
 
 static void close_output(struct output_file *of) {
-  if (of->file) {
-    fclose(of->file);
-    if (of->tmp[0])
+  assert(of);
+
+  switch (output.kind) {
+  case OK_TEXT:
+    close_file(of->file);
+    break;
+
+  case OK_DATA:
+    store_halt();
+    break;
+  }
+
+  if (of->tmp[0]) {
+    if (output.file)
       rename(of->tmp, output.file);
+    else
+      unlink(of->tmp);
   }
 }
 
@@ -60,8 +92,8 @@ struct parse_context {
 
 typedef int (*build_t)(struct input i);
 
-static int parse_and_dump(char *line, size_t n, size_t cap, YYLTYPE *lloc,
-                          UserContext *uctx) {
+static int parse_line_and_dump(char *line, size_t n, size_t cap, YYLTYPE *lloc,
+                               UserContext *uctx) {
   int err = 0;
 
   if (!output.noparse) {
@@ -88,7 +120,7 @@ static int parse_text(FILE *in, FILE *out) {
 
   while (!err && fgets(line, sizeof(line), in)) {
     n = strlen(line);
-    err = parse_and_dump(line, n, sizeof(line), &ctx.lloc, &ctx.uctx);
+    err = parse_line_and_dump(line, n, sizeof(line), &ctx.lloc, &ctx.uctx);
   }
 
   return err;
@@ -98,7 +130,7 @@ static int remark_line(char *line, size_t n, size_t cap, void *data) {
   struct parse_context *ctx = data;
 
   // Parsing failure does not abort the remark process, so we count the errors
-  ctx->errs += !!parse_and_dump(line, n, cap, &ctx->lloc, &ctx->uctx);
+  ctx->errs += !!parse_line_and_dump(line, n, cap, &ctx->lloc, &ctx->uctx);
   return ctx->errs;
 }
 
@@ -125,17 +157,15 @@ static int parse_text_and_dump(struct input i) {
   if (!in)
     return -1;
 
+  int err;
   struct output_file of;
-  if (open_output(&of)) {
-    fclose(in);
-    return -1;
+
+  if (!(err = open_output(&of))) {
+    err = parse_text(in, of.file);
+    close_output(&of);
   }
 
-  int err = parse_text(in, of.file);
-
-  close_output(&of);
   fclose(in);
-
   return err;
 }
 
@@ -149,12 +179,13 @@ static int parse_text_only(struct input i) {
 
 static int parse_text_and_store(struct input i) {
   int err = parse_text_only(i);
-  if (!err && output.file) {
-    char tmp[PATH_MAX];
-    FILL_TMP(tmp);
+  if (err)
+    return err;
 
-    if ((err = sql(tmp)) || (err = rename(tmp, output.file)))
-      unlink(tmp);
+  struct output_file of;
+  if (!(err = open_output(&of))) {
+    err = store();
+    close_output(&of);
   }
 
   return err;
@@ -208,7 +239,7 @@ static struct builder builders[128] = {
 
     IOB(C, NIL, remark_c_only),
     IOB(C, TEXT, remark_c_and_dump),
-    IOB(C, DATA, NULL),  // TODO:
+    IOB(C, DATA, NULL), // TODO:
     IOB(C, HTML, NULL), // TODO:
 
 #undef IOB
@@ -237,6 +268,9 @@ int build_output(struct output o) {
   parse_halt();
   string_clear(&input_content, 1);
   input_list_clear(&input_list, 1);
+
+  if (!err && output.file)
+    fprintf(stderr, "Wrote file: %s\n", output.file);
 
   return err;
 }

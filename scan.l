@@ -93,7 +93,10 @@
     return (errno || *end) ? TOK_YYUNDEF : TOK_##X;                           \
   } while (0)
 
-#define add_static(s, n) add_string(string_static(s, n))
+#define add_static(s, n, prop) add_string(string_static(s, n), prop)
+#define add_text(s, n) add_static(s, n, STRING_PROPERTY_TEXT)
+#define add_src(s, n) add_static(s, n, STRING_PROPERTY_FILE)
+#define add_name(s, n) add_static(s, n, STRING_PROPERTY_IDENTIFIER)
 
 %}
 
@@ -347,7 +350,7 @@ postfix/" "{INC_DEC}            OPT(postfix, UnaryOperator);
 "cannot overflow"               OPT(cannot_overflow, UnaryOperator);
 
 "Text="                         BEGIN(comment); OPT(Text, FullComment);
-<comment>.*                     SET(TEXT, add_static(yytext + 1, yyleng - 2));
+<comment>.*                     SET(TEXT, add_text(yytext + 1, yyleng - 2));
 <comment>\n                     BEGIN(INITIAL); EOL();
 
 "ComputeResultTy="              OPT(ComputeResultTy, CompoundAssignOperator);
@@ -365,13 +368,13 @@ col/:[0-9]+                     TOK(COL);
 {INTEGER}                       ATOI(INTEGER, 10);
 
 {INDENT}/[^ \n]                 SET(INDENT, yyleng);
-{SRC}/:[0-9]+:[0-9]+            SET(SRC, add_static(yytext, yyleng));
-{SQTEXT}                        SET(SQTEXT, add_static(yytext + 1, yyleng - 2));
-{DQTEXT}                        SET(DQTEXT, add_static(yytext + 1, yyleng - 2));
-"\xE2\x80\x8A".*                SET(TEXT, add_static(yytext + 3, yyleng - 3));
-"\xE2\x80\x8B"{ANAME}           SET(ANAME, add_static(yytext + 3, yyleng - 3));
-"\xE2\x80\x8B"{NAME}            SET(NAME, add_static(yytext + 3, yyleng - 3));
-{NAME}                          SET(NAME, add_static(yytext, yyleng));
+{SRC}/:[0-9]+:[0-9]+            SET(SRC, add_src(yytext, yyleng));
+{SQTEXT}                        SET(SQTEXT, add_text(yytext + 1, yyleng - 2));
+{DQTEXT}                        SET(DQTEXT, add_text(yytext + 1, yyleng - 2));
+"\xE2\x80\x8A".*                SET(TEXT, add_text(yytext + 3, yyleng - 3));
+"\xE2\x80\x8B"{ANAME}           SET(ANAME, add_name(yytext + 3, yyleng - 3));
+"\xE2\x80\x8B"{NAME}            SET(NAME, add_name(yytext + 3, yyleng - 3));
+{NAME}                          SET(NAME, add_name(yytext, yyleng));
 
 ^"#TU "                         TOK(TU);
 ^"#TS "                         TOK(TS);
