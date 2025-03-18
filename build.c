@@ -147,8 +147,8 @@ static struct error parse_c(const struct input *i, FILE *out) {
     struct parse_context ctx = PARSE_CONTEXT_INIT(out);
     err = remark(string_get(&input_content), string_len(&input_content),
                  ALT(i->tu, i->file), i->opts, remark_line, &ctx);
-    if (!err.es)
-      err = (struct error){ES_PARSE, ctx.errs};
+    err = next_error(err, ctx.errs ? (struct error){ES_PARSE, ctx.errs}
+                                   : (struct error){});
   }
 
   return next_error(err, close_file(in));
@@ -249,12 +249,13 @@ static struct builder builders[128] = {
 #undef IOB
 };
 
-int build_output(struct output o) {
-  struct error err = {};
+struct error build_output(struct output o) {
+  struct error err = parse_init();
+  if (err.es)
+    return err;
 
   output = o;
   srand(time(NULL));
-  parse_init();
 
   foreach_input(i, {
     unsigned k = IO(i.kind, o.kind);
@@ -269,12 +270,6 @@ int build_output(struct output o) {
       break;
   });
 
-  parse_halt();
   string_clear(&input_content, 1);
-  input_list_clear(&input_list, 1);
-
-  if (!err.es && output.file)
-    fprintf(stderr, "Wrote file: %s\n", output.file);
-
-  return err.es;
+  return next_error(err, parse_halt());
 }

@@ -27,6 +27,8 @@ static inline IMPL_ARRAY_CLEAR(input_list, free_input);
 
 extern struct input_list input_list;
 
+#define clear_input() input_list_clear(&input_list, 1)
+
 #define add_input(...) input_list_push(&input_list, (struct input)__VA_ARGS__)
 
 #define add_input_if_empty(...)                                                \
@@ -58,4 +60,4 @@ struct output {
   unsigned char noparse : 1;
 };
 
-int build_output(struct output o);
+struct error build_output(struct output o);

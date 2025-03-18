@@ -33,6 +33,7 @@
 !/util.h
 !/util.c
 !/error.h
+!/error-inc.h
 !/murmur3.h
 !/murmur3.c
 !/reader.js

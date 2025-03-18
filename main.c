@@ -143,5 +143,24 @@ int main(int argc, char **argv) {
     }
   }
 
-  return build_output((struct output){output_kind, output_file, silent_flag});
+  struct error err = build_output((struct output){
+      output_kind,
+      output_file,
+      silent_flag,
+  });
+
+  if (!err.es && output_file)
+    fprintf(stderr, "Wrote file: %s\n", output_file);
+
+  clear_input();
+
+  switch (err.es) {
+#define ES_ENUM(name, ...)                                                     \
+  case ES_##name:                                                              \
+    fprintf(stderr, "Status: %s\n", #name);                                    \
+    break;
+#include "error-inc.h"
+  }
+
+  return !!err.es;
 }
