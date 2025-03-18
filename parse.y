@@ -1667,10 +1667,10 @@ object_kind: { $$ = 0; }
 name: { $$ = NULL; }
  | NAME
 
-integer: { $$ = (Integer){0}; }
+integer: { $$ = (Integer){}; }
  | INTEGER
 
-argument_type: { $$ = (BareType){0}; }
+argument_type: { $$ = (BareType){}; }
  | BareType
 
 prev:           { $$ = 0; }
@@ -1679,7 +1679,7 @@ prev:           { $$ = 0; }
 parent:           { $$ = 0; }
  | PARENT POINTER { $$ = $2.u; }
 
-macro_ref:  { $$ = (MacroRef){0}; }
+macro_ref:  { $$ = (MacroRef){}; }
  | MacroRef
 
 Remark: Meta

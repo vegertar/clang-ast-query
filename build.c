@@ -3,8 +3,8 @@
 #include "remark.h"
 #include "store.h"
 #include "util.h"
+
 #include <time.h>
-#include <unistd.h>
 
 struct input_list input_list;
 static struct string input_content;
@@ -34,19 +34,18 @@ static inline const char *get_tmp(struct output_file *of,
   return NULL;
 }
 
-static int open_output(struct output_file *of) {
+static struct error open_output(struct output_file *of) {
   assert(of);
   of->file = NULL;
 
-  int err = 0;
+  struct error err = {};
   if (output.file) {
     const char *tmp = get_tmp(of, output.file);
     const char *filename = ALT(tmp, output.file);
 
     switch (output.kind) {
     case OK_TEXT:
-      of->file = open_file(filename, "w");
-      err = !of->file;
+      err = open_file(filename, "w", &of->file);
       break;
 
     case OK_DATA:
@@ -58,25 +57,28 @@ static int open_output(struct output_file *of) {
   return err;
 }
 
-static void close_output(struct output_file *of) {
+static struct error close_output(struct output_file *of) {
   assert(of);
 
+  struct error err = {};
   switch (output.kind) {
   case OK_TEXT:
-    close_file(of->file);
+    err = close_file(of->file);
     break;
 
   case OK_DATA:
-    store_halt();
+    err = store_halt();
     break;
   }
 
-  if (of->tmp[0]) {
+  if (!err.es && of->tmp[0]) {
     if (output.file)
-      rename(of->tmp, output.file);
+      err = rename_file(of->tmp, output.file);
     else
-      unlink(of->tmp);
+      err = unlink_file(of->tmp);
   }
+
+  return err;
 }
 
 struct parse_context {
@@ -90,11 +92,11 @@ struct parse_context {
     {1, 1, 1, 1}, { output.silent, NULL, data }                                \
   }
 
-typedef int (*build_t)(struct input i);
+typedef struct error (*build_t)(struct input i);
 
-static int parse_line_and_dump(char *line, size_t n, size_t cap, YYLTYPE *lloc,
-                               UserContext *uctx) {
-  int err = 0;
+static struct error parse_line_and_dump(char *line, size_t n, size_t cap,
+                                        YYLTYPE *lloc, UserContext *uctx) {
+  struct error err = {};
 
   if (!output.noparse) {
     if (lloc->last_column != 1) {
@@ -106,19 +108,19 @@ static int parse_line_and_dump(char *line, size_t n, size_t cap, YYLTYPE *lloc,
     err = parse_line(line, n, cap, lloc, uctx, parse);
   }
 
-  if (!err && uctx->data)
-    err = fwrite(line, 1, n, uctx->data) < n;
+  if (!err.es && uctx->data && fwrite(line, 1, n, uctx->data) < n)
+    err = (struct error){ES_FILE_WRITE};
 
   return err;
 }
 
-static int parse_text(FILE *in, FILE *out) {
-  int err = 0;
+static struct error parse_text(FILE *in, FILE *out) {
+  struct error err = {};
   size_t n = 0;
   char line[BUFSIZ];
   struct parse_context ctx = PARSE_CONTEXT_INIT(out);
 
-  while (!err && fgets(line, sizeof(line), in)) {
+  while (!err.es && fgets(line, sizeof(line), in)) {
     n = strlen(line);
     err = parse_line_and_dump(line, n, sizeof(line), &ctx.lloc, &ctx.uctx);
   }
@@ -130,97 +132,99 @@ static int remark_line(char *line, size_t n, size_t cap, void *data) {
   struct parse_context *ctx = data;
 
   // Parsing failure does not abort the remark process, so we count the errors
-  ctx->errs += !!parse_line_and_dump(line, n, cap, &ctx->lloc, &ctx->uctx);
+  ctx->errs += !!parse_line_and_dump(line, n, cap, &ctx->lloc, &ctx->uctx).es;
   return ctx->errs;
 }
 
-static int parse_c(const struct input *i, FILE *out) {
-  FILE *in = open_file(i->file, "r");
-  if (!in)
-    return -1;
+static struct error parse_c(const struct input *i, FILE *out) {
+  struct error err;
+  FILE *in;
 
-  int err;
-  if (!(err = reads(in, &input_content, NULL))) {
+  if ((err = open_file(i->file, "r", &in)).es)
+    return err;
+
+  if (!(err = reads(in, &input_content, NULL)).es) {
     struct parse_context ctx = PARSE_CONTEXT_INIT(out);
     err = remark(string_get(&input_content), string_len(&input_content),
                  ALT(i->tu, i->file), i->opts, remark_line, &ctx);
-    if (!err)
-      err = ctx.errs;
+    if (!err.es)
+      err = (struct error){ES_PARSE, ctx.errs};
   }
 
-  fclose(in);
-  return err;
+  return next_error(err, close_file(in));
 }
 
-static int parse_text_and_dump(struct input i) {
-  FILE *in = open_file(i.file, "r");
-  if (!in)
-    return -1;
+static struct error parse_text_and_dump(struct input i) {
+  struct error err;
+  FILE *in;
 
-  int err;
-  struct output_file of;
-
-  if (!(err = open_output(&of))) {
-    err = parse_text(in, of.file);
-    close_output(&of);
-  }
-
-  fclose(in);
-  return err;
-}
-
-static int parse_text_only(struct input i) {
-  char *file = output.file;
-  output.file = NULL;
-  int err = parse_text_and_dump(i);
-  output.file = file;
-  return err;
-}
-
-static int parse_text_and_store(struct input i) {
-  int err = parse_text_only(i);
-  if (err)
+  if ((err = open_file(i.file, "r", &in)).es)
     return err;
 
   struct output_file of;
-  if (!(err = open_output(&of))) {
+  if (!(err = open_output(&of)).es) {
+    err = parse_text(in, of.file);
+    err = next_error(err, close_output(&of));
+  }
+
+  return next_error(err, close_file(in));
+}
+
+static struct error parse_text_only(struct input i) {
+  char *file = output.file;
+  output.file = NULL;
+  struct error err = parse_text_and_dump(i);
+  output.file = file;
+  return err;
+}
+
+static struct error parse_text_and_store(struct input i) {
+  struct error err = parse_text_only(i);
+  if (err.es)
+    return err;
+
+  struct output_file of;
+  if (!(err = open_output(&of)).es) {
     err = store();
-    close_output(&of);
+    err = next_error(err, close_output(&of));
   }
 
   return err;
 }
 
-static int parse_text_and_render(struct input i) { return 0; }
+static struct error parse_text_and_render(struct input i) {
+  return (struct error){};
+}
 
-static int remark_c_and_dump(struct input i) {
+static struct error remark_c_and_dump(struct input i) {
 #ifdef USE_CLANG_TOOL
+  struct error err;
   struct output_file of;
-  if (open_output(&of))
-    return -1;
+
+  if ((err = open_output(&of)).es)
+    return err;
 
   _Bool noparse = output.noparse;
   output.noparse = 1;
-  int err = parse_c(&i, of.file);
+  err = parse_c(&i, of.file);
   output.noparse = noparse;
 
-  close_output(&of);
-  return err;
+  return next_error(err, close_output(&of));
 #else
   fprintf(stderr, "Clang tool is not compiled in\n");
-  return -1;
+  return (struct error){ES_REMARK_NO_CLANG};
 #endif // USE_CLANG_TOOL
 }
 
-static int remark_c_only(struct input i) {
+static struct error remark_c_only(struct input i) {
   char *file = output.file;
   output.file = NULL;
-  int err = remark_c_and_dump(i);
+  struct error err = remark_c_and_dump(i);
   output.file = file;
   return err;
 }
 
-_Static_assert(IK_NUMS < 16 && OK_NUMS < 16, "Too many input/output kinds");
+static_assert(IK_NUMS < 16 && OK_NUMS < 16, "Too many input/output kinds");
 
 #define IO(a, b) (a << 4) | b
 
@@ -246,7 +250,7 @@ static struct builder builders[128] = {
 };
 
 int build_output(struct output o) {
-  int err = 0;
+  struct error err = {};
 
   output = o;
   srand(time(NULL));
@@ -256,12 +260,12 @@ int build_output(struct output o) {
     unsigned k = IO(i.kind, o.kind);
     assert(k < sizeof(builders) / sizeof(*builders));
     if (!builders[k].build) {
-      fprintf(stderr, "Not allowed building yet: %s\n", builders[k].info);
-      err = 1;
+      fprintf(stderr, "Building is not allowed: %s\n", builders[k].info);
+      err = (struct error){ES_BUILDING_PROHIBITED};
     } else {
       err = builders[k].build(i);
     }
-    if (err)
+    if (err.es)
       break;
   });
 
@@ -269,8 +273,8 @@ int build_output(struct output o) {
   string_clear(&input_content, 1);
   input_list_clear(&input_list, 1);
 
-  if (!err && output.file)
+  if (!err.es && output.file)
     fprintf(stderr, "Wrote file: %s\n", output.file);
 
-  return err;
+  return err.es;
 }

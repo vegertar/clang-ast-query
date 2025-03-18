@@ -5,7 +5,7 @@ YACCFLAGS= -Werror
 
 CC= cc
 CXX= c++
-CFLAGS= -MMD -Werror -std=gnu11
+CFLAGS= -MMD -Werror -std=gnu23
 CXXFLAGS= -std=c++20 -fno-exceptions -fno-rtti
 LDFLAGS= -lfl -lsqlite3
 
@@ -45,7 +45,7 @@ endif
 
 GENHDRS+= parse.h scan.h
 GENSRCS+= parse.c scan.c
-SRCS+= array.c string.c string_set.c store.c html.c util.c murmur3.c build.c main.c ${GENSRCS}
+SRCS+= array.c string.c string_set.c store.c render.c util.c murmur3.c build.c main.c ${GENSRCS}
 
 build: ${GENHDRS} caq
 

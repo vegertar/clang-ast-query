@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <stdlib.h>
 
-int reads(FILE *fp, struct string *s, const char *escape) {
+struct error reads(FILE *fp, struct string *s, const char *escape) {
   assert(fp && s);
 
   fseek(fp, 0, SEEK_END);
@@ -25,10 +25,10 @@ int reads(FILE *fp, struct string *s, const char *escape) {
 
   if (ferror(fp)) {
     fprintf(stderr, "%s: fread error\n", __func__);
-    return -1;
+    return (struct error){ES_FILE};
   }
 
-  return 0;
+  return (struct error){};
 }
 
 const char *expand_path(const char *cwd, unsigned n, const char *in,

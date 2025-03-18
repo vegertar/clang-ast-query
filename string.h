@@ -44,7 +44,7 @@ struct string *string_clear(struct string *p, int opt);
 
 static inline struct string string_create(const char *s, string_size_t n,
                                           unsigned flag) {
-  struct string string = {0};
+  struct string string = {};
   if (flag & 1) {
     string.flag = flag;
     string.data = (void *)s;

@@ -4,10 +4,6 @@
 
 #define OPTIONS_TYPE uint64_t
 
-#define NO(...) NO_I1(PP_NARG(__VA_ARGS__))
-#define NO_I1(n) NO_I2(n)
-#define NO_I2(n) n
-
 #define OPTIONS(...) OPTIONS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 #define OPTIONS_I1(n) OPTIONS_I2(n)
 #define OPTIONS_I2(n) OPTIONS##n

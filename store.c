@@ -21,29 +21,29 @@ static sqlite3_stmt *stmts[MAX_STMT_SIZE];
 static char *errmsg;
 static int err;
 
-static int store_semantics();
+static void store_semantics();
 
-int store_init(const char *db_file) {
-  OPEN_DB(db_file);
+struct error store_init(const char *db_file) {
+  INIT_DB(db_file);
   EXEC_SQL("PRAGMA synchronous = OFF");
   EXEC_SQL("PRAGMA journal_mode = MEMORY");
-  return err;
+  return (struct error){ES_STORE_INIT, err};
 }
 
-int store() {
-  if (err)
-    return err;
-
+struct error store() {
   EXEC_SQL("BEGIN TRANSACTION");
-  err += store_semantics();
+  store_semantics();
   EXEC_SQL("END TRANSACTION");
 
-  return err;
+  return (struct error){ES_STORE, err};
 }
 
-void store_halt() { CLOSE_DB(); }
+struct error store_halt() {
+  HALT_DB();
+  return (struct error){ES_STORE_HALT, err};
+}
 
-static int store_semantics() {
+static void store_semantics() {
   EXEC_SQL("CREATE TABLE semantics ("
            " kind TEXT,"
            " name TEXT,"
@@ -58,7 +58,7 @@ static int store_semantics() {
 #define VALUES8() "?,?,?,?,?,?,?,?"
 #endif // !VALUES8
 
-  for (unsigned i = 0; i < all_semantics.i; ++i) {
+  for (unsigned i = 0; i < all_semantics.i && !err; ++i) {
     const char *kind = string_get(&all_semantics.data[i].kind->elem);
     const char *name = string_get(&all_semantics.data[i].name->elem);
     const Range *range = &all_semantics.data[i].range;
@@ -75,6 +75,4 @@ static int store_semantics() {
     FILL_INT(END_COL, range->end.col);
     END_INSERT_INTO();
   }
-
-  return 0;
 }

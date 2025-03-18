@@ -22,10 +22,11 @@ void yyerror(const YYLTYPE *loc, const UserContext *uctx, char const *format,
 
 const String *add_string(struct string s, uint8_t property);
 
-void parse_init();
-void parse_halt();
+struct error parse_init();
+struct error parse_halt();
 
-int parse(YYLTYPE *lloc, const UserContext *uctx);
-int parse_line(char *line, size_t n, size_t cap, YYLTYPE *lloc,
-               const UserContext *uctx,
-               int (*parse_hook)(YYLTYPE *lloc, const UserContext *uctx));
+struct error parse(YYLTYPE *lloc, const UserContext *uctx);
+struct error parse_line(char *line, size_t n, size_t cap, YYLTYPE *lloc,
+                        const UserContext *uctx,
+                        struct error (*parse_hook)(YYLTYPE *lloc,
+                                                   const UserContext *uctx));

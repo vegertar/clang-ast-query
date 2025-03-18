@@ -1,5 +1,7 @@
 #pragma once
 
+#include "error.h"
+
 #ifdef __cplusplus
 
 #include <cstddef>
@@ -10,9 +12,10 @@ extern "C" {
 #include <stddef.h>
 #endif
 
-int remark(const char *code, size_t size, const char *filename, char **opts,
-           int (*parse_line)(char *line, size_t n, size_t cap, void *data),
-           void *data);
+struct error
+remark(const char *code, size_t size, const char *filename, char **opts,
+       int (*parse_line)(char *line, size_t n, size_t cap, void *data),
+       void *data);
 
 #ifdef __cplusplus
 }

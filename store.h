@@ -1,5 +1,6 @@
 #pragma once
 
+#include "error.h"
 #include "pp.h"
 
 #ifndef MAX_STMT_SIZE
@@ -49,8 +50,8 @@
       fprintf(stderr, "%s:%d: sqlite3_step error: %s\n", __func__, __LINE__,   \
               sqlite3_errmsg(db));                                             \
     if ((err = sqlite3_reset(stmt)))                                           \
-      fprintf(stderr, "%s:%d: sqlite3 error(%d): %s\n", __func__, __LINE__,    \
-              err, sqlite3_errstr(err));                                       \
+      fprintf(stderr, "%s:%d: sqlite3_reset error(%d): %s\n", __func__,        \
+              __LINE__, err, sqlite3_errstr(err));                             \
   }                                                                            \
   }                                                                            \
   while (0)
@@ -75,23 +76,29 @@
 #define COL_INT(k) sqlite3_column_int(stmt, k)
 #define COL_SIZE(k) sqlite3_column_bytes(stmt, k)
 
-#define OPEN_DB(file)                                                          \
+#define INIT_DB(file)                                                          \
   do {                                                                         \
     db = NULL;                                                                 \
     memset(stmts, 0, sizeof(stmts));                                           \
     errmsg = NULL;                                                             \
     if ((err = sqlite3_open(file, &db)))                                       \
-      fprintf(stderr, "%s:%d: %s: sqlite3 error(%d): %s\n", __func__,          \
+      fprintf(stderr, "%s:%d: sqlite3_open(%s) error(%d): %s\n", __func__,     \
               __LINE__, file, err, sqlite3_errstr(err));                       \
   } while (0)
 
-#define CLOSE_DB()                                                             \
+#define HALT_DB()                                                              \
   do {                                                                         \
-    for (int i = 0; i < MAX_STMT_SIZE; ++i) {                                  \
-      if (stmts[i])                                                            \
-        sqlite3_finalize(stmts[i]);                                            \
+    for (int i = 0; !err && i < MAX_STMT_SIZE; ++i) {                          \
+      if (stmts[i]) {                                                          \
+        if ((err = sqlite3_finalize(stmts[i]))) {                              \
+          fprintf(stderr, "%s:%d: sqlite3_finalize error(%d): %s\n", __func__, \
+                  __LINE__, err, sqlite3_errstr(err));                         \
+        }                                                                      \
+      }                                                                        \
     }                                                                          \
-    sqlite3_close(db);                                                         \
+    if (!err && (err = sqlite3_close(db)))                                     \
+      fprintf(stderr, "%s:%d: sqlite3_close error(%d): %s\n", __func__,        \
+              __LINE__, err, sqlite3_errstr(err));                             \
   } while (0)
 
 #define EXEC_SQL(s)                                                            \
@@ -99,8 +106,8 @@
     if (db && !err) {                                                          \
       err = sqlite3_exec(db, s, NULL, NULL, &errmsg);                          \
       if (errmsg) {                                                            \
-        fprintf(stderr, "%s:%d: sqlite3_exec(%s): %s\n", __func__, __LINE__,   \
-                s, errmsg);                                                    \
+        fprintf(stderr, "%s:%d: sqlite3_exec(%s) error(%d): %s\n", __func__,   \
+                __LINE__, s, err, errmsg);                                     \
         sqlite3_free(errmsg);                                                  \
       }                                                                        \
     } else {                                                                   \
@@ -109,6 +116,6 @@
     }                                                                          \
   } while (0)
 
-int store_init(const char *db_file);
-int store();
-void store_halt();
+struct error store_init(const char *db_file);
+struct error store();
+struct error store_halt();

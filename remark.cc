@@ -1833,9 +1833,10 @@ int print_line(char *line, size_t n, size_t cap, void *data) {
 
 } // namespace
 
-int remark(const char *code, size_t size, const char *filename, char **opts,
-           int (*parse_line)(char *line, size_t n, size_t cap, void *data),
-           void *data) {
+struct error
+remark(const char *code, size_t size, const char *filename, char **opts,
+       int (*parse_line)(char *line, size_t n, size_t cap, void *data),
+       void *data) {
   std::vector<std::string> args;
   if (opts) {
     while (*opts)
@@ -1853,6 +1854,6 @@ int remark(const char *code, size_t size, const char *filename, char **opts,
   return clang::tooling::runToolOnCodeWithArgs(
              std::make_unique<frontend_action>(parse_line, data),
              std::string_view{code, size}, args, filename)
-             ? 0
-             : -1;
+             ? (struct error){}
+             : (struct error){ES_REMARK};
 }

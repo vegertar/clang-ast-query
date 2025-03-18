@@ -1,10 +1,12 @@
 #pragma once
 
+#include "error.h"
 #include "string.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -29,21 +31,36 @@
     } while (k < n);                                                           \
   } while (0)
 
-static inline FILE *open_file(const char *filename, const char *mode) {
+static inline struct error open_file(const char *filename, const char *mode,
+                                     FILE **out) {
   FILE *fp = fopen(filename, mode);
   if (!fp) {
     fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
             strerror(errno));
+    return (struct error){ES_FILE_OPEN, errno};
   }
-  return fp;
+
+  assert(out);
+  *out = fp;
+  return (struct error){};
 }
 
-static inline void close_file(FILE *fp) {
-  if (fp)
-    fclose(fp);
+static inline struct error close_file(FILE *fp) {
+  return fp && fclose(fp) ? (struct error){ES_FILE_CLOSE, errno}
+                          : (struct error){};
 }
 
-int reads(FILE *fp, struct string *s, const char *escape);
+static inline struct error rename_file(const char *from, const char *to) {
+  return rename(from, to) ? (struct error){ES_FILE_RENAME, errno}
+                          : (struct error){};
+}
+
+static inline struct error unlink_file(const char *file) {
+  return unlink(file) ? (struct error){ES_FILE_UNLINK, errno}
+                      : (struct error){};
+}
+
+struct error reads(FILE *fp, struct string *s, const char *escape);
 
 const char *expand_path(const char *cwd, unsigned n, const char *in, char *out);
 

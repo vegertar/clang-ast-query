@@ -69,7 +69,7 @@ void StringSet_dump(StringSet *ss, FILE *fp) {
 }
 
 TEST(StringSet, {
-  StringSet ss = {0};
+  StringSet ss = {};
   StringSet_reserve(&ss, 17);
   ASSERT(ss.n == 17);
 

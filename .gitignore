@@ -26,12 +26,13 @@
 !/build.c
 !/store.h
 !/store.c
-!/html.h
-!/html.c
+!/render.h
+!/render.c
 !/remark.cc
 !/remark.h
 !/util.h
 !/util.c
+!/error.h
 !/murmur3.h
 !/murmur3.c
 !/reader.js
