@@ -1,7 +1,5 @@
-
-#define ES(...) ES_I1(PP_NARG(__VA_ARGS__))(NO(__VA_ARGS__), __VA_ARGS__)
-#define ES_I1(n) ES_I2(n)
-#define ES_I2(n) ES##n
+#define ES(...)                                                                \
+  PP_OVERLOADS(ES, PP_NARG(__VA_ARGS__))(PP_NARG(__VA_ARGS__), ##__VA_ARGS__)
 
 #define ES_CURR(order, n, type, mask, name, ...)                               \
   ES2(n, type##_##name, (mask) + (n - order + 1))
@@ -19,12 +17,10 @@
 #define ES8(...) ES_CURR(8, __VA_ARGS__) ES7(ES_NEXT(__VA_ARGS__))
 
 #ifndef ES_ENUM
-#define ES_ENUM(...) ES_ENUM_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
-#define ES_ENUM_I1(n) ES_ENUM_I2(n)
-#define ES_ENUM_I2(n) ES_ENUM##n
+#define ES_ENUM(...) PP_OVERLOAD(ES_ENUM, ##__VA_ARGS__)
 #define ES_ENUM1(name) ES_##name,
 #define ES_ENUM2(name, value) ES_##name = value,
-#endif // ES_ITEM
+#endif // ES_ENUM
 
 ES(OK)
 ES(BUILDING_PROHIBITED)
@@ -36,8 +32,6 @@ ES(STORE, 0x0400U, INIT, HALT)
 ES(RENDER, 0x0500U)
 
 #undef ES
-#undef ES_I1
-#undef ES_I2
 
 #undef ES_CURR
 #undef ES_NEXT
@@ -53,7 +47,5 @@ ES(RENDER, 0x0500U)
 #undef ES8
 
 #undef ES_ENUM
-#undef ES_ENUM_I1
-#undef ES_ENUM_I2
 #undef ES_ENUM1
 #undef ES_ENUM2

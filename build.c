@@ -61,14 +61,16 @@ static struct error close_output(struct output_file *of) {
   assert(of);
 
   struct error err = {};
-  switch (output.kind) {
-  case OK_TEXT:
-    err = close_file(of->file);
-    break;
+  if (output.file) {
+    switch (output.kind) {
+    case OK_TEXT:
+      err = close_file(of->file);
+      break;
 
-  case OK_DATA:
-    err = store_halt();
-    break;
+    case OK_DATA:
+      err = store_halt();
+      break;
+    }
   }
 
   if (!err.es && of->tmp[0]) {

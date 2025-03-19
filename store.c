@@ -27,7 +27,7 @@ struct error store_init(const char *db_file) {
   INIT_DB(db_file);
   EXEC_SQL("PRAGMA synchronous = OFF");
   EXEC_SQL("PRAGMA journal_mode = MEMORY");
-  return (struct error){ES_STORE_INIT, err};
+  return err ? (struct error){ES_STORE_INIT, err} : (struct error){};
 }
 
 struct error store() {
@@ -35,12 +35,12 @@ struct error store() {
   store_semantics();
   EXEC_SQL("END TRANSACTION");
 
-  return (struct error){ES_STORE, err};
+  return err ? (struct error){ES_STORE, err} : (struct error){};
 }
 
 struct error store_halt() {
   HALT_DB();
-  return (struct error){ES_STORE_HALT, err};
+  return err ? (struct error){ES_STORE_HALT, err} : (struct error){};
 }
 
 static void store_semantics() {

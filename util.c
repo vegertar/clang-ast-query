@@ -25,7 +25,7 @@ struct error reads(FILE *fp, struct string *s, const char *escape) {
 
   if (ferror(fp)) {
     fprintf(stderr, "%s: fread error\n", __func__);
-    return (struct error){ES_FILE};
+    return (struct error){ES_FILE_READ};
   }
 
   return (struct error){};

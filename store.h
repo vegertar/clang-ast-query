@@ -7,8 +7,7 @@
 #define MAX_STMT_SIZE 16
 #endif // !MAX_STMT_SIZE
 
-#define VALUES_I1(n) VALUES_I2(n)
-#define VALUES_I2(n) VALUES##n()
+#define VALUES(...) PP_OVERLOADS(VALUES, PP_NARG(__VA_ARGS__))()
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
@@ -58,7 +57,7 @@
 
 #define INSERT_INTO(table, ...)                                                \
   if_prepared_stmt("INSERT INTO " #table " (" #__VA_ARGS__                     \
-                   ") VALUES (" VALUES_I1(PP_NARG(__VA_ARGS__)) ")",           \
+                   ") VALUES (" VALUES(__VA_ARGS__) ")",                       \
                    enum {_, __VA_ARGS__}) {
 #define END_INSERT_INTO()                                                      \
   }                                                                            \

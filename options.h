@@ -2,17 +2,15 @@
 
 #include "pp.h"
 
+#ifndef OPTIONS_TYPE
 #define OPTIONS_TYPE uint64_t
+#endif // OPTIONS_TYPE
 
-#define OPTIONS(...) OPTIONS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
-#define OPTIONS_I1(n) OPTIONS_I2(n)
-#define OPTIONS_I2(n) OPTIONS##n
+#define OPTIONS(...) PP_OVERLOAD(OPTIONS, ##__VA_ARGS__)
 #define OPTIONS0()
 #define OPTIONS1(a, ...) OPTIONS_TYPE opt_##a : 1;
 
-#define optn(n, ...) opt##n(__VA_ARGS__)
-#define optn_(n, ...) optn(n, __VA_ARGS__)
-#define opt__(name, ...) optn_(NO(__VA_ARGS__), __VA_ARGS__)
+#define opt__(name, ...) PP_OVERLOADS(opt, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 
 #define opt1(a) opt_##a
 #define opt2(a, b) opt_##a : 1, opt_##b
@@ -55,16 +53,12 @@
 #define opt39(a, ...) opt_##a : 1, opt38(__VA_ARGS__)
 #define opt40(a, ...) opt_##a : 1, opt39(__VA_ARGS__)
 
-#define GROUPS(...) GROUPS_I1(PP_NARG(__VA_ARGS__))(__VA_ARGS__)
-#define GROUPS_I1(n) GROUPS_I2(n)
-#define GROUPS_I2(n) GROUPS##n
+#define GROUPS(...) PP_OVERLOAD(GROUPS, ##__VA_ARGS__)
 #define GROUPS0()
 #define GROUPS1(a) grp_(grp_##a);
 
-#define grpn(n, ...) grp##n(__VA_ARGS__)
-#define grpn_(n, ...) grpn(n, __VA_ARGS__)
-#define grp_(...) grpn_(NO(__VA_ARGS__), __VA_ARGS__)
-#define grp__(name, ...) name, NO(__VA_ARGS__)
+#define grp_(...) PP_OVERLOADS(grp, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+#define grp__(name, ...) name, PP_NARG(__VA_ARGS__)
 
 // clang-format off
 #define grp1(a) OPTIONS_TYPE : 1
@@ -398,7 +392,7 @@
   GROUPS41(__VA_ARGS__)
 
 #define SET_OPTIONS(obj, val, opt) SET_OPTIONS_I1(obj, val, opt, grp_##opt)
-#define SET_OPTIONS_I1(obj, val, opt, grp) SET_OPTIONS_I2(obj, val, opt, grp)
+#define SET_OPTIONS_I1(...) SET_OPTIONS_I2(__VA_ARGS__)
 #define SET_OPTIONS_I2(obj, val, opt, grp)                                     \
   SET_OPTIONS_(obj, val, opt, SET_OPTIONS_##grp)
 #define SET_OPTIONS_(obj, val, opt, ...)                                       \
@@ -410,9 +404,7 @@
       break;                                                                   \
     }                                                                          \
   } while (0)
-#define SET_OPTIONS__(grp, ...) SET_OPTIONSN_(NO(__VA_ARGS__), __VA_ARGS__)
-#define SET_OPTIONSN_(n, ...) SET_OPTIONSN(n, __VA_ARGS__)
-#define SET_OPTIONSN(n, ...) SET_OPTIONS##n(__VA_ARGS__)
+#define SET_OPTIONS__(grp, ...) PP_OVERLOAD(SET_OPTIONS, ##__VA_ARGS__)
 
 #define SET_OPTIONS1(a)                                                        \
   case TOK_OPT_##a:                                                            \
