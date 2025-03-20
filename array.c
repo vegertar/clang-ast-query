@@ -143,8 +143,8 @@ TEST(ARRAY_clear, {
   ASSERT(!seq.data);
 })
 
-_Bool ARRAY_bsearch(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
-                    const void *v, ARRAY_size_t *i) {
+bool ARRAY_bsearch(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                   const void *v, ARRAY_size_t *i) {
   if (!v)
     return 0;
 
@@ -213,7 +213,7 @@ const void *ARRAY_hget(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
 
   const void *element;
   HASH_size_t element_code;
-  _Bool hash_collision;
+  bool hash_collision;
 
   do {
     element = access(p, size, i);
@@ -261,7 +261,7 @@ TEST(ARRAY_bsearch, {
     ARRAY_set(&seq, sizeof(i), i, &i, 1, NULL);
 
   ARRAY_size_t j;
-  _Bool found;
+  bool found;
   int v;
 
   for (int i = 0; i < 100; ++i) {

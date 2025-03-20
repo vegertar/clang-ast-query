@@ -66,7 +66,7 @@ static inline string_size_t string_len(const struct string *p) {
   return p->flag == 0 ? p->size : p->i;
 }
 
-static inline _Bool string_owned(const struct string *p) {
+static inline bool string_owned(const struct string *p) {
   return (p->flag & 1) == 0;
 }
 

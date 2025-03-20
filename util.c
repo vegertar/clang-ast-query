@@ -82,7 +82,7 @@ TEST(expand_path, {
   ASSERT(strcmp(expand_path("/tmp/x/y", 10, "./../a", path), "/tmp/x/a") == 0);
 })
 
-_Bool starts_with(const char *s, const char *starting) {
+bool starts_with(const char *s, const char *starting) {
   if (!s || !starting)
     return 0;
 
@@ -100,7 +100,7 @@ TEST(starts_with, {
   ASSERT(!starts_with("/abc", "/abcd"));
 });
 
-_Bool ends_with(const char *s, const char *ending) {
+bool ends_with(const char *s, const char *ending) {
   int n = s ? strlen(s) : 0;
   int m = ending ? strlen(ending) : 0;
   return m == 0 || n >= m && strcmp(s + n - m, ending) == 0;

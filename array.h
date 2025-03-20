@@ -64,14 +64,14 @@
   }
 
 #define IMPL_ARRAY_BSEARCH(name, compare)                                      \
-  _Bool name##_bsearch(const struct name *p, const void *v, ARRAY_size_t *i) { \
+  bool name##_bsearch(const struct name *p, const void *v, ARRAY_size_t *i) {  \
     return ARRAY_bsearch((ARRAY_t *)p, sizeof(p->data[0]), compare, v, i);     \
   }
 
 #define IMPL_ARRAY_BADD(name, init)                                            \
-  _Bool name##_badd(struct name *p, const void *v, ARRAY_size_t *i) {          \
+  bool name##_badd(struct name *p, const void *v, ARRAY_size_t *i) {           \
     ARRAY_size_t j = -1;                                                       \
-    const _Bool found = name##_bsearch(p, v, &j);                              \
+    const bool found = name##_bsearch(p, v, &j);                               \
     assert(found || j != -1);                                                  \
     if (!found)                                                                \
       ARRAY_insert((ARRAY_t *)p, sizeof(p->data[0]), j, v, 1, init, NULL);     \
@@ -86,7 +86,7 @@ typedef DECL_ARRAY(ARRAY_base, void) ARRAY_t;
 
 typedef HASH_size_t (*ARRAY_hash_t)(const void *self, size_t sz, const void *v);
 typedef HASH_size_t (*ARRAY_rehash_t)(const void *self, size_t sz, size_t i,
-                                      _Bool hash_collision);
+                                      bool hash_collision);
 typedef const void *(*ARRAY_access_t)(const void *self, size_t sz, size_t i);
 typedef int (*ARRAY_compare_t)(const void *v, const void *element, size_t sz);
 typedef void *(*ARRAY_init_t)(void *dst, const void *v, size_t sz);
@@ -108,8 +108,8 @@ ARRAY_t *ARRAY_insert(ARRAY_t *p, size_t size, ARRAY_size_t at, const void *src,
                       ARRAY_size_t nmem, ARRAY_init_t init, ARRAY_move_t move);
 ARRAY_t *ARRAY_clear(ARRAY_t *p, size_t size, void (*destroy)(void *),
                      enum array_destroy_option option);
-_Bool ARRAY_bsearch(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
-                    const void *v, ARRAY_size_t *i);
+bool ARRAY_bsearch(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                   const void *v, ARRAY_size_t *i);
 
 const void *ARRAY_hput(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
                        ARRAY_hash_t hash, ARRAY_rehash_t rehash,
@@ -131,7 +131,7 @@ static inline HASH_size_t ARRAY_hash(const void *self, size_t size,
 }
 
 static inline HASH_size_t ARRAY_rehash(const void *self, size_t size, size_t i,
-                                       _Bool hash_collision) {
+                                       bool hash_collision) {
   assert(!hash_collision && "Should use a better hash algorithm");
   return i + 1;
 }

@@ -33,16 +33,13 @@
 
 static inline struct error open_file(const char *filename, const char *mode,
                                      FILE **out) {
-  FILE *fp = fopen(filename, mode);
-  if (!fp) {
-    fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
-            strerror(errno));
-    return (struct error){ES_FILE_OPEN, errno};
-  }
-
   assert(out);
-  *out = fp;
-  return (struct error){};
+  if ((*out = fopen(filename, mode)))
+    return (struct error){};
+
+  fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
+          strerror(errno));
+  return (struct error){ES_FILE_OPEN, errno};
 }
 
 static inline struct error close_file(FILE *fp) {
@@ -64,9 +61,9 @@ struct error reads(FILE *fp, struct string *s, const char *escape);
 
 const char *expand_path(const char *cwd, unsigned n, const char *in, char *out);
 
-_Bool starts_with(const char *s, const char *starting);
+bool starts_with(const char *s, const char *starting);
 
-_Bool ends_with(const char *s, const char *ending);
+bool ends_with(const char *s, const char *ending);
 
 const char *rands(char buf[], unsigned cap);
 

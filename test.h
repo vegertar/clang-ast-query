@@ -7,7 +7,7 @@ struct __tinfo {
   const char *file;
   const char *func;
   unsigned line;
-  _Bool enabled;
+  bool enabled;
 };
 
 #endif // USE_TEST || USE_TOGGLE

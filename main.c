@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
       int kind; // TODO: detect file kind by reading ELF info.
       if (strcmp(ext, "c") == 0) {
         kind = IK_C;
-      } else if (strcmp(ext, "o") == 0) {
+      } else if (strcmp(ext, "o") == 0 || strcmp(ext, "sqlite") == 0) {
         kind = IK_DATA;
       } else {
         kind = input_kind;

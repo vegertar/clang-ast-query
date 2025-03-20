@@ -271,7 +271,7 @@
       long long i;                                                             \
       unsigned long long u;                                                    \
     };                                                                         \
-    _Bool negative;                                                            \
+    bool negative;                                                             \
   }
 
 typedef struct INTEGER Integer;
@@ -330,7 +330,7 @@ typedef struct {
 } DeclRef;
 
 typedef struct {
-  _Bool anonymous;
+  bool anonymous;
   const String *name;
 } MemberFace;
 
@@ -611,7 +611,13 @@ typedef struct {
 // Exchanging information with the parser.
 typedef struct {
   // Whether or not to emit error messages.
-  int silent;
+  uint8_t silent : 1;
+  /**
+   * The type of custom data:
+   *   0: any opaque data
+   *   1: FILE
+   */
+  uint8_t type : 1;
   // The current input line.
   const char *line;
   // The custom data.

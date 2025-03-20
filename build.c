@@ -1,6 +1,7 @@
 #include "build.h"
 #include "parse.h"
 #include "remark.h"
+#include "render.h"
 #include "store.h"
 #include "util.h"
 
@@ -15,9 +16,11 @@ struct output_file {
   char tmp[PATH_MAX];
 };
 
-static inline _Bool needs_to_save_tmp(const char *filename) {
+static inline bool needs_to_save_tmp(const char *filename) {
   assert(filename);
-  return !starts_with(filename, "/dev/");
+  return !starts_with(filename,
+                      "/dev/")                 // e.g. /dev/stdout, /dev/fd/1
+         || strcmp(filename, ":memory:") == 0; // sqlite3 in-memory database
 }
 
 static inline const char *get_tmp(struct output_file *of,
@@ -45,11 +48,16 @@ static struct error open_output(struct output_file *of) {
 
     switch (output.kind) {
     case OK_TEXT:
+    case OK_HTML:
       err = open_file(filename, "w", &of->file);
       break;
 
     case OK_DATA:
       err = store_init(filename);
+      break;
+
+    default:
+      err = (struct error){ES_UNKNOWN_OUTPUT};
       break;
     }
   }
@@ -64,11 +72,16 @@ static struct error close_output(struct output_file *of) {
   if (output.file) {
     switch (output.kind) {
     case OK_TEXT:
+    case OK_HTML:
       err = close_file(of->file);
       break;
 
     case OK_DATA:
       err = store_halt();
+      break;
+
+    default:
+      err = (struct error){ES_UNKNOWN_OUTPUT};
       break;
     }
   }
@@ -89,9 +102,9 @@ struct parse_context {
   int errs;
 };
 
-#define PARSE_CONTEXT_INIT(data)                                               \
+#define PARSE_CONTEXT_INIT(type, data)                                         \
   {                                                                            \
-    {1, 1, 1, 1}, { output.silent, NULL, data }                                \
+    {1, 1, 1, 1}, { output.silent, type, NULL, data }                          \
   }
 
 typedef struct error (*build_t)(struct input i);
@@ -110,8 +123,17 @@ static struct error parse_line_and_dump(char *line, size_t n, size_t cap,
     err = parse_line(line, n, cap, lloc, uctx, parse);
   }
 
-  if (!err.es && uctx->data && fwrite(line, 1, n, uctx->data) < n)
-    err = (struct error){ES_FILE_WRITE};
+  if (!err.es && uctx->data) {
+    switch (uctx->type) {
+    case 1:
+      if (fwrite(line, 1, n, uctx->data) < n)
+        err = (struct error){ES_FILE_WRITE};
+      break;
+    default:
+      err = (struct error){ES_DUMP};
+      break;
+    }
+  }
 
   return err;
 }
@@ -120,7 +142,7 @@ static struct error parse_text(FILE *in, FILE *out) {
   struct error err = {};
   size_t n = 0;
   char line[BUFSIZ];
-  struct parse_context ctx = PARSE_CONTEXT_INIT(out);
+  struct parse_context ctx = PARSE_CONTEXT_INIT(1, out);
 
   while (!err.es && fgets(line, sizeof(line), in)) {
     n = strlen(line);
@@ -138,7 +160,8 @@ static int remark_line(char *line, size_t n, size_t cap, void *data) {
   return ctx->errs;
 }
 
-static struct error parse_c(const struct input *i, FILE *out) {
+static struct error remark_c(const struct input *i, FILE *out) {
+#ifdef USE_CLANG_TOOL
   struct error err;
   FILE *in;
 
@@ -146,7 +169,7 @@ static struct error parse_c(const struct input *i, FILE *out) {
     return err;
 
   if (!(err = reads(in, &input_content, NULL)).es) {
-    struct parse_context ctx = PARSE_CONTEXT_INIT(out);
+    struct parse_context ctx = PARSE_CONTEXT_INIT(1, out);
     err = remark(string_get(&input_content), string_len(&input_content),
                  ALT(i->tu, i->file), i->opts, remark_line, &ctx);
     err = next_error(err, ctx.errs ? (struct error){ES_PARSE, ctx.errs}
@@ -154,21 +177,46 @@ static struct error parse_c(const struct input *i, FILE *out) {
   }
 
   return next_error(err, close_file(in));
+#else
+  fprintf(stderr, "Clang tool is not compiled in\n");
+  return (struct error){ES_REMARK_NO_CLANG};
+#endif // USE_CLANG_TOOL
 }
 
+#define PUSH_OUTPUT(x) PUSH_OUTPUT_(x, PUSH_XXX_##x)
+#define PUSH_XXX_output y, z
+#define PUSH_XXX3(...)
+#define PUSH_XXX2(x, ...)                                                      \
+  struct output saved_output = output;                                         \
+  output = x
+#define PUSH_OUTPUT_(...)                                                      \
+  PP_OVERLOADS(PUSH_XXX, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+
+#define POP_OUTPUT(x) POP_OUTPUT_(x, POP_XXX_##x)
+#define POP_XXX_output y, z
+#define POP_XXX3(...)
+#define POP_XXX2(x, ...) output = saved_output
+#define POP_OUTPUT_(...)                                                       \
+  PP_OVERLOADS(POP_XXX, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+
+#define DO(tmp_output, expr, ...)                                              \
+  do {                                                                         \
+    struct output_file of;                                                     \
+    if (!err.es) {                                                             \
+      PUSH_OUTPUT(tmp_output);                                                 \
+      if (!(err = open_output(&of)).es) {                                      \
+        err = expr;                                                            \
+        __VA_ARGS__                                                            \
+        err = next_error(err, close_output(&of));                              \
+      }                                                                        \
+      POP_OUTPUT(tmp_output);                                                  \
+    }                                                                          \
+  } while (0)
+
 static struct error parse_text_and_dump(struct input i) {
-  struct error err;
   FILE *in;
-
-  if ((err = open_file(i.file, "r", &in)).es)
-    return err;
-
-  struct output_file of;
-  if (!(err = open_output(&of)).es) {
-    err = parse_text(in, of.file);
-    err = next_error(err, close_output(&of));
-  }
-
+  struct error err = open_file(i.file, "r", &in);
+  DO(output, parse_text(in, of.file));
   return next_error(err, close_file(in));
 }
 
@@ -182,40 +230,17 @@ static struct error parse_text_only(struct input i) {
 
 static struct error parse_text_and_store(struct input i) {
   struct error err = parse_text_only(i);
-  if (err.es)
-    return err;
-
-  struct output_file of;
-  if (!(err = open_output(&of)).es) {
-    err = store();
-    err = next_error(err, close_output(&of));
-  }
-
+  DO(output, store());
   return err;
 }
 
-static struct error parse_text_and_render(struct input i) {
-  return (struct error){};
-}
-
 static struct error remark_c_and_dump(struct input i) {
-#ifdef USE_CLANG_TOOL
-  struct error err;
-  struct output_file of;
-
-  if ((err = open_output(&of)).es)
-    return err;
-
-  _Bool noparse = output.noparse;
+  bool noparse = output.noparse;
   output.noparse = 1;
-  err = parse_c(&i, of.file);
+  struct error err = {};
+  DO(output, remark_c(&i, of.file));
   output.noparse = noparse;
-
-  return next_error(err, close_output(&of));
-#else
-  fprintf(stderr, "Clang tool is not compiled in\n");
-  return (struct error){ES_REMARK_NO_CLANG};
-#endif // USE_CLANG_TOOL
+  return err;
 }
 
 static struct error remark_c_only(struct input i) {
@@ -224,6 +249,35 @@ static struct error remark_c_only(struct input i) {
   struct error err = remark_c_and_dump(i);
   output.file = file;
   return err;
+}
+
+static struct error remark_c_and_store(struct input i) {
+  struct error err = remark_c(&i, NULL);
+  DO(output, store());
+  return err;
+}
+
+static struct error render_html_only(struct input i) {
+  struct error err = store_init(i.file);
+  DO(output, render(of.file));
+  return next_error(err, store_halt());
+}
+
+static struct error inmemory_store_and_render(struct error err) {
+  struct output origin = output;
+  struct output inmemory = output;
+  inmemory.kind = OK_DATA;
+  inmemory.file = ":memory:";
+  DO(inmemory, store(), { DO(origin, render(of.file)); });
+  return err;
+}
+
+static struct error parse_text_and_render(struct input i) {
+  return inmemory_store_and_render(parse_text_only(i));
+}
+
+static struct error remark_c_and_render(struct input i) {
+  return inmemory_store_and_render(remark_c(&i, NULL));
 }
 
 static_assert(IK_NUMS < 16 && OK_NUMS < 16, "Too many input/output kinds");
@@ -245,8 +299,10 @@ static struct builder builders[128] = {
 
     IOB(C, NIL, remark_c_only),
     IOB(C, TEXT, remark_c_and_dump),
-    IOB(C, DATA, NULL), // TODO:
-    IOB(C, HTML, NULL), // TODO:
+    IOB(C, DATA, remark_c_and_store),
+    IOB(C, HTML, remark_c_and_render),
+
+    IOB(DATA, HTML, render_html_only),
 
 #undef IOB
 };

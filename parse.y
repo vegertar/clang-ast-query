@@ -494,7 +494,7 @@
   <intptr_t>
     parent
     prev
-  <_Bool>
+  <bool>
     opt_inline
     opt_const
     opt_volatile

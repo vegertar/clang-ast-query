@@ -83,7 +83,7 @@
   do {                                                                        \
     char *end;                                                                \
     errno = 0;                                                                \
-    _Bool is_negative = yytext[0] == '-';                                     \
+    bool is_negative = yytext[0] == '-';                                     \
     yylval->TOK_##X.negative = is_negative;                                   \
     if (is_negative)                                                          \
       yylval->TOK_##X.i = strtoll(yytext, &end, base);                        \
