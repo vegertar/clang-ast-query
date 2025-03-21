@@ -52,7 +52,7 @@
   } while (0)
 
 #define OPT(X, ctx...) VAL(OPT_##X)
-#define VAL(X, ...) SET(X, TOK_##X, ##__VA_ARGS__)
+#define VAL(X, ...) SET(X, TOK_##X __VA_OPT__(,) __VA_ARGS__)
 #define TOK(X) return(TOK_##X)
 #define CHR() return(yytext[0])
 

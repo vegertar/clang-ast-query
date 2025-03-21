@@ -64,7 +64,7 @@
   }
 
 #define OF_ATTR(...)                                                           \
-  WITH_OPTIONS(Inherited, Implicit, ##__VA_ARGS__);                            \
+  WITH_OPTIONS(Inherited, Implicit __VA_OPT__(, ) __VA_ARGS__);                \
   uintptr_t pointer;                                                           \
   AngledRange range
 
@@ -93,7 +93,7 @@
 
 #define OF_DECL(...)                                                           \
   WITH_OPTIONS(imported, implicit, undeserialized_declarations,                \
-               grp_used_or_referenced, ##__VA_ARGS__);                         \
+               grp_used_or_referenced __VA_OPT__(, ) __VA_ARGS__);             \
   uintptr_t pointer, parent, prev;                                             \
   AngledRange range;                                                           \
   Loc loc
@@ -108,7 +108,7 @@
   }
 
 #define OF_TYPE(...)                                                           \
-  WITH_OPTIONS(sugar, imported, ##__VA_ARGS__);                                \
+  WITH_OPTIONS(sugar, imported __VA_OPT__(, ) __VA_ARGS__);                    \
   uintptr_t pointer;                                                           \
   BareType type
 
@@ -139,7 +139,7 @@
   union {                                                                      \
     StmtSelf stmt;                                                             \
     struct {                                                                   \
-      OF_STMT(grp_value_kind, grp_object_kind, ##__VA_ARGS__);                 \
+      OF_STMT(grp_value_kind, grp_object_kind __VA_OPT__(, ) __VA_ARGS__);     \
     };                                                                         \
   };                                                                           \
   BareType type
@@ -153,8 +153,8 @@
     };                                                                         \
   }
 
-#define IS_OPERATOR(...) IS_EXPR(grp_operator, ##__VA_ARGS__)
-#define IS_CAST_EXPR(...) IS_EXPR(grp_cast, ##__VA_ARGS__)
+#define IS_OPERATOR(...) IS_EXPR(grp_operator __VA_OPT__(, ) __VA_ARGS__)
+#define IS_CAST_EXPR(...) IS_EXPR(grp_cast __VA_OPT__(, ) __VA_ARGS__)
 
 #define OF_DIRECTIVE(...)                                                      \
   WITH_OPTIONS(__VA_ARGS__);                                                   \
@@ -247,34 +247,40 @@
     struct Y;                                                                  \
   }
 
-#define Raw(X, Y, ...) struct IS(RAW, Y, ##__VA_ARGS__) X
-#define Attr(X, Y, ...) struct IS(ATTR, Y, ##__VA_ARGS__) X##Attr
-#define Comment(X, Y, ...) struct IS(COMMENT, Y, ##__VA_ARGS__) X##Comment
-#define Decl(X, Y, ...) struct IS(DECL, Y, ##__VA_ARGS__) X##Decl
-#define Type(X, Y, ...) struct IS(TYPE, Y, ##__VA_ARGS__) X##Type
-#define Stmt(X, Y, ...) struct IS(STMT, Y, ##__VA_ARGS__) X##Stmt
-#define Expr(X, Y, ...) struct IS(EXPR, Y, ##__VA_ARGS__) X##Expr
-#define Literal(X, Y, ...) struct IS(EXPR, Y, ##__VA_ARGS__) X##Literal
-#define Operator(X, Y, ...) struct IS(OPERATOR, Y, ##__VA_ARGS__) X##Operator
-#define CastExpr(X, Y, ...) struct IS(CAST_EXPR, Y, ##__VA_ARGS__) X##CastExpr
-#define Directive(X, Y, ...) struct IS(DIRECTIVE, Y, ##__VA_ARGS__) X##Directive
-#define PPDecl(X, Y, ...) struct IS(PPDECL, Y, ##__VA_ARGS__) X##PPDecl
-#define PPExpr(X, Y, ...) struct IS(PPEXPR, Y, ##__VA_ARGS__) X##PPExpr
+#define Raw(X, Y, ...) struct IS(RAW, Y __VA_OPT__(, ) __VA_ARGS__) X
+#define Attr(X, Y, ...) struct IS(ATTR, Y __VA_OPT__(, ) __VA_ARGS__) X##Attr
+#define Comment(X, Y, ...)                                                     \
+  struct IS(COMMENT, Y __VA_OPT__(, ) __VA_ARGS__) X##Comment
+#define Decl(X, Y, ...) struct IS(DECL, Y __VA_OPT__(, ) __VA_ARGS__) X##Decl
+#define Type(X, Y, ...) struct IS(TYPE, Y __VA_OPT__(, ) __VA_ARGS__) X##Type
+#define Stmt(X, Y, ...) struct IS(STMT, Y __VA_OPT__(, ) __VA_ARGS__) X##Stmt
+#define Expr(X, Y, ...) struct IS(EXPR, Y __VA_OPT__(, ) __VA_ARGS__) X##Expr
+#define Literal(X, Y, ...)                                                     \
+  struct IS(EXPR, Y __VA_OPT__(, ) __VA_ARGS__) X##Literal
+#define Operator(X, Y, ...)                                                    \
+  struct IS(OPERATOR, Y __VA_OPT__(, ) __VA_ARGS__) X##Operator
+#define CastExpr(X, Y, ...)                                                    \
+  struct IS(CAST_EXPR, Y __VA_OPT__(, ) __VA_ARGS__) X##CastExpr
+#define Directive(X, Y, ...)                                                   \
+  struct IS(DIRECTIVE, Y __VA_OPT__(, ) __VA_ARGS__) X##Directive
+#define PPDecl(X, Y, ...)                                                      \
+  struct IS(PPDECL, Y __VA_OPT__(, ) __VA_ARGS__) X##PPDecl
+#define PPExpr(X, Y, ...)                                                      \
+  struct IS(PPEXPR, Y __VA_OPT__(, ) __VA_ARGS__) X##PPExpr
 #define PPOperator(X, Y, ...)                                                  \
-  struct IS(PPOPERATOR, Y, ##__VA_ARGS__) X##PPOperator
-#define PPStmt(X, Y, ...) struct IS(PPSTMT, Y, ##__VA_ARGS__) X##PPStmt
-#define Expansion(X, Y, ...) struct IS(EXPANSION, Y, ##__VA_ARGS__) X##Expansion
+  struct IS(PPOPERATOR, Y __VA_OPT__(, ) __VA_ARGS__) X##PPOperator
+#define PPStmt(X, Y, ...)                                                      \
+  struct IS(PPSTMT, Y __VA_OPT__(, ) __VA_ARGS__) X##PPStmt
+#define Expansion(X, Y, ...)                                                   \
+  struct IS(EXPANSION, Y __VA_OPT__(, ) __VA_ARGS__) X##Expansion
 
-#define INTEGER                                                                \
-  {                                                                            \
-    union {                                                                    \
-      long long i;                                                             \
-      unsigned long long u;                                                    \
-    };                                                                         \
-    bool negative;                                                             \
-  }
-
-typedef struct INTEGER Integer;
+typedef struct {
+  union {
+    long long i;
+    unsigned long long u;
+  };
+  bool negative;
+} Integer;
 
 typedef enum {
   NG_NULL,

@@ -6,11 +6,11 @@
 #define OPTIONS_TYPE uint64_t
 #endif // OPTIONS_TYPE
 
-#define OPTIONS(...) PP_OVERLOAD(OPTIONS, ##__VA_ARGS__)
+#define OPTIONS(...) PP_OVERLOAD(OPTIONS __VA_OPT__(, ) __VA_ARGS__)
 #define OPTIONS0()
 #define OPTIONS1(a, ...) OPTIONS_TYPE opt_##a : 1;
 
-#define opt__(name, ...) PP_OVERLOADS(opt, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+#define opt__(name, ...) PP_CAT(opt, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 
 #define opt1(a) opt_##a
 #define opt2(a, b) opt_##a : 1, opt_##b
@@ -53,11 +53,11 @@
 #define opt39(a, ...) opt_##a : 1, opt38(__VA_ARGS__)
 #define opt40(a, ...) opt_##a : 1, opt39(__VA_ARGS__)
 
-#define GROUPS(...) PP_OVERLOAD(GROUPS, ##__VA_ARGS__)
+#define GROUPS(...) PP_OVERLOAD(GROUPS __VA_OPT__(, ) __VA_ARGS__)
 #define GROUPS0()
 #define GROUPS1(a) grp_(grp_##a);
 
-#define grp_(...) PP_OVERLOADS(grp, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+#define grp_(...) PP_CAT(grp, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 #define grp__(name, ...) name, PP_NARG(__VA_ARGS__)
 
 // clang-format off
@@ -404,7 +404,8 @@
       break;                                                                   \
     }                                                                          \
   } while (0)
-#define SET_OPTIONS__(grp, ...) PP_OVERLOAD(SET_OPTIONS, ##__VA_ARGS__)
+#define SET_OPTIONS__(grp, ...)                                                \
+  PP_OVERLOAD(SET_OPTIONS __VA_OPT__(, ) __VA_ARGS__)
 
 #define SET_OPTIONS1(a)                                                        \
   case TOK_OPT_##a:                                                            \

@@ -19,8 +19,8 @@ struct output_file {
 static inline bool needs_to_save_tmp(const char *filename) {
   assert(filename);
   return !starts_with(filename,
-                      "/dev/")                 // e.g. /dev/stdout, /dev/fd/1
-         || strcmp(filename, ":memory:") == 0; // sqlite3 in-memory database
+                      "/dev/")            // NOT /dev/stdout, /dev/fd/1, etc.
+         && strcmp(filename, ":memory:"); // NOT sqlite3 in-memory database
 }
 
 static inline const char *get_tmp(struct output_file *of,
@@ -183,21 +183,19 @@ static struct error remark_c(const struct input *i, FILE *out) {
 #endif // USE_CLANG_TOOL
 }
 
-#define PUSH_OUTPUT(x) PUSH_OUTPUT_(x, PUSH_XXX_##x)
-#define PUSH_XXX_output y, z
-#define PUSH_XXX3(...)
-#define PUSH_XXX2(x, ...)                                                      \
+#define PUSH_XXXoutput
+#define PUSH_XXX(x)                                                            \
   struct output saved_output = output;                                         \
   output = x
-#define PUSH_OUTPUT_(...)                                                      \
-  PP_OVERLOADS(PUSH_XXX, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
 
-#define POP_OUTPUT(x) POP_OUTPUT_(x, POP_XXX_##x)
-#define POP_XXX_output y, z
-#define POP_XXX3(...)
-#define POP_XXX2(x, ...) output = saved_output
-#define POP_OUTPUT_(...)                                                       \
-  PP_OVERLOADS(POP_XXX, PP_NARG(__VA_ARGS__))(__VA_ARGS__)
+#define POP_XXXoutput
+#define POP_XXX(x) output = saved_output
+
+#define PUSH_OUTPUT(x) PP_REPLACE(x, PUSH_XXX)
+#define POP_OUTPUT(x) PP_REPLACE(x, POP_XXX)
+
+static_assert(true PUSH_OUTPUT(output) POP_OUTPUT(output),
+              "The macro expansions should append nothing");
 
 #define DO(tmp_output, expr, ...)                                              \
   do {                                                                         \

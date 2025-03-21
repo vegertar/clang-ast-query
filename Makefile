@@ -5,8 +5,8 @@ YACCFLAGS= -Werror
 
 CC= cc
 CXX= c++
-CFLAGS= -MMD -Werror -std=gnu23
-CXXFLAGS= -std=c++20 -fno-exceptions -fno-rtti
+CFLAGS+= -MMD -Werror -std=gnu23
+CXXFLAGS+= -std=c++20 -fno-exceptions -fno-rtti
 LDFLAGS= -lfl -lsqlite3
 
 ifdef RELEASE
@@ -20,13 +20,13 @@ endif
 
 ifdef USE_TEST
 CPPFLAGS+= -DUSE_TEST
-# Must be the first linked one
+# MUST be the first linked one
 SRCS:= test.c
 endif
 
 ifdef USE_TOGGLE
 CPPFLAGS+= -DUSE_TOGGLE
-# Must be the first linked one
+# MUST be the first linked one
 SRCS:= test.c
 endif
 
@@ -69,6 +69,9 @@ test-fun: build
 
 caq: ${OBJS}
 	${CC} -o $@ $^ ${LDFLAGS}
+
+readerjs-inc.h: reader.js
+	xxd -i $< > $@
 
 parse.h: parse.c
 parse.c: parse.y

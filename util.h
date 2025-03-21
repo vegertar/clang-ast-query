@@ -59,7 +59,8 @@ static inline struct error unlink_file(const char *file) {
 
 struct error reads(FILE *fp, struct string *s, const char *escape);
 
-const char *expand_path(const char *cwd, unsigned n, const char *in, char *out);
+const char *expand_path(const char *cwd, unsigned n, const char *in,
+                        char *const restrict out, unsigned cap);
 
 bool starts_with(const char *s, const char *starting);
 

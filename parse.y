@@ -1685,9 +1685,17 @@ macro_ref:  { $$ = (MacroRef){}; }
 Remark: Meta
  | REMARK Semantics
 
-Meta: TU TEXT
- | TS INTEGER
+Meta: TS INTEGER  { ts = $2.i; }
+ | TU TEXT
+  {
+    assert(string_len(&$2->elem) < PATH_MAX);
+    strcpy(tu, string_get(&$2->elem));
+  }
  | CWD TEXT
+  {
+    assert(string_len(&$2->elem) < PATH_MAX);
+    strcpy(cwd, string_get(&$2->elem));
+  }
 
 Semantics: NAME NAME AngledRange
   {

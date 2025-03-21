@@ -7,7 +7,8 @@
 #define MAX_STMT_SIZE 16
 #endif // !MAX_STMT_SIZE
 
-#define VALUES(...) PP_OVERLOADS(VALUES, PP_NARG(__VA_ARGS__))()
+#define PLACEHOLDERS(n) PP_JOIN(",", PP_DUP("?", n))
+#define VALUES(...) PLACEHOLDERS(PP_NARG(__VA_ARGS__))
 
 #define if_prepared_stmt(sql, ...)                                             \
   do {                                                                         \
@@ -18,15 +19,15 @@
       last_db = db;                                                            \
       stmt = NULL;                                                             \
     }                                                                          \
-    if (!err && !stmt) {                                                       \
+    if (!errcode && !stmt) {                                                   \
       int i = 0;                                                               \
       while (i < MAX_STMT_SIZE && stmts[i]) {                                  \
         ++i;                                                                   \
       }                                                                        \
       assert(i < MAX_STMT_SIZE);                                               \
       assert(db);                                                              \
-      err = sqlite3_prepare_v2(db, sql, sizeof(sql), &stmts[i], NULL);         \
-      if (err)                                                                 \
+      errcode = sqlite3_prepare_v2(db, sql, sizeof(sql), &stmts[i], NULL);     \
+      if (errcode)                                                             \
         fprintf(stderr, "%s:%d: sqlite3_prepare_v2 error: %s\n", __func__,     \
                 __LINE__, sqlite3_errmsg(db));                                 \
       else                                                                     \
@@ -34,10 +35,10 @@
     }                                                                          \
     if (stmt)                                                                  \
       sqlite3_clear_bindings(stmt);                                            \
-    if (!err && stmt)
+    if (!errcode && stmt)
 
 #define end_if_prepared_stmt(...)                                              \
-  if (!err && stmt) {                                                          \
+  if (!errcode && stmt) {                                                      \
     int rc = 0;                                                                \
     do {                                                                       \
       rc = sqlite3_step(stmt);                                                 \
@@ -48,9 +49,9 @@
     if (rc == SQLITE_ERROR)                                                    \
       fprintf(stderr, "%s:%d: sqlite3_step error: %s\n", __func__, __LINE__,   \
               sqlite3_errmsg(db));                                             \
-    if ((err = sqlite3_reset(stmt)))                                           \
+    if ((errcode = sqlite3_reset(stmt)))                                       \
       fprintf(stderr, "%s:%d: sqlite3_reset error(%d): %s\n", __func__,        \
-              __LINE__, err, sqlite3_errstr(err));                             \
+              __LINE__, errcode, sqlite3_errstr(errcode));                     \
   }                                                                            \
   }                                                                            \
   while (0)
@@ -64,7 +65,7 @@
   end_if_prepared_stmt()
 
 #define QUERY(sql, ...) if_prepared_stmt(sql, __VA_ARGS__) {
-#define QUERY_END(...)                                                         \
+#define END_QUERY(...)                                                         \
   }                                                                            \
   end_if_prepared_stmt(__VA_ARGS__)
 
@@ -80,33 +81,33 @@
     db = NULL;                                                                 \
     memset(stmts, 0, sizeof(stmts));                                           \
     errmsg = NULL;                                                             \
-    if ((err = sqlite3_open(file, &db)))                                       \
+    if ((errcode = sqlite3_open(file, &db)))                                   \
       fprintf(stderr, "%s:%d: sqlite3_open(%s) error(%d): %s\n", __func__,     \
-              __LINE__, file, err, sqlite3_errstr(err));                       \
+              __LINE__, file, errcode, sqlite3_errstr(errcode));               \
   } while (0)
 
 #define HALT_DB()                                                              \
   do {                                                                         \
-    for (int i = 0; !err && i < MAX_STMT_SIZE; ++i) {                          \
+    for (int i = 0; !errcode && i < MAX_STMT_SIZE; ++i) {                      \
       if (stmts[i]) {                                                          \
-        if ((err = sqlite3_finalize(stmts[i]))) {                              \
+        if ((errcode = sqlite3_finalize(stmts[i]))) {                          \
           fprintf(stderr, "%s:%d: sqlite3_finalize error(%d): %s\n", __func__, \
-                  __LINE__, err, sqlite3_errstr(err));                         \
+                  __LINE__, errcode, sqlite3_errstr(errcode));                 \
         }                                                                      \
       }                                                                        \
     }                                                                          \
-    if (!err && (err = sqlite3_close(db)))                                     \
+    if (!errcode && (errcode = sqlite3_close(db)))                             \
       fprintf(stderr, "%s:%d: sqlite3_close error(%d): %s\n", __func__,        \
-              __LINE__, err, sqlite3_errstr(err));                             \
+              __LINE__, errcode, sqlite3_errstr(errcode));                     \
   } while (0)
 
 #define EXEC_SQL(s)                                                            \
   do {                                                                         \
-    if (db && !err) {                                                          \
-      err = sqlite3_exec(db, s, NULL, NULL, &errmsg);                          \
+    if (db && !errcode) {                                                      \
+      errcode = sqlite3_exec(db, s, NULL, NULL, &errmsg);                      \
       if (errmsg) {                                                            \
         fprintf(stderr, "%s:%d: sqlite3_exec(%s) error(%d): %s\n", __func__,   \
-                __LINE__, s, err, errmsg);                                     \
+                __LINE__, s, errcode, errmsg);                                 \
         sqlite3_free(errmsg);                                                  \
       }                                                                        \
     } else {                                                                   \
@@ -118,3 +119,6 @@
 struct error store_init(const char *db_file);
 struct error store();
 struct error store_halt();
+
+struct error query_tu(char *path, int n);
+struct error query_semantics();

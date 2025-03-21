@@ -32,8 +32,8 @@ struct error reads(FILE *fp, struct string *s, const char *escape) {
 }
 
 const char *expand_path(const char *cwd, unsigned n, const char *in,
-                        char *out) {
-  assert(n < PATH_MAX);
+                        char *const restrict out, unsigned cap) {
+  assert(n < cap);
   if (!in || *in == '/')
     return in;
   while (n > 0 && cwd[n - 1] == '/')
@@ -52,7 +52,7 @@ const char *expand_path(const char *cwd, unsigned n, const char *in,
     }
     memcpy(out, cwd, n);
   } else {
-    assert(n + 1 + i < PATH_MAX);
+    assert(n + 1 + i < cap);
     memcpy(out, cwd, n);
     out[n++] = '/';
     memcpy(out + n, in, i);
@@ -60,26 +60,29 @@ const char *expand_path(const char *cwd, unsigned n, const char *in,
   }
 
   out[n] = 0;
-  return expand_path(out, n, in + i + (in[i] == '/'), out);
+  return expand_path(out, n, in + i + (in[i] == '/'), out, cap);
 }
 
 TEST(expand_path, {
   char path[PATH_MAX];
-  ASSERT(expand_path(NULL, 0, NULL, NULL) == NULL);
-  ASSERT(strcmp(expand_path(NULL, 0, "a", path), "/a") == 0);
-  ASSERT(strcmp(expand_path(NULL, 0, "/a", path), "/a") == 0);
-  ASSERT(strcmp(expand_path("/", 1, "a", path), "/a") == 0);
-  ASSERT(strcmp(expand_path("/", 1, "./a", path), "/a") == 0);
-  ASSERT(strcmp(expand_path("/", 1, "../a", path), "/a") == 0);
-  ASSERT(strcmp(expand_path("/tmp", 4, "/a", NULL), "/a") == 0);
-  ASSERT(strcmp(expand_path("/tmp", 4, "a", path), "/tmp/a") == 0);
-  ASSERT(strcmp(expand_path("/tmp", 4, ".", path), "/tmp") == 0);
-  ASSERT(strcmp(expand_path("/tmp", 4, "./a", path), "/tmp/a") == 0);
-  ASSERT(strcmp(expand_path("/tmp", 4, "././a", path), "/tmp/a") == 0);
-  ASSERT(strcmp(expand_path("/tmp", 4, "../a", path), "/a") == 0);
-  ASSERT(strcmp(expand_path("/tmp", 4, ".././a", path), "/a") == 0);
-  ASSERT(strcmp(expand_path("/tmp", 4, "./../a", path), "/a") == 0);
-  ASSERT(strcmp(expand_path("/tmp/x/y", 10, "./../a", path), "/tmp/x/a") == 0);
+  ASSERT(expand_path(NULL, 0, NULL, NULL, PATH_MAX) == NULL);
+  ASSERT(expand_path(NULL, 0, "", path, PATH_MAX) == path);
+  ASSERT(strcmp(expand_path(NULL, 0, "a", path, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path(NULL, 0, "/a", path, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path("/", 1, "a", path, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path("/", 1, "./a", path, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path("/", 1, "../a", path, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path("/tmp", 4, "/a", NULL, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path("/tmp", 4, "a", path, PATH_MAX), "/tmp/a") == 0);
+  ASSERT(strcmp(expand_path("/tmp", 4, ".", path, PATH_MAX), "/tmp") == 0);
+  ASSERT(strcmp(expand_path("/tmp", 4, "./a", path, PATH_MAX), "/tmp/a") == 0);
+  ASSERT(strcmp(expand_path("/tmp", 4, "././a", path, PATH_MAX), "/tmp/a") ==
+         0);
+  ASSERT(strcmp(expand_path("/tmp", 4, "../a", path, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path("/tmp", 4, ".././a", path, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path("/tmp", 4, "./../a", path, PATH_MAX), "/a") == 0);
+  ASSERT(strcmp(expand_path("/tmp/x/y", 10, "./../a", path, PATH_MAX),
+                "/tmp/x/a") == 0);
 })
 
 bool starts_with(const char *s, const char *starting) {

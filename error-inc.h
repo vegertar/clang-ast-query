@@ -1,10 +1,12 @@
 #define ES(...)                                                                \
-  PP_OVERLOADS(ES, PP_NARG(__VA_ARGS__))(PP_NARG(__VA_ARGS__), ##__VA_ARGS__)
+  PP_CAT(ES, PP_NARG(__VA_ARGS__))                                             \
+  (PP_NARG(__VA_ARGS__) __VA_OPT__(, ) __VA_ARGS__)
 
 #define ES_CURR(order, n, type, mask, name, ...)                               \
   ES2(n, type##_##name, (mask) + (n - order + 1))
 
-#define ES_NEXT(n, type, mask, name, ...) n, type, mask, ##__VA_ARGS__
+#define ES_NEXT(n, type, mask, name, ...)                                      \
+  n, type, mask __VA_OPT__(, ) __VA_ARGS__
 
 #define ES1(n, name) ES_ENUM(name)
 #define ES2(n, type, value) ES_ENUM(type, value)
@@ -17,7 +19,7 @@
 #define ES8(...) ES_CURR(8, __VA_ARGS__) ES7(ES_NEXT(__VA_ARGS__))
 
 #ifndef ES_ENUM
-#define ES_ENUM(...) PP_OVERLOAD(ES_ENUM, ##__VA_ARGS__)
+#define ES_ENUM(...) PP_OVERLOAD(ES_ENUM __VA_OPT__(, ) __VA_ARGS__)
 #define ES_ENUM1(name) ES_##name,
 #define ES_ENUM2(name, value) ES_##name = value,
 #endif // ES_ENUM
@@ -32,6 +34,7 @@ ES(REMARK, 0x0200U, NO_CLANG)
 ES(PARSE, 0x0300U, INIT, HALT)
 ES(STORE, 0x0400U, INIT, HALT)
 ES(RENDER, 0x0500U)
+ES(QUERY, 0x0600U, TU)
 
 #undef ES
 
