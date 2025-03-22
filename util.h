@@ -59,8 +59,11 @@ static inline struct error unlink_file(const char *file) {
 
 struct error reads(FILE *fp, struct string *s, const char *escape);
 
-const char *expand_path(const char *cwd, unsigned n, const char *in,
-                        char *const restrict out, unsigned cap);
+// This function expands a given input path to the absolute one. Note that if
+// the input itself is already an absolute path, it will return it directly to
+// avoid unnecessary copies.
+const char *expand_path(const char *cwd, unsigned cwd_len, const char *in,
+                        char *const restrict out, unsigned out_cap);
 
 bool starts_with(const char *s, const char *starting);
 

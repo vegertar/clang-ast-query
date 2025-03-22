@@ -154,13 +154,6 @@ int main(int argc, char **argv) {
 
   clear_input();
 
-  switch (err.es) {
-#define ES_ENUM(name, ...)                                                     \
-  case ES_##name:                                                              \
-    fprintf(stderr, "Status: %s\n", #name);                                    \
-    break;
-#include "error-inc.h"
-  }
-
+  fprintf(stderr, "Status: %s\n", get_error_name(err));
   return !!err.es;
 }

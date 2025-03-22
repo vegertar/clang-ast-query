@@ -92,8 +92,14 @@ static void store_semantics() {
 struct error query_tu(char *path, int n) {
   QUERY("SELECT cwd, tu FROM dot");
   END_QUERY({
-    assert(COL_SIZE(0) && "Expect a valid CWD");
-    expand_path(COL_TEXT(0), COL_SIZE(0), COL_TEXT(1), path, n);
+    const char *cwd = COL_TEXT(0);
+    int cwd_len = COL_SIZE(0);
+    const char *tu = COL_TEXT(1);
+    const char *abs_path = expand_path(cwd, cwd_len, tu, path, n);
+    if (abs_path != path) {
+      require(strlen(abs_path) < n, "prepare to strcpy");
+      strcpy(path, abs_path);
+    }
   });
   return ERROR_OF(ES_QUERY_TU);
 }

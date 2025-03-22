@@ -31,7 +31,7 @@ const String *add_string(struct string s, uint8_t property) {
 }
 
 struct error parse_init() {
-  assert(all_strings.n == 0 && "Expect uninitialized");
+  require(all_strings.n == 0, "Uninitialized");
   const char *string_set_size = getenv("STRING_SET_SIZE");
   int n = string_set_size ? atoi(string_set_size) : 20071;
   TOGGLE(log_string_set_size, fprintf(stderr, "string set size is %d\n", n));
@@ -68,7 +68,7 @@ struct error parse_line(char *line, size_t n, size_t cap, YYLTYPE *lloc,
                         const UserContext *uctx,
                         struct error (*parse_hook)(YYLTYPE *lloc,
                                                    const UserContext *uctx)) {
-  assert(n + 1 < cap);
+  require(n + 1 < cap, "With an additional slot");
   assert(parse_hook);
 
   line[n + 1] = 0;

@@ -10,7 +10,7 @@ struct error reads(FILE *fp, struct string *s, const char *escape) {
 
   fseek(fp, 0, SEEK_END);
   long fsize = ftell(fp);
-  assert(fsize < (string_size_t)-1);
+  assert(fsize < ~(string_size_t)0U);
   string_reserve(s, fsize);
   fseek(fp, 0, SEEK_SET);
 

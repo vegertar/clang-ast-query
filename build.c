@@ -86,11 +86,19 @@ static struct error close_output(struct output_file *of) {
     }
   }
 
-  if (!err.es && of->tmp[0]) {
-    if (output.file)
-      err = rename_file(of->tmp, output.file);
-    else
-      err = unlink_file(of->tmp);
+  return err;
+}
+
+static inline struct error cleanup_output(struct error err,
+                                          struct output_file *of) {
+  assert(of);
+
+  if (of->tmp[0]) {
+    if (!err.es && output.file)
+      return rename_file(of->tmp, output.file);
+
+    // Remove the file anyway if there was an error
+    return next_error(err, unlink_file(of->tmp));
   }
 
   return err;
@@ -206,6 +214,7 @@ static_assert(true PUSH_OUTPUT(output) POP_OUTPUT(output),
         err = expr;                                                            \
         __VA_ARGS__                                                            \
         err = next_error(err, close_output(&of));                              \
+        err = cleanup_output(err, &of);                                        \
       }                                                                        \
       POP_OUTPUT(tmp_output);                                                  \
     }                                                                          \

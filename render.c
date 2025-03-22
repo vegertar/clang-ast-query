@@ -13,8 +13,8 @@ struct error render(FILE *fp) {
   if (err.es)
     return err;
 
+  require(path[0] == '/', "The absolute path");
   char *title = strrchr(path, '/');
-  assert(title);
   ++title;
 
   fprintf(fp,
@@ -28,18 +28,19 @@ struct error render(FILE *fp) {
     <script type='module'>
 )code"
 #ifdef READER_JS
+#define reader_js READER_JS
+#define reader_js_len (sizeof(READER_JS) - 1)
           R"code(
-      import {ReaderView} from '%s'
+      import {ReaderView} from '%.*s'
 )code"
 #else
-#define READER_JS reader_js
-          R"code(%s)code"
+          R"code(%.*s)code"
 #endif // READER_JS
           R"code(
       window.ReaderView = ReaderView;
     </script>
     <script type='module'>)code",
-          title, READER_JS);
+          title, reader_js_len, reader_js);
 
   fprintf(fp, R"code(
       new window.ReaderView({
