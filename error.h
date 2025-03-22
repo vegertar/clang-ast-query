@@ -10,9 +10,11 @@ enum errset : uint16_t {
 
 struct error {
   enum errset es;
-  int ec; // implementation specific error codes, e.g. errno
+  int ec; // The implementation specific error code, e.g. errno
 };
 
+// Note that the parameter evaluation order is undefined, so don't call like
+// next_error(f1(), f2()) unless the relative order is trivial.
 static inline struct error next_error(struct error err1, struct error err2) {
   return err1.es != ES_OK ? err1 : err2;
 }

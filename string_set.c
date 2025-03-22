@@ -136,7 +136,7 @@ TEST(StringSet, {
         fprintf(stderr, "---\n");
       }
     });
-    ASSERT_FMT(y, ":The string set is full at %uth case", i);
+    ASSERT(y, "The string set is full at %uth case", i);
     ASSERT(string_owned(&y->elem));
   }
 

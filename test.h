@@ -30,18 +30,19 @@ extern __test_t test;
     __VA_ARGS__                                                                \
     return 0;                                                                  \
   }
+
+// This macro returns the number of failure tests if the test is defined.
 #define RUN_TEST(option) (test ? test(option) : -1)
 
-#define ASSERT_FMT(value, fmt, ...)                                            \
+#define ASSERT(value, ...)                                                     \
   do {                                                                         \
     if (!(value)) {                                                            \
-      fprintf(stderr, ":%s:%d:%s" fmt, __FILE__, __LINE__, #value,             \
-              ##__VA_ARGS__);                                                  \
+      fprintf(stderr, "%s:%d (%s)", __FILE__, __LINE__, #value);               \
+      (void)__VA_OPT__(fprintf)(__VA_OPT__(stderr, ) " " __VA_ARGS__);         \
       return 1;                                                                \
     }                                                                          \
   } while (0)
 
-#define ASSERT(value) ASSERT_FMT(value, "")
 #else
 #define TEST(...)
 #define RUN_TEST(...) (-1)

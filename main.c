@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
       return 0;
     case 't':
       return optarg && strcmp(optarg, "help") == 0 ? test_help()
-                                                   : RUN_TEST(optarg);
+                                                   : !!RUN_TEST(optarg);
     case 'T':
       if (optarg && strcmp(optarg, "help") == 0)
         return toggle_help();

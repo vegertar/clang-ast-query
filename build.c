@@ -53,7 +53,7 @@ static struct error open_output(struct output_file *of) {
       break;
 
     case OK_DATA:
-      err = store_init(filename);
+      err = store_open(filename);
       break;
 
     default:
@@ -77,7 +77,7 @@ static struct error close_output(struct output_file *of) {
       break;
 
     case OK_DATA:
-      err = store_halt();
+      err = store_close();
       break;
 
     default:
@@ -265,9 +265,9 @@ static struct error remark_c_and_store(struct input i) {
 }
 
 static struct error render_html_only(struct input i) {
-  struct error err = store_init(i.file);
+  struct error err = store_open(i.file);
   DO(output, render(of.file));
-  return next_error(err, store_halt());
+  return next_error(err, store_close());
 }
 
 static struct error inmemory_store_and_render(struct error err) {
@@ -315,7 +315,7 @@ static struct builder builders[128] = {
 };
 
 struct error build_output(struct output o) {
-  struct error err = parse_init();
+  struct error err = next_error(parse_init(), render_init());
   if (err.es)
     return err;
 
@@ -336,5 +336,5 @@ struct error build_output(struct output o) {
   });
 
   string_clear(&input_content, 1);
-  return next_error(err, parse_halt());
+  return next_error(err, next_error(parse_halt(), render_halt()));
 }

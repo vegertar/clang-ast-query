@@ -34,6 +34,8 @@ static const struct __tinfo testinfo __testinfo;
 int test_help() { return help("TEST", (void **)&test, &testinfo); }
 
 static int run_test(const char *option) {
+  int ran = 0;
+  int skiped = 0;
   int failed = 0;
   int n = 0;
   void **p = (void **)&test;
@@ -44,18 +46,24 @@ static int run_test(const char *option) {
 
   while (*++p) {
     ++n;
-    fprintf(stderr, "TEST(%s)", q[n].name);
+    if (option && strcmp(option, q[n].name)) {
+      ++skiped;
+      continue;
+    }
+    ++ran;
+    fprintf(stderr, "TEST(%s): ", q[n].name);
     int c = ((__test_t)*p)(NULL);
     if (c) {
       ++failed;
-      fprintf(stderr, ":FAILED\n");
+      fputc('\n', stderr);
     } else {
       // clear the line
       fprintf(stderr, "\r%*s\r", w.ws_col, "");
     }
   }
 
-  fprintf(stderr, "RAN %d tests, %d PASSED\n", n, n - failed);
+  fprintf(stderr, "%d tests, %d SKIPED, %d RAN, %d PASSED\n", n, skiped, ran,
+          ran - failed);
   return failed;
 }
 

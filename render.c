@@ -6,6 +6,14 @@
 #include "readerjs-inc.h"
 #endif // !READER_JS
 
+struct error render_init() {
+  return (struct error){};
+}
+
+struct error render_halt() {
+  return (struct error){};
+}
+
 struct error render(FILE *fp) {
   char path[PATH_MAX];
   struct error err = query_tu(path, sizeof(path));
