@@ -87,7 +87,7 @@ typedef DECL_ARRAY(ARRAY_base, void) ARRAY_t;
 typedef HASH_size_t (*ARRAY_hash_t)(const void *self, size_t sz, const void *v);
 typedef HASH_size_t (*ARRAY_rehash_t)(const void *self, size_t sz, size_t i,
                                       bool hash_collision);
-typedef const void *(*ARRAY_access_t)(const void *self, size_t sz, size_t i);
+typedef void *(*ARRAY_access_t)(void *self, size_t sz, size_t i);
 typedef int (*ARRAY_compare_t)(const void *v, const void *element, size_t sz);
 typedef void *(*ARRAY_init_t)(void *dst, const void *v, size_t sz);
 typedef void *(*ARRAY_move_t)(void *dst, const void *v, size_t sz);
@@ -111,13 +111,12 @@ ARRAY_t *ARRAY_clear(ARRAY_t *p, size_t size, void (*destroy)(void *),
 bool ARRAY_bsearch(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
                    const void *v, ARRAY_size_t *i);
 
-const void *ARRAY_hput(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
-                       ARRAY_hash_t hash, ARRAY_rehash_t rehash,
-                       ARRAY_access_t access, const void *v, ARRAY_move_t init);
-const void *ARRAY_hget(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
-                       ARRAY_hash_t hash, ARRAY_rehash_t rehash,
-                       ARRAY_access_t access, const void *v,
-                       ARRAY_size_t *slot);
+void *ARRAY_hput(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                 ARRAY_hash_t hash, ARRAY_rehash_t rehash,
+                 ARRAY_access_t access, const void *v, ARRAY_move_t init);
+void *ARRAY_hget(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                 ARRAY_hash_t hash, ARRAY_rehash_t rehash,
+                 ARRAY_access_t access, const void *v, ARRAY_size_t *slot);
 
 static inline HASH_size_t ARRAY_hash(const void *self, size_t size,
                                      const void *v) {
@@ -136,7 +135,6 @@ static inline HASH_size_t ARRAY_rehash(const void *self, size_t size, size_t i,
   return i + 1;
 }
 
-static inline const void *ARRAY_access(const void *self, size_t size,
-                                       size_t i) {
+static inline void *ARRAY_access(void *self, size_t size, size_t i) {
   return (char *)((ARRAY_t *)self)->data + i * size;
 }

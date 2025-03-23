@@ -28,12 +28,12 @@ typedef ARRAY_size_t string_size_t;
 // Include the ending zero byte.
 #define STRING_BUFSIZ_ON_STACK sizeof(((struct string *)0)->s)
 
-_Static_assert(sizeof(struct string) <= 24,
-               "The struct string is not cheap copying");
-_Static_assert(sizeof(struct string) == sizeof(HSTR) + 8,
-               "Undefined struct string");
-_Static_assert(STRING_BUFSIZ_ON_STACK <= (2 << 6),
-               "The size field is tool small");
+static_assert(sizeof(struct string) <= 24,
+              "The struct string is not cheap copying");
+static_assert(sizeof(struct string) == sizeof(HSTR) + 8,
+              "Undefined struct string");
+static_assert(STRING_BUFSIZ_ON_STACK <= (2 << 6),
+              "The size field is tool small");
 
 struct string *string_reserve(struct string *p, string_size_t n);
 struct string *string_set(struct string *p, string_size_t i, const char *s,

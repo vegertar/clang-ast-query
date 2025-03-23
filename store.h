@@ -8,4 +8,5 @@ struct error store();
 struct error store_close();
 
 struct error query_tu(char *path, int n);
+struct error query_strings(uint8_t property);
 struct error query_semantics();

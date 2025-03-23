@@ -309,7 +309,7 @@ typedef enum {
 } NodeGroup;
 
 typedef struct {
-  const String *file;
+  String *file;
   unsigned line;
   unsigned col;
 } Loc;
@@ -320,24 +320,24 @@ typedef struct {
 } Range;
 
 typedef struct {
-  const String *qualified;
-  const String *desugared;
+  String *qualified;
+  String *desugared;
 } BareType;
 
 typedef struct {
-  const String *name;
+  String *name;
   uintptr_t pointer;
 } Ref;
 
 typedef struct {
-  const String *decl;
+  String *decl;
   Ref ref;
   BareType type;
 } DeclRef;
 
 typedef struct {
   bool anonymous;
-  const String *name;
+  String *name;
 } MemberFace;
 
 typedef struct {
@@ -422,7 +422,7 @@ typedef struct {
     Raw(IntValue, { Integer value; });
     Raw(Enum, {
       uintptr_t pointer;
-      const String *name;
+      String *name;
     });
     Raw(Typedef, {
       uintptr_t pointer;
@@ -434,7 +434,7 @@ typedef struct {
     });
     Raw(Field, {
       uintptr_t pointer;
-      const String *name;
+      String *name;
       BareType type;
     });
     Raw(Preprocessor, { uintptr_t pointer; });
@@ -442,28 +442,28 @@ typedef struct {
         Token,
         {
           Loc loc;
-          const String *text;
+          String *text;
           MacroRef ref;
         },
         is_arg, hasLeadingSpace, grp_stringified_or_paste);
 #pragma pop_macro("OPTIONS_TYPE")
 
-    Attr(Mode, { const String *name; });
+    Attr(Mode, { String *name; });
     Attr(NoThrow, {});
     Attr(NonNull, { ArgIndices arg_indices; });
     Attr(
-        AsmLabel, { const String *name; }, IsLiteralLabel);
+        AsmLabel, { String *name; }, IsLiteralLabel);
     Attr(Deprecated, {
-      const String *message;
-      const String *replacement;
+      String *message;
+      String *replacement;
     });
     Attr(Builtin, { unsigned id; });
     Attr(ReturnsTwice, {});
     Attr(Const, {});
-    Attr(Aligned, { const String *name; });
-    Attr(Restrict, { const String *name; });
+    Attr(Aligned, { String *name; });
+    Attr(Restrict, { String *name; });
     Attr(Format, {
-      const String *archetype;
+      String *archetype;
       uint8_t string_index;
       uint8_t first_to_check;
     });
@@ -473,8 +473,8 @@ typedef struct {
       uint8_t position2;
     });
     Attr(WarnUnusedResult, {
-      const String *name;
-      const String *message;
+      String *name;
+      String *message;
     });
     Attr(AllocAlign, { uint8_t position; });
     Attr(TransparentUnion, {});
@@ -483,43 +483,43 @@ typedef struct {
 
     Comment(Full, {});
     Comment(Paragraph, {});
-    Comment(Text, { const String *text; });
+    Comment(Text, { String *text; });
 
     Decl(TranslationUnit, {});
     Decl(Typedef, {
-      const String *name;
+      String *name;
       BareType type;
     });
     Decl(
-        Record, { const String *name; }, grp_class, definition);
+        Record, { String *name; }, grp_class, definition);
     Decl(Field, {
-      const String *name;
+      String *name;
       BareType type;
     });
     Decl(
         Function,
         {
-          const String *name;
+          String *name;
           BareType type;
         },
         grp_storage, inline);
     Decl(ParmVar, {
-      const String *name;
+      String *name;
       BareType type;
     });
     Decl(IndirectField, {
-      const String *name;
+      String *name;
       BareType type;
     });
-    Decl(Enum, { const String *name; });
+    Decl(Enum, { String *name; });
     Decl(EnumConstant, {
-      const String *name;
+      String *name;
       BareType type;
     });
     Decl(
         Var,
         {
-          const String *name;
+          String *name;
           BareType type;
         },
         grp_storage, grp_init_style);
@@ -532,7 +532,7 @@ typedef struct {
     Type(Typedef, {});
     Type(Qual, {}, const, volatile);
     Type(Enum, {});
-    Type(FunctionProto, { const String *name; });
+    Type(FunctionProto, { String *name; });
     Type(Paren, {});
 
     Stmt(Compound, {});
@@ -546,7 +546,7 @@ typedef struct {
     Stmt(Switch, {});
     Stmt(Case, {});
     Stmt(Default, {});
-    Stmt(Label, { const String *name; });
+    Stmt(Label, { String *name; });
     Stmt(Continue, {});
     Stmt(Break, {});
     Stmt(Do, {});
@@ -566,7 +566,7 @@ typedef struct {
 
     Literal(Integer, { Integer value; });
     Literal(Character, { char value; });
-    Literal(String, { const String *value; });
+    Literal(String, { String *value; });
 
     Operator(Unary, {}, grp_prefix_or_postfix, cannot_overflow);
     Operator(Binary, {});
@@ -583,17 +583,17 @@ typedef struct {
     Directive(
         Inclusion,
         {
-          const String *name;
-          const String *file;
-          const String *path;
+          String *name;
+          String *file;
+          String *path;
         },
         angled);
     Directive(If, {}, grp_ifx, has_else);
 
     PPDecl(Macro, {
-      const String *name;
-      const String *parameters;
-      const String *replacement;
+      String *name;
+      String *parameters;
+      String *replacement;
     });
 
     PPExpr(
@@ -609,8 +609,8 @@ typedef struct {
 } Node;
 
 typedef struct {
-  const String *kind;
-  const String *name;
+  String *kind;
+  String *name;
   Range range;
 } Semantics;
 

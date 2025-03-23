@@ -24,13 +24,13 @@ void StringSet_clear(StringSet *ss, int opt) {
   ARRAY_clear((void *)ss, sizeof(String), NULL, opt);
 }
 
-const String *StringSet_add(StringSet *ss, const String *s) {
+String *StringSet_add(StringSet *ss, const String *s) {
   size_t size = ss->i;
-  const String *y = ARRAY_hput((void *)ss, sizeof(String), StringSet_compare,
-                               StringSet_hash, NULL, NULL, s, StringSet_init);
+  String *y = ARRAY_hput((void *)ss, sizeof(String), StringSet_compare,
+                         StringSet_hash, NULL, NULL, s, StringSet_init);
   // Update the property if it's not a new string
   if (y && size == ss->i)
-    ((String *)y)->property |= s->property;
+    y->property |= s->property;
   return y;
 }
 

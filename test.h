@@ -37,8 +37,8 @@ extern __test_t test;
 #define ASSERT(value, ...)                                                     \
   do {                                                                         \
     if (!(value)) {                                                            \
-      fprintf(stderr, "%s:%d (%s)", __FILE__, __LINE__, #value);               \
-      (void)__VA_OPT__(fprintf)(__VA_OPT__(stderr, ) " " __VA_ARGS__);         \
+      fprintf(stderr, "%s:%d:ASSERT(%s) FAILED", __FILE__, __LINE__, #value);  \
+      (void)__VA_OPT__(fprintf)(__VA_OPT__(stderr, ) ":" __VA_ARGS__);         \
       return 1;                                                                \
     }                                                                          \
   } while (0)

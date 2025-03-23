@@ -1,7 +1,7 @@
 #include "scan.h"
 #include "test.h"
 
-static const String *last_loc_src;
+static String *last_loc_src;
 static unsigned last_loc_line;
 
 long ts;
@@ -14,10 +14,10 @@ SemanticsList all_semantics;
 
 static inline IMPL_ARRAY_CLEAR(SemanticsList, NULL);
 
-const String *add_string(struct string s, uint8_t property) {
+String *add_string(struct string s, uint8_t property) {
   String x = {string_hash(&s), property, s};
 
-  const String *y = StringSet_add(&all_strings, &x);
+  String *y = StringSet_add(&all_strings, &x);
   if (!y) {
     fprintf(stderr,
             "The string set is full (STRING_SET_SIZE=%u), "

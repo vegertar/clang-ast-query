@@ -171,15 +171,14 @@ bool ARRAY_bsearch(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
   return 0;
 }
 
-const void *ARRAY_hput(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
-                       ARRAY_hash_t hash, ARRAY_rehash_t rehash,
-                       ARRAY_access_t access, const void *v,
-                       ARRAY_move_t init) {
+void *ARRAY_hput(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                 ARRAY_hash_t hash, ARRAY_rehash_t rehash,
+                 ARRAY_access_t access, const void *v, ARRAY_move_t init) {
   if (!v)
     return NULL;
 
   ARRAY_size_t i = 0;
-  const void *t = ARRAY_hget(p, size, compare, hash, rehash, access, v, &i);
+  void *t = ARRAY_hget(p, size, compare, hash, rehash, access, v, &i);
 
   // Either found the target or the table is full
   if (t || i == p->n)
@@ -189,10 +188,9 @@ const void *ARRAY_hput(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
   return (init ? init : memcpy)((char *)p->data + i * size, v, size);
 }
 
-const void *ARRAY_hget(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
-                       ARRAY_hash_t hash, ARRAY_rehash_t rehash,
-                       ARRAY_access_t access, const void *v,
-                       ARRAY_size_t *slot) {
+void *ARRAY_hget(ARRAY_t *p, size_t size, ARRAY_compare_t compare,
+                 ARRAY_hash_t hash, ARRAY_rehash_t rehash,
+                 ARRAY_access_t access, const void *v, ARRAY_size_t *slot) {
   if (!v)
     return NULL;
 
@@ -211,7 +209,7 @@ const void *ARRAY_hget(const ARRAY_t *p, size_t size, ARRAY_compare_t compare,
   ARRAY_size_t i = code % p->n;
   ARRAY_size_t end = i;
 
-  const void *element;
+  void *element;
   HASH_size_t element_code;
   bool hash_collision;
 

@@ -233,7 +233,7 @@
     /* UnaryExprOrTypeTraitExpr */
     OPT_alignof
     OPT_sizeof
-    
+
     /* QualType */
     OPT_volatile
     OPT_const
@@ -327,7 +327,7 @@
   <Integer>
     INTEGER
     POINTER
-  <const String *>
+  <String *>
     NAME
     ANAME
     SQTEXT
@@ -529,8 +529,9 @@
     non_odr_use
     value_kind
     object_kind
-  <const String *>
+  <String *>
     name
+    Name
     TagText
 %%
 
@@ -708,7 +709,7 @@ TokenNode: Token Loc opt_is_arg opt_hasLeadingSpace stringified_or_paste macro_r
     $$.Token.text = $7;
   }
 
-ModeAttrNode: ModeAttr Attr NAME
+ModeAttrNode: ModeAttr Attr Name
   {
     $$.ModeAttr.node = $1;
     $$.ModeAttr.self = $2;
@@ -763,21 +764,21 @@ ConstAttrNode: ConstAttr Attr
     $$.ConstAttr.self = $2;
   }
 
-AlignedAttrNode: AlignedAttr Attr NAME
+AlignedAttrNode: AlignedAttr Attr Name
   {
     $$.AlignedAttr.node = $1;
     $$.AlignedAttr.self = $2;
     $$.AlignedAttr.name = $3;
   }
 
-RestrictAttrNode: RestrictAttr Attr NAME
+RestrictAttrNode: RestrictAttr Attr Name
   {
     $$.RestrictAttr.node = $1;
     $$.RestrictAttr.self = $2;
     $$.RestrictAttr.name = $3;
   }
 
-FormatAttrNode: FormatAttr Attr NAME INTEGER INTEGER
+FormatAttrNode: FormatAttr Attr Name INTEGER INTEGER
   {
     $$.FormatAttr.node = $1;
     $$.FormatAttr.self = $2;
@@ -800,7 +801,7 @@ AllocSizeAttrNode: AllocSizeAttr Attr INTEGER integer
     $$.AllocSizeAttr.position2 = $4.u;
   }
 
-WarnUnusedResultAttrNode: WarnUnusedResultAttr Attr NAME DQTEXT
+WarnUnusedResultAttrNode: WarnUnusedResultAttr Attr Name DQTEXT
   {
     $$.WarnUnusedResultAttr.node = $1;
     $$.WarnUnusedResultAttr.self = $2;
@@ -858,7 +859,7 @@ TranslationUnitDeclNode: TranslationUnitDecl Decl
     $$.TranslationUnitDecl.self = $2;
   }
 
-TypedefDeclNode: TypedefDecl Decl NAME BareType
+TypedefDeclNode: TypedefDecl Decl Name BareType
   {
     $$.TypedefDecl.node = $1;
     $$.TypedefDecl.self = $2;
@@ -887,7 +888,7 @@ FieldDeclNode: FieldDecl Decl name BareType
 #undef obj
   }
 
-FunctionDeclNode: FunctionDecl Decl NAME BareType storage opt_inline
+FunctionDeclNode: FunctionDecl Decl Name BareType storage opt_inline
   {
 #define obj $$.FunctionDecl
     obj.node = $1;
@@ -909,7 +910,7 @@ ParmVarDeclNode: ParmVarDecl Decl name BareType
 #undef obj
   }
 
-IndirectFieldDeclNode: IndirectFieldDecl Decl NAME BareType
+IndirectFieldDeclNode: IndirectFieldDecl Decl Name BareType
   {
 #define obj $$.IndirectFieldDecl
     obj.node = $1;
@@ -928,7 +929,7 @@ EnumDeclNode: EnumDecl Decl name
 #undef obj
   }
 
-EnumConstantDeclNode: EnumConstantDecl Decl NAME BareType
+EnumConstantDeclNode: EnumConstantDecl Decl Name BareType
   {
 #define obj $$.EnumConstantDecl
     obj.node = $1;
@@ -938,7 +939,7 @@ EnumConstantDeclNode: EnumConstantDecl Decl NAME BareType
 #undef obj
   }
 
-VarDeclNode: VarDecl Decl NAME BareType storage init_style
+VarDeclNode: VarDecl Decl Name BareType storage init_style
   {
 #define obj $$.VarDecl
     obj.node = $1;
@@ -954,6 +955,9 @@ BuiltinTypeNode: BuiltinType Type
   {
     $$.BuiltinType.node = $1;
     $$.BuiltinType.self = $2;
+
+    update_string_property($2.type.qualified, STRING_PROPERTY_BUILTIN);
+    update_string_property($2.type.desugared, STRING_PROPERTY_BUILTIN);
   }
 
 RecordTypeNode: RecordType Type
@@ -1001,7 +1005,7 @@ EnumTypeNode: EnumType Type
     $$.EnumType.self = $2;
   }
 
-FunctionProtoTypeNode: FunctionProtoType Type NAME
+FunctionProtoTypeNode: FunctionProtoType Type Name
   {
     $$.FunctionProtoType.node = $1;
     $$.FunctionProtoType.self = $2;
@@ -1270,7 +1274,7 @@ DefineDirectiveNode: DefineDirective Directive
     $$.DefineDirective.self = $2;
   }
 
-MacroPPDeclNode: MacroPPDecl PPDecl NAME SQTEXT SQTEXT
+MacroPPDeclNode: MacroPPDecl PPDecl Name SQTEXT SQTEXT
   {
     $$.MacroPPDecl.node = $1;
     $$.MacroPPDecl.self = $2;
@@ -1279,7 +1283,7 @@ MacroPPDeclNode: MacroPPDecl PPDecl NAME SQTEXT SQTEXT
     $$.MacroPPDecl.replacement = $5;
   }
 
-InclusionDirectiveNode: InclusionDirective Directive opt_angled NAME SQTEXT SQTEXT
+InclusionDirectiveNode: InclusionDirective Directive opt_angled Name SQTEXT SQTEXT
   {
     $$.InclusionDirective.node = $1;
     $$.InclusionDirective.self = $2;
@@ -1301,7 +1305,7 @@ IfDirectiveNode: IfDirective Directive If opt_has_else
     $$.IfDirective.opt_has_else = $4;
   }
 
-MacroExpansionNode: MacroExpansion Expansion opt_fast NAME POINTER
+MacroExpansionNode: MacroExpansion Expansion opt_fast Name POINTER
  {
     $$.MacroExpansion.node = $1;
     $$.MacroExpansion.self = $2;
@@ -1318,7 +1322,7 @@ ConditionalPPExprNode: ConditionalPPExpr PPExpr opt_implicit ConditionValue
     $$.ConditionalPPExpr.value = $4;
   }
 
-DefinedPPOperatorNode: DefinedPPOperator PPOperator NAME POINTER
+DefinedPPOperatorNode: DefinedPPOperator PPOperator Name POINTER
  {
     $$.DefinedPPOperator.node = $1;
     $$.DefinedPPOperator.self = $2;
@@ -1407,6 +1411,9 @@ Type: POINTER BareType opt_sugar opt_imported
     $$.type = $2;
     $$.opt_sugar = $3;
     $$.opt_imported = $4;
+
+    update_string_property($2.qualified, STRING_PROPERTY_TYPE);
+    update_string_property($2.desugared, STRING_PROPERTY_TYPE);
   }
 
 Stmt: POINTER AngledRange
@@ -1434,7 +1441,7 @@ Member: MemberCall MemberFace POINTER
 MemberCall: OPT_arrow
  | OPT_dot
 
-MemberFace: NAME { $$ = (MemberFace){0, $1}; }
+MemberFace: Name { $$ = (MemberFace){0, $1}; }
  | ANAME         { $$ = (MemberFace){1, $1}; }
 
 Operator: OPT_Comma
@@ -1512,7 +1519,7 @@ Label: SQTEXT POINTER
     $$.pointer = $2.u;
   }
 
-DeclRef: NAME POINTER SQTEXT BareType
+DeclRef: Name POINTER SQTEXT BareType
   {
     $$.decl = $1;
     $$.ref.pointer = $2.u;
@@ -1520,7 +1527,7 @@ DeclRef: NAME POINTER SQTEXT BareType
     $$.type = $4;
   }
 
-MacroRef: MACRO POINTER NAME Loc
+MacroRef: MACRO POINTER Name Loc
   {
     $$.macro.pointer = $2.u;
     $$.macro.name = $3;
@@ -1542,6 +1549,15 @@ FileLoc: SRC ':' INTEGER ':' INTEGER
     last_loc_src = $1;
     last_loc_line = $3.u;
     $$ = (Loc){last_loc_src, last_loc_line, $5.u};
+
+    uint8_t property = STRING_PROPERTY_FILE;
+    const char *src = string_get(&$1->elem);
+    if (strcmp(src, "<scratch space>") == 0 ||
+        strcmp(src, "<command line>") == 0 ||
+        strcmp(src, "<built-in>") == 0)
+      property |= STRING_PROPERTY_BUILTIN;
+
+    update_string_property($1, property);
   }
 
 LineLoc: LINE ':' INTEGER ':' INTEGER
@@ -1665,7 +1681,7 @@ object_kind: { $$ = 0; }
  | OPT_bitfield
 
 name: { $$ = NULL; }
- | NAME
+ | Name
 
 integer: { $$ = (Integer){}; }
  | INTEGER
@@ -1685,6 +1701,11 @@ macro_ref:  { $$ = (MacroRef){}; }
 Remark: Meta
  | REMARK Semantics
 
+Name: NAME
+  {
+    update_string_property($1, STRING_PROPERTY_IDENTIFIER);
+  }
+
 Meta: TS INTEGER  { ts = $2.i; }
  | TU TEXT
   {
@@ -1697,7 +1718,7 @@ Meta: TS INTEGER  { ts = $2.i; }
     strcpy(cwd, string_get(&$2->elem));
   }
 
-Semantics: NAME NAME AngledRange
+Semantics: Name Name AngledRange
   {
     SemanticsList_push(&all_semantics, (Semantics){$1, $2, $3});
   }

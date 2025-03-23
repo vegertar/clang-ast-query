@@ -136,6 +136,7 @@ static char *errmsg;
 static int errcode;
 
 static void store_dot();
+static void store_strings();
 static void store_semantics();
 
 struct error store_open(const char *db_file) {
@@ -148,6 +149,7 @@ struct error store_open(const char *db_file) {
 struct error store() {
   EXEC_SQL("BEGIN TRANSACTION");
   store_dot();
+  store_strings();
   store_semantics();
   EXEC_SQL("END TRANSACTION");
   return ERROR_OF(ES_STORE);
@@ -169,6 +171,21 @@ static void store_dot() {
   FILL_TEXT(TU, tu);
   FILL_INT(TS, ts);
   END_INSERT_INTO();
+}
+
+static void store_strings() {
+  EXEC_SQL("CREATE TABLE strings ("
+           " key TEXT PRIMARY KEY,"
+           " property INTEGER,"
+           " hash INTEGER)");
+
+  StringSet_for(all_strings, i) {
+    INSERT_INTO(strings, KEY, PROPERTY, HASH);
+    FILL_TEXT(KEY, string_get(&all_strings.data[i].elem));
+    FILL_INT(PROPERTY, all_strings.data[i].property);
+    FILL_INT(HASH, all_strings.data[i].hash);
+    END_INSERT_INTO();
+  }
 }
 
 static void store_semantics() {
@@ -214,4 +231,13 @@ struct error query_tu(char *path, int n) {
     }
   });
   return ERROR_OF(ES_QUERY_TU);
+}
+
+struct error query_strings(uint8_t property) {
+  QUERY("SELECT key, hash FROM strings WHERE (property & ?)");
+  FILL_INT(1, property);
+  END_QUERY({
+    fprintf(stderr, "%s\n", COL_TEXT(0));
+  });
+  return ERROR_OF(ES_QUERY_STRINGS);
 }

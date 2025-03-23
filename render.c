@@ -1,4 +1,5 @@
 #include "render.h"
+#include "parse.h"
 #include "store.h"
 #include "util.h"
 
@@ -64,6 +65,7 @@ struct error render(FILE *fp) {
   // Specifically, we place the semantic data at the end to make it easier to
   // detect input errors. At that moment, semantic highlighting would not work.
   // dump_semantics(fp, &source);
+  query_strings(STRING_PROPERTY_FILE);
 
   fprintf(fp, R"code(
         ],
