@@ -1,7 +1,6 @@
 #include "store.h"
 #include "parse.h"
 #include "test.h"
-#include "util.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -79,9 +78,28 @@
 
 #define BIND_TEXT(k, v, opt) sqlite3_bind_text(stmt, k, v, -1, opt)
 #define FILL_TEXT(k, v) sqlite3_bind_text(stmt, k, v, -1, SQLITE_STATIC)
-#define FILL_INT(k, v) sqlite3_bind_int(stmt, k, v)
+
+static_assert(sizeof(long) <= 8, "Should be filled in sqlite3 integer");
+
+// clang-format off
+#define FILL_INT(k, v)                                                         \
+  _Generic((v), signed            : sqlite3_bind_int,                          \
+                unsigned          : sqlite3_bind_int64,                        \
+                long              : sqlite3_bind_int64,                        \
+                char              : sqlite3_bind_int,                          \
+                unsigned char     : sqlite3_bind_int)(stmt, k, v)
+
+#define PICK_INT(k, v)                                                         \
+  v = _Generic((v),                                                            \
+                signed            : sqlite3_column_int,                        \
+                unsigned          : sqlite3_column_int64,                      \
+                long              : sqlite3_column_int64,                      \
+                char              : sqlite3_column_int,                        \
+                unsigned char     : sqlite3_column_int)(stmt, k)
+
+// clang-format on
+
 #define COL_TEXT(k) (const char *)sqlite3_column_text(stmt, k)
-#define COL_INT(k) sqlite3_column_int(stmt, k)
 #define COL_SIZE(k) sqlite3_column_bytes(stmt, k)
 
 #define OPEN_DB(file)                                                          \
@@ -218,26 +236,30 @@ static void store_semantics() {
   }
 }
 
-struct error query_tu(char *path, int n) {
+struct error query_dot(query_dot_row_t row, void *obj) {
+  assert(row);
   QUERY("SELECT cwd, tu FROM dot");
   END_QUERY({
-    const char *cwd = COL_TEXT(0);
-    int cwd_len = COL_SIZE(0);
-    const char *tu = COL_TEXT(1);
-    const char *abs_path = expand_path(cwd, cwd_len, tu, path, n);
-    if (abs_path != path) {
-      require(strlen(abs_path) < n, "prepare to strcpy");
-      strcpy(path, abs_path);
-    }
+    if (row(COL_TEXT(0), COL_SIZE(0), COL_TEXT(1), COL_SIZE(1), obj))
+      break;
   });
   return ERROR_OF(ES_QUERY_TU);
 }
 
-struct error query_strings(uint8_t property) {
-  QUERY("SELECT key, hash FROM strings WHERE (property & ?)");
+struct error query_strings(uint8_t property, query_strings_row_t row,
+                           void *obj) {
+  assert(row);
+  QUERY("SELECT key, property, hash FROM strings WHERE (property & ?)");
   FILL_INT(1, property);
   END_QUERY({
-    fprintf(stderr, "%s\n", COL_TEXT(0));
+    uint8_t property;
+    uint32_t hash;
+
+    PICK_INT(1, property);
+    PICK_INT(2, hash);
+
+    if (row(COL_TEXT(0), COL_SIZE(0), property, hash, obj))
+      break;
   });
   return ERROR_OF(ES_QUERY_STRINGS);
 }

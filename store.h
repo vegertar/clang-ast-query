@@ -7,6 +7,12 @@ struct error store_open(const char *db_file);
 struct error store();
 struct error store_close();
 
-struct error query_tu(char *path, int n);
-struct error query_strings(uint8_t property);
+typedef bool (*query_dot_row_t)(const char *cwd, int cwd_len, const char *tu,
+                                int tu_len, void *obj);
+struct error query_dot(query_dot_row_t row, void *obj);
+
+typedef bool (*query_strings_row_t)(const char *key, int key_len,
+                                    uint8_t property, uint32_t hash, void *obj);
+struct error query_strings(uint8_t property, query_strings_row_t row,
+                           void *obj);
 struct error query_semantics();

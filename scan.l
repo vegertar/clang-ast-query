@@ -93,7 +93,7 @@
     return (errno || *end) ? TOK_YYUNDEF : TOK_##X;                           \
   } while (0)
 
-#define add_static(s, n) add_string(string_static(s, n), 0)
+#define add_static(s, n) add_string(string_static(s, n))
 
 %}
 

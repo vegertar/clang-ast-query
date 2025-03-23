@@ -14,8 +14,8 @@ SemanticsList all_semantics;
 
 static inline IMPL_ARRAY_CLEAR(SemanticsList, NULL);
 
-String *add_string(struct string s, uint8_t property) {
-  String x = {string_hash(&s), property, s};
+String *add_string(struct string s) {
+  String x = {string_hash(&s), 0, s};
 
   String *y = StringSet_add(&all_strings, &x);
   if (!y) {

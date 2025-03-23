@@ -12,6 +12,8 @@ enum string_flag {
   STRING_FLAG_LITERAL,
 };
 
+#define STRING_MASK_STATIC 1
+
 struct string {
   union {
     HSTR;
@@ -45,7 +47,7 @@ struct string *string_clear(struct string *p, int opt);
 static inline struct string string_create(const char *s, string_size_t n,
                                           unsigned flag) {
   struct string string = {};
-  if (flag & 1) {
+  if (flag & STRING_MASK_STATIC) {
     string.flag = flag;
     string.data = (void *)s;
     string.i = n;
@@ -55,23 +57,26 @@ static inline struct string string_create(const char *s, string_size_t n,
   return string;
 }
 
-#define string_static(s, n) string_create(s, n, 1)
-#define string_literal(s) string_create(s, sizeof(s) - 1, 3)
+#define string_from(s, n) string_create(s, n, 0)
+#define string_static(s, n) string_create(s, n, STRING_FLAG_STATIC)
+#define string_literal(s) string_create(s, sizeof(s) - 1, STRING_FLAG_LITERAL)
 
 static inline const char *string_get(const struct string *p) {
-  return p->flag == 0 ? p->s : p->data;
+  return p->flag == STRING_FLAG_ON_STACK ? p->s : p->data;
 }
 
 static inline string_size_t string_len(const struct string *p) {
-  return p->flag == 0 ? p->size : p->i;
+  return p->flag == STRING_FLAG_ON_STACK ? p->size : p->i;
 }
 
 static inline bool string_owned(const struct string *p) {
-  return (p->flag & 1) == 0;
+  return (p->flag & STRING_MASK_STATIC) == 0;
 }
 
 static inline struct string string_dup(const struct string *p) {
-  return p->flag == 3 ? *p : string_create(string_get(p), string_len(p), 0);
+  return p->flag == STRING_FLAG_LITERAL
+             ? *p
+             : string_create(string_get(p), string_len(p), 0);
 }
 
 static inline struct string *string_append(struct string *p, const char *s,

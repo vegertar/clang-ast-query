@@ -5,10 +5,10 @@
 #include <string.h>
 
 struct string *string_reserve(struct string *p, string_size_t n) {
-  if (p->flag == 2) {
+  if (p->flag == STRING_FLAG_ON_HEAP) {
     ARRAY_reserve((void *)p, sizeof(p->data[0]), proper_capacity(n + 1));
-  } else if (p->flag & 1 || STRING_BUFSIZ_ON_STACK - 1 < n) {
-    struct string heap = {.flag = 2};
+  } else if (p->flag & STRING_MASK_STATIC || STRING_BUFSIZ_ON_STACK - 1 < n) {
+    struct string heap = {.flag = STRING_FLAG_ON_HEAP};
     ARRAY_reserve((void *)&heap, sizeof(heap.data[0]), proper_capacity(n + 1));
     string_size_t len = string_len(p);
     memcpy(heap.data, string_get(p), len);
@@ -64,17 +64,17 @@ struct string *string_insert(struct string *p, string_size_t i, const char *s,
 
 struct string *string_clear(struct string *p, int opt) {
   switch (p->flag) {
-  case 0:
+  case STRING_FLAG_ON_STACK:
     p->size = 0;
     p->s[0] = 0;
     break;
-  case 2:
+  case STRING_FLAG_ON_HEAP:
     ARRAY_clear((void *)p, sizeof(p->data[0]), NULL, opt);
     if (p->data)
       p->data[0] = 0;
     break;
-  case 1:
-  case 3:
+  case STRING_FLAG_STATIC:
+  case STRING_FLAG_LITERAL:
     p->data = NULL;
     p->i = 0;
     break;

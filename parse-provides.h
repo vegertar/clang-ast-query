@@ -1,9 +1,13 @@
 #include "util.h"
 
-#define STRING_PROPERTY_FILE 1U
-#define STRING_PROPERTY_IDENTIFIER 2U
-#define STRING_PROPERTY_BUILTIN 4U
-#define STRING_PROPERTY_TYPE 8U
+// Note that a string could have multiple properties due to the same hash.
+enum string_property : uint8_t {
+  SP_FILE = 1,
+  SP_IDENTIFIER = 2,
+  SP_BUILTIN = 4,
+  SP_TYPE = 8,
+  SP_VAR = 16,
+};
 
 extern long ts;
 extern char tu[PATH_MAX];
@@ -25,9 +29,9 @@ extern SemanticsList all_semantics;
 void yyerror(const YYLTYPE *loc, const UserContext *uctx, char const *format,
              ...) __attribute__((__format__(__printf__, 3, 4)));
 
-String *add_string(struct string s, uint8_t property);
+String *add_string(struct string s);
 
-static inline void update_string_property(String *s, uint8_t property) {
+static inline void add_string_property(String *s, uint8_t property) {
   if (s)
     s->property |= property;
 }

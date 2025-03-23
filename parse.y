@@ -949,6 +949,8 @@ VarDeclNode: VarDecl Decl Name BareType storage init_style
     SET_OPTIONS(obj, $5, storage);
     SET_OPTIONS(obj, $6, init_style);
 #undef obj
+
+    add_string_property($3, SP_VAR);
   }
 
 BuiltinTypeNode: BuiltinType Type
@@ -956,8 +958,8 @@ BuiltinTypeNode: BuiltinType Type
     $$.BuiltinType.node = $1;
     $$.BuiltinType.self = $2;
 
-    update_string_property($2.type.qualified, STRING_PROPERTY_BUILTIN);
-    update_string_property($2.type.desugared, STRING_PROPERTY_BUILTIN);
+    add_string_property($2.type.qualified, SP_BUILTIN);
+    add_string_property($2.type.desugared, SP_BUILTIN);
   }
 
 RecordTypeNode: RecordType Type
@@ -1412,8 +1414,8 @@ Type: POINTER BareType opt_sugar opt_imported
     $$.opt_sugar = $3;
     $$.opt_imported = $4;
 
-    update_string_property($2.qualified, STRING_PROPERTY_TYPE);
-    update_string_property($2.desugared, STRING_PROPERTY_TYPE);
+    add_string_property($2.qualified, SP_TYPE);
+    add_string_property($2.desugared, SP_TYPE);
   }
 
 Stmt: POINTER AngledRange
@@ -1550,14 +1552,13 @@ FileLoc: SRC ':' INTEGER ':' INTEGER
     last_loc_line = $3.u;
     $$ = (Loc){last_loc_src, last_loc_line, $5.u};
 
-    uint8_t property = STRING_PROPERTY_FILE;
     const char *src = string_get(&$1->elem);
     if (strcmp(src, "<scratch space>") == 0 ||
         strcmp(src, "<command line>") == 0 ||
         strcmp(src, "<built-in>") == 0)
-      property |= STRING_PROPERTY_BUILTIN;
+      add_string_property($1, SP_BUILTIN);
 
-    update_string_property($1, property);
+    add_string_property($1, SP_FILE);
   }
 
 LineLoc: LINE ':' INTEGER ':' INTEGER
@@ -1703,7 +1704,7 @@ Remark: Meta
 
 Name: NAME
   {
-    update_string_property($1, STRING_PROPERTY_IDENTIFIER);
+    add_string_property($1, SP_IDENTIFIER);
   }
 
 Meta: TS INTEGER  { ts = $2.i; }
