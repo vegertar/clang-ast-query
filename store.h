@@ -15,4 +15,10 @@ typedef bool (*query_strings_row_t)(const char *key, int key_len,
                                     uint8_t property, uint32_t hash, void *obj);
 struct error query_strings(uint8_t property, query_strings_row_t row,
                            void *obj);
-struct error query_semantics();
+
+typedef bool (*query_semantics_row_t)(unsigned begin_row, unsigned begin_col,
+                                      unsigned end_row, unsigned end_col,
+                                      const char *kind, const char *name,
+                                      void *obj);
+struct error query_semantics(unsigned src, query_semantics_row_t row,
+                             void *obj);

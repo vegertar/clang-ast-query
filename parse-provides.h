@@ -7,6 +7,7 @@ enum string_property : uint8_t {
   SP_BUILTIN = 4,
   SP_TYPE = 8,
   SP_VAR = 16,
+  SP_TU = 32,
 };
 
 extern long ts;

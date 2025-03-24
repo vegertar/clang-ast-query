@@ -1712,6 +1712,7 @@ Meta: TS INTEGER  { ts = $2.i; }
   {
     assert(string_len(&$2->elem) < PATH_MAX);
     strcpy(tu, string_get(&$2->elem));
+    add_string_property($2, SP_TU);
   }
  | CWD TEXT
   {

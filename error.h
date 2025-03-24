@@ -28,7 +28,7 @@ static inline const char *get_error_name(struct error err) {
 #include "errset-inc.h"
   }
 
-  return (void *)0;
+  return nullptr;
 }
 
 #define require(x, fmt, ...)                                                   \

@@ -15,11 +15,24 @@ import {
 } from "https://cdn.jsdelivr.net/npm/@codemirror/state@6.4.1/+esm";
 import isEqual from "https://cdn.jsdelivr.net/npm/lodash.isequal@4.5.0/+esm";
 
+/**
+ * @typedef Config
+ * @type {{
+ *   id?: string,
+ *   parent?: Element | DocumentFragment,
+ * }}
+ */
+
 export class ReaderView {
-  constructor({ doc, data, parent }) {
+  /**
+   *
+   * @param {Config} config
+   */
+  constructor(config) {
+    const { id = getDefaultId(), parent = getDefaultParent() } = config || {};
     this.editor = new EditorView({
       parent,
-      doc: Text.of(doc),
+      doc: Text.of(getData(id, "source")),
       extensions: [
         EditorState.readOnly.of(true),
         lineNumbers(),
@@ -29,7 +42,7 @@ export class ReaderView {
         // decl(data),
         // macroDecl(data),
         // testMacroDecl(data),
-        semantics(data),
+        semantics(getData(id, "semantics")),
       ],
     });
   }
@@ -47,6 +60,31 @@ class RangeValue extends BaseRangeValue {
   eq(other) {
     return this.#eq(this.value, other.value);
   }
+}
+
+/**
+ *
+ * @returns {string | undefined}
+ */
+function getDefaultId() {
+  return document.querySelector("script[data-main]")?.dataset.id;
+}
+
+function getDefaultParent() {
+  return document.body.firstElementChild || document.body;
+}
+
+/**
+ *
+ * @param {string} id
+ * @param {string} type
+ * @returns {any[]}
+ */
+function getData(id, type) {
+  const node = document.querySelector(
+    `script[data-id="${id}"][data-type="${type}"]`
+  );
+  return node?.data || [];
 }
 
 var i = 0;
@@ -427,27 +465,25 @@ function macroDecl(data) {
  * @returns
  */
 function semantics(data) {
-  if (!validate(data, "semantics")) return nul;
-
-  const first = ++i;
-  while (validate(data)) i += 5;
-  const last = i;
-
   return StateField.define({
     create({ doc }) {
       const ranges = [];
-      for (let j = first; j < last; ) {
+      for (let j = 0, n = data.length; j < n; ) {
         const beginRow = data[j++];
         const beginCol = data[j++];
         const endRow = data[j++];
         const endCol = data[j++];
         const kind = data[j++];
+        const name = data[j++];
 
         const from = doc.line(beginRow).from + beginCol - 1;
         const to = doc.line(endRow).from + endCol - 1;
 
         ranges.push(
-          Decoration.mark({ class: `semantics ${kind}` }).range(from, to)
+          Decoration.mark({ class: `semantics ${kind} ${name}` }).range(
+            from,
+            to
+          )
         );
       }
 

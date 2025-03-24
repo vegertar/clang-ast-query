@@ -1,6 +1,6 @@
 LEX= flex
 YACC= bison
-LEXFLAGS= 
+LEXFLAGS=
 YACCFLAGS= -Werror
 
 CC= cc
@@ -69,9 +69,6 @@ test-fun: build
 
 caq: ${OBJS}
 	${CC} -o $@ $^ ${LDFLAGS}
-
-readerjs-inc.h: reader.js
-	xxd -i $< > $@
 
 parse.h: parse.c
 parse.c: parse.y

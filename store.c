@@ -263,3 +263,28 @@ struct error query_strings(uint8_t property, query_strings_row_t row,
   });
   return ERROR_OF(ES_QUERY_STRINGS);
 }
+
+struct error query_semantics(unsigned src, query_semantics_row_t row,
+                             void *obj) {
+  assert(row);
+  QUERY("SELECT begin_row, begin_col, end_row, end_col, kind, name"
+        " FROM semantics"
+        " WHERE begin_src = ?"
+        " ORDER BY begin_row, begin_col");
+  FILL_INT(1, src);
+  END_QUERY({
+    unsigned begin_row, begin_col, end_row, end_col;
+
+    PICK_INT(0, begin_row);
+    PICK_INT(1, begin_col);
+    PICK_INT(2, end_row);
+    PICK_INT(3, end_col);
+
+    const char *kind = COL_TEXT(4);
+    const char *name = COL_TEXT(5);
+
+    if (row(begin_row, begin_col, end_row, end_col, kind, name, obj))
+      break;
+  });
+  return ERROR_OF(ES_QUERY_SEMANTICS);
+}
