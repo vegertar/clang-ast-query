@@ -12,6 +12,7 @@ NodeList all_nodes;
 StringSet all_strings;
 SemanticsList all_semantics;
 
+static inline IMPL_ARRAY_CLEAR(NodeList, NULL);
 static inline IMPL_ARRAY_CLEAR(SemanticsList, NULL);
 
 String *add_string(struct string s) {
@@ -44,6 +45,8 @@ struct error parse_halt() {
   TOGGLE(log_string_set_load_factor,
          fprintf(stderr, "The load factor of string set is %.2f\n",
                  (float)all_strings.i / all_strings.n));
+
+  NodeList_clear(&all_nodes, 1);
   StringSet_clear(&all_strings, 1);
   SemanticsList_clear(&all_semantics, 1);
   return (struct error){};

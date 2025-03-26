@@ -43,14 +43,16 @@ typedef struct {
 typedef struct {
   struct error err;
   FILE *out;
-} SemanticsRowContext;
+} CommonRowContext;
 
 typedef DECL_ARRAY(SourceList, Source) SourceList;
 
 SourceList all_sources;
 
 static inline int compare_source(const void *a, const void *b, size_t n) {
-  return ((const String *)a)->hash - ((const String *)b)->hash;
+  auto x = ((const String *)a)->hash;
+  auto y = ((const String *)b)->hash;
+  return x == y ? 0 : x < y ? -1 : 1;
 }
 
 static void destroy_source(void *p) {
@@ -91,8 +93,8 @@ struct error render_halt() {
   return (struct error){};
 }
 
-static inline bool dot_row(const char *cwd, int cwd_len, const char *tu,
-                           int tu_len, void *obj) {
+static inline bool meta_row(const char *cwd, int cwd_len, const char *tu,
+                            int tu_len, void *obj) {
   assert(cwd_len < sizeof(state.cwd));
   strcpy(state.cwd, cwd);
 
@@ -102,7 +104,7 @@ static inline bool dot_row(const char *cwd, int cwd_len, const char *tu,
   return true;
 }
 
-static struct error load_state() { return query_dot(dot_row, NULL); }
+static struct error load_state() { return query_meta(meta_row, NULL); }
 
 static inline bool strings_row(const char *key, int key_len, uint8_t property,
                                uint32_t hash, void *obj) {
@@ -153,7 +155,7 @@ static struct error render_sources(FILE *fp) {
 bool semantics_row(unsigned begin_row, unsigned begin_col, unsigned end_row,
                    unsigned end_col, const char *kind, const char *name,
                    void *obj) {
-  SemanticsRowContext *ctx = obj;
+  CommonRowContext *ctx = obj;
   assert(ctx && ctx->out);
 
   if (fprintf(ctx->out, "%u,%u,%u,%u,'%s','%s',\n", begin_row, begin_col,
@@ -173,8 +175,46 @@ struct error render_semantics(FILE *fp) {
 )code",
          src);
 
-    SemanticsRowContext ctx = {.out = fp};
+    CommonRowContext ctx = {.out = fp};
     EVAL(query_semantics(src, semantics_row, &ctx));
+    EVAL(ctx.err);
+
+    DUMP(fp, R"code(];
+    </script>)code");
+  }
+  return err;
+}
+
+static inline bool check_link(unsigned link) {
+  Source src = {{.hash = link}};
+  return SourceList_bsearch(&all_sources, &src, NULL);
+}
+
+bool link_row(unsigned begin_row, unsigned begin_col, unsigned end_row,
+              unsigned end_col, unsigned link, void *obj) {
+  CommonRowContext *ctx = obj;
+  assert(ctx && ctx->out);
+  assert(check_link(link));
+
+  if (fprintf(ctx->out, "%u,%u,%u,%u,%u,\n", begin_row, begin_col, end_row,
+              end_col, link) < 0)
+    ctx->err = (struct error){ES_RENDER};
+
+  return ctx->err.es;
+}
+
+struct error render_link(FILE *fp) {
+  struct error err = {};
+  for (unsigned i = 0; i < all_sources.i; ++i) {
+    unsigned src = all_sources.data[i].file.hash;
+    DUMP(fp, R"code(
+    <script data-id='%u' data-type='link'>
+      document.currentScript.data = [
+)code",
+         src);
+
+    CommonRowContext ctx = {.out = fp};
+    EVAL(query_link(src, link_row, &ctx));
     EVAL(ctx.err);
 
     DUMP(fp, R"code(];
@@ -217,6 +257,7 @@ struct error render(FILE *fp) {
   // HTML into many small pieces of scripts before serving.
   EVAL(render_sources(fp));
   EVAL(render_semantics(fp));
+  EVAL(render_link(fp));
 
   DUMP(fp, R"code(
   </head>

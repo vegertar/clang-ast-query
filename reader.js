@@ -44,7 +44,7 @@ export class ReaderView {
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
-        // link(data),
+        link(getData(id, "link")),
         // decl(data),
         // macroDecl(data),
         // testMacroDecl(data),
@@ -93,38 +93,17 @@ function getData(id, type) {
   return node?.data || [];
 }
 
-var i = 0;
-const nul = [];
-
-/**
- *
- * @param {any[]} data
- * @param {string} [s]
- * @returns
- */
-function validate(data, s) {
-  return s
-    ? typeof data[i] === "symbol" && data[i].description === s
-    : i < data.length && typeof data[i] !== "symbol";
-}
-
 /**
  *
  * @param {any[]} data
  * @returns
  */
 function link(data) {
-  if (!validate(data, "link")) return nul;
-
-  const first = ++i;
-  while (validate(data)) i += 5;
-  const last = i;
-
   return StateField.define({
     create({ doc }) {
       const builder = new RangeSetBuilder();
 
-      for (let j = first; j < last; ) {
+      for (let j = 0, n = data.length; j < n; ) {
         const beginRow = data[j++];
         const beginCol = data[j++];
         const endRow = data[j++];
@@ -174,7 +153,7 @@ function link(data) {
         ".link .file": {
           color: "#A31515",
           fontWeight: "bold",
-          quotes: `'"' '"' "<" ">"`,
+          quotes: `'"' '"'`,
         },
         ".link .file::before": {
           content: "open-quote",

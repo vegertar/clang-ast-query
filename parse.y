@@ -533,6 +533,8 @@
     name
     Name
     TagText
+  <unsigned>
+    indent
 %%
 
 // Naming conventions:
@@ -540,14 +542,10 @@
 // - All "opt_" leading names are optional options.
 // - All "OPT_" leading names are necessary options.
 
-Start: Node EOL
-  {
-    // ast_push(&ast, $1);
-  }
- | INDENT Node EOL
+Start: indent Node EOL
   {
     $2.level = $1 / 2;
-    // ast_push(&ast, $2);
+    NodeList_push(&all_nodes, $2);
   }
  | Remark EOL
 
@@ -1683,6 +1681,9 @@ object_kind: { $$ = 0; }
 
 name: { $$ = NULL; }
  | Name
+
+indent: { $$ = 0; }
+ | INDENT
 
 integer: { $$ = (Integer){}; }
  | INTEGER

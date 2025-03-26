@@ -14,9 +14,10 @@ extern long ts;
 extern char tu[PATH_MAX];
 extern char cwd[PATH_MAX];
 
-typedef DECL_ARRAY(ANON, Node) NodeList;
-typedef DECL_ARRAY(SemanticsList, Semantics) SemanticsList;
+typedef DECL_ARRAY(NodeList, Node) NodeList;
+static inline IMPL_ARRAY_PUSH(NodeList, Node);
 
+typedef DECL_ARRAY(SemanticsList, Semantics) SemanticsList;
 static inline IMPL_ARRAY_PUSH(SemanticsList, Semantics);
 
 extern NodeList all_nodes;
