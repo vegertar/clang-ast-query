@@ -14,7 +14,7 @@ CPPFLAGS+= -DNDEBUG
 CFLAGS+= -O2
 CXXFLAGS+= -O2
 else
-CFLAGS+= -g -O0
+CFLAGS+= -g -O0 -DREADER_JS='"./reader.js"'
 CXXFLAGS+= -g -O0
 endif
 

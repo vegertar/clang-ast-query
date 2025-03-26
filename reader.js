@@ -35,6 +35,12 @@ export class ReaderView {
       doc: Text.of(getData(id, "source")),
       extensions: [
         EditorState.readOnly.of(true),
+        // Warn the user that there is some code unstyled.
+        EditorView.baseTheme({
+          ".cm-line": {
+            color: "yellow",
+          },
+        }),
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),

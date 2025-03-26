@@ -188,6 +188,7 @@ struct error render(FILE *fp) {
 
   struct error err = next_error(load_state(), load_sources());
 
+  // We provide the reader as a module script which already implied 'defer'.
   DUMP(fp,
        R"code(
 <!DOCTYPE html>
@@ -196,11 +197,11 @@ struct error render(FILE *fp) {
     <title>%s</title>
     <meta charset='utf-8'>
     <style></style>
-    <script defer type='module'>
+    <script type='module'>
 )code"
 #ifdef READER_JS
        R"code(
-      import {ReaderView} from '%.*s'
+      import {ReaderView} from '%.*s';
 )code"
 #else
        R"code(%.*s)code"
@@ -210,6 +211,10 @@ struct error render(FILE *fp) {
     </script>)code",
        state.tu, (int)reader_js_len, reader_js);
 
+  // We provide data by classic scripts without 'defer' or 'async'.
+  // For a big project involving hundreds of thousands of files, the generated
+  // final HTML will be too huge to fetch and load, one can roughly split the
+  // HTML into many small pieces of scripts before serving.
   EVAL(render_sources(fp));
   EVAL(render_semantics(fp));
 

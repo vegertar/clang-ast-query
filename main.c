@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
       exit(1);
     }
 
-  // Leave all options after `--` to final build stage
+  // Leave all options after `--` to the build stage
   char **opts = argv + optind;
 
   // handle Clang options roughly

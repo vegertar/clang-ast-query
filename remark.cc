@@ -27,9 +27,9 @@ static inline const char *get_macro_kind(const MacroInfo *info) {
 
   unsigned kind = 0;
   if (info->isBuiltinMacro())
-    kind |= 1;
+    kind |= 1U;
   if (info->isFunctionLike())
-    kind |= 2;
+    kind |= 2U;
 
   switch (kind) {
   case 1:
@@ -103,36 +103,52 @@ struct macro_expansion {
 
 class index_value_t {
   static const std::uintptr_t mask = 7;
-  static const std::uintptr_t bits = 8;
+  static const std::uintptr_t size = 8;
 
   template <typename T> static constexpr bool is_compatible() {
-    return alignof(T) >= bits && alignof(T) % bits == 0;
+    return alignof(T) >= size && alignof(T) % size == 0;
   }
+
+  enum class compatible_index : uint8_t {
+    IdentifierInfo,
+    Decl,
+    expanded_decl,
+    macro_expansion,
+    macro_reference,
+    N,
+  };
+
+  static_assert((unsigned)compatible_index::N <= size);
 
 public:
   index_value_t() : data(nullptr) {}
 
-  explicit index_value_t(const IdentifierInfo *p) : data((void *)p) {
+  explicit index_value_t(const IdentifierInfo *p)
+      : data((char *)p + (unsigned)compatible_index::IdentifierInfo) {
     static_assert(is_compatible<IdentifierInfo>());
     assert(is_ident() && get_raw() == p);
   }
 
-  explicit index_value_t(const Decl *p) : data((char *)p + 1) {
+  explicit index_value_t(const Decl *p)
+      : data((char *)p + (unsigned)compatible_index::Decl) {
     static_assert(is_compatible<Decl>());
     assert(is_decl() && get_raw() == p);
   }
 
-  explicit index_value_t(expanded_decl *p) : data((char *)p + 2) {
+  explicit index_value_t(expanded_decl *p)
+      : data((char *)p + (unsigned)compatible_index::expanded_decl) {
     static_assert(is_compatible<expanded_decl>());
     assert(is_expanded_decl() && get_raw() == p);
   }
 
-  explicit index_value_t(const macro_expansion *p) : data((char *)p + 3) {
+  explicit index_value_t(const macro_expansion *p)
+      : data((char *)p + (unsigned)compatible_index::macro_expansion) {
     static_assert(is_compatible<macro_expansion>());
     assert(is_expansion() && get_raw() == p);
   }
 
-  explicit index_value_t(const macro_reference *p) : data((char *)p + 4) {
+  explicit index_value_t(const macro_reference *p)
+      : data((char *)p + (unsigned)compatible_index::macro_reference) {
     static_assert(is_compatible<macro_reference>());
     assert(is_macro() && get_raw() == p);
   }
@@ -143,15 +159,23 @@ public:
 
   bool is_valid() const { return kind() || data; }
 
-  bool is_ident() const { return data && kind() == 0; }
+  bool is_ident() const {
+    return data && kind() == (unsigned)compatible_index::IdentifierInfo;
+  }
 
-  bool is_decl() const { return kind() == 1; }
+  bool is_decl() const { return kind() == (unsigned)compatible_index::Decl; }
 
-  bool is_expanded_decl() const { return kind() == 2; }
+  bool is_expanded_decl() const {
+    return kind() == (unsigned)compatible_index::expanded_decl;
+  }
 
-  bool is_expansion() const { return kind() == 3; }
+  bool is_expansion() const {
+    return kind() == (unsigned)compatible_index::macro_expansion;
+  }
 
-  bool is_macro() const { return kind() == 4; }
+  bool is_macro() const {
+    return kind() == (unsigned)compatible_index::macro_reference;
+  }
 
   const IdentifierInfo *get_ident() const {
     assert(is_ident());
@@ -195,6 +219,15 @@ public:
     this->option = 0;
   }
 
+  semantic_token(CharSourceRange range, uintptr_t kind)
+      : semantic_token({range.getBegin(), range.getEnd()}, kind) {}
+
+  semantic_token(SourceLocation loc, uintptr_t kind)
+      : semantic_token({loc, loc.getLocWithOffset(1)}, kind) {}
+
+  semantic_token(const Token &tok)
+      : semantic_token({tok.getLocation(), tok.getEndLoc()}, tok.getKind()) {}
+
   semantic_token(SourceRange range, const Decl *p)
       : semantic_token(range, reinterpret_cast<uintptr_t>(p)) {
     this->is_decl = 1;
@@ -219,6 +252,7 @@ public:
   //   this->is_expansion = 1;
   // }
 
+  void set_pp_kw(bool v) { is_pp_kw = v; }
   void set_comment(bool v) { is_comment = v; }
 
   void dump(raw_ostream &out, TextNodeDumper &dumper) {
@@ -241,19 +275,12 @@ private:
   union {
     unsigned char option;
     struct {
-      unsigned char is_pp : 1;
+      unsigned char is_pp_kw : 1;
       unsigned char is_comment : 1;
       unsigned char is_decl : 1;
       unsigned char is_expansion : 1;
     };
   };
-
-  static constexpr std::pair<const char *, const char *> token_names[] = {
-#define TOK(X) {"TOKEN", #X},
-#define KEYWORD(X, Y) {"KEYWORD", #X},
-#define PUNCTUATOR(X, Y) {"PUNCTUATION", #X},
-#include "clang/Basic/TokenKinds.def"
-      {nullptr, nullptr}};
 
   static constexpr const char *comment_names[] = {
       "invalid",           "bcpl_comment",
@@ -262,40 +289,55 @@ private:
       "qt_comment",        "merged_comment",
   };
 
-  static std::pair<const char *, const char *> token_name(int kind) {
-    std::pair<const char *, const char *> v = semantic_token::token_names[kind];
-
-    if (tok::isLiteral(static_cast<tok::TokenKind>(kind)))
-      v.first = "LITERAL";
-    else if (kind == tok::identifier)
-      v.first = "IDENTIFIER";
-
-    return v;
-  }
-
   std::pair<const char *, const char *> token_name() {
-    std::pair<const char *, const char *> v = {};
-    if (is_expansion) {
-      // TODO:
-    }
-
-    if (is_decl) {
-      return {"IDENTIFIER",
-              kind ? reinterpret_cast<const Decl *>(kind)->getDeclKindName()
-                   : "undefined"};
-    }
+    if (is_pp_kw)
+      return {"PPKEYWORD",
+              getPPKeywordSpelling(static_cast<tok::PPKeywordKind>(kind))};
 
     if (is_comment) {
       assert(kind < sizeof(comment_names) / sizeof(*comment_names));
       return {"COMMENT", comment_names[kind]};
     }
 
-    if (is_pp) {
-      return {"PPKEYWORD",
-              tok::getPPKeywordSpelling(static_cast<tok::PPKeywordKind>(kind))};
+    if (is_expansion) {
+      // TODO:
     }
 
-    return semantic_token::token_name(kind);
+    if (is_decl)
+      return {"IDENTIFIER",
+              kind ? reinterpret_cast<const Decl *>(kind)->getDeclKindName()
+                   : "undefined"};
+
+    std::pair<const char *, const char *> v;
+    switch (static_cast<tok::TokenKind>(kind)) {
+
+#define TOK(X)                                                                 \
+  case tok::X:                                                                 \
+    v = {"TOKEN", #X};                                                         \
+    break;
+
+#define KEYWORD(X, Y)                                                          \
+  case tok::kw_##X:                                                            \
+    v = {"KEYWORD", #X};                                                       \
+    break;
+
+#define PUNCTUATOR(X, Y)                                                       \
+  case tok::X:                                                                 \
+    v = {"PUNCTUATION", #X};                                                   \
+    break;
+
+#include "clang/Basic/TokenKinds.def"
+
+    default:
+      assert(false && "Unknown TokenKind");
+    }
+
+    if (tok::isLiteral(static_cast<tok::TokenKind>(kind)))
+      v.first = "LITERAL";
+    else if (tok::isAnyIdentifier(static_cast<tok::TokenKind>(kind)))
+      v.first = "IDENTIFIER";
+
+    return v;
   }
 };
 
@@ -369,12 +411,12 @@ public:
   ast_consumer(std::unique_ptr<raw_line_ostream> os, Preprocessor &pp)
       : out(*os), pp(pp), os(std::move(os)), visitor(*this),
         last_expansion(0, 0), dir(0) {
-    directive_nodes.emplace_back();
+    directive_nodes.emplace_back(); // Add the dummy root
   }
 
 protected:
   void Initialize(ASTContext &context) override {
-    dumper.emplace(out, context, false);
+    dumper.emplace(out, context, false /* ShowColors */);
     pp.addPPCallbacks(std::make_unique<pp_callback>(*this));
     pp.setTokenWatcher([this](auto &token) { on_token_lexed(token); });
   }
@@ -635,7 +677,20 @@ private:
     explicit pp_callback(ast_consumer &ast) : ast(ast) {}
 
     void MacroDefined(const Token &token, const MacroDirective *md) override {
-      ast.add_directive<def_directive>(token.getIdentifierInfo(), md);
+      // The range is starting from hash and ends past the macro body.
+      SourceRange range;
+      auto id = token.getIdentifierInfo();
+      if (auto locations = ast.find_define_locations(md->getLocation());
+          locations.hash_loc.isValid()) {
+        range.setBegin(locations.hash_loc);
+        range.setEnd(get_macro_end(md->getMacroInfo(), id));
+
+        if (!ast.is_written_internally(locations.hash_loc)) {
+          ast.semantic_tokens.emplace_back(locations.hash_loc, tok::hash);
+        }
+      }
+
+      ast.add_directive<def_directive>(id, md, range);
     }
 
     void MacroExpands(const Token &token, const MacroDefinition &def,
@@ -788,16 +843,17 @@ private:
                             const Module *suggested_module,
                             bool module_imported,
                             SrcMgr::CharacteristicKind file_type) override {
-      auto include_ii = include_tok.getIdentifierInfo();
-      assert(include_ii);
-
       add_sub_directive<directive_inclusion>(
           hash_loc,
           SourceRange{filename_range.getBegin(), filename_range.getEnd()},
-          include_ii->getName(), filename,
+          include_tok.getIdentifierInfo()->getName(), filename,
           file ? file->getFileEntry().tryGetRealPathName() : "", is_angled);
       ast.inclusion_stack.push_back(ast.directives.size() - 1);
       ast.add_expansion();
+
+      ast.semantic_tokens.emplace_back(hash_loc, tok::hash);
+      ast.semantic_tokens.emplace_back(include_tok).set_pp_kw(true);
+      ast.semantic_tokens.emplace_back(filename_range, tok::header_name);
     }
 
     void FileChanged(SourceLocation loc, FileChangeReason reason,
@@ -957,6 +1013,7 @@ private:
   struct def_directive {
     const IdentifierInfo *id;
     const MacroDirective *md;
+    SourceRange range;
   };
 
   struct if_directive {
@@ -1271,26 +1328,7 @@ private:
         ast.dumper->dumpPointer(prev);
       }
 
-      // The range is starting from hash and ends past the macro body.
-      SourceRange range;
-      if (auto locations = ast.find_define_locations(loc);
-          locations.hash_loc.isValid()) {
-        range.setBegin(locations.hash_loc);
-        range.setEnd(get_macro_end(mi, id));
-
-        if (!ast.is_written_internally(locations.hash_loc)) {
-          // TODO:
-          // ast.semantic_tokens.emplace_back(
-          //     SourceRange{locations.hash_loc,
-          //                 locations.hash_loc.getLocWithOffset(1)},
-          //     tok::hash);
-          // ast.semantic_tokens.emplace_back(
-          //     SourceRange{locations.keyword_loc, locations.keyword_end},
-          //     tok::pp_define, true);
-        }
-      }
-
-      ast.dumper->dumpSourceRange(range);
+      ast.dumper->dumpSourceRange(arg.range);
       ast.out << ' ';
       // The location is just the macro name.
       ast.dumper->dumpLocation(loc);
