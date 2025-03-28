@@ -236,7 +236,6 @@ struct error render(FILE *fp) {
   <head>
     <title>%s</title>
     <meta charset='utf-8'>
-    <style></style>
     <script type='module'>
 )code"
 #ifdef READER_JS

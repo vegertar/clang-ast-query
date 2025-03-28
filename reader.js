@@ -18,8 +18,10 @@ import * as goldenLayout from "https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/
 import styleToCSS from "https://cdn.jsdelivr.net/npm/style-object-to-css-string@1.1.3/+esm";
 
 export class ReaderView {
-  #root;
+  #map = new Map();
   #rect = new DOMRect();
+  #root;
+  #layout;
 
   /**
    *
@@ -62,45 +64,74 @@ export class ReaderView {
   }
 
   loadLayout() {
-    const layout = new goldenLayout.GoldenLayout(this.#root);
-    layout.resizeWithContainerAutomatically = true;
+    this.#layout = new goldenLayout.GoldenLayout(this.#root);
+    this.#layout.bindComponent = this.#bind;
+    this.#layout.unbindComponent = this.#unbind;
+    this.#layout.resizeWithContainerAutomatically = true;
 
-    layout.beforeVirtualRectingEvent = (count) => {
+    this.#layout.beforeVirtualRectingEvent = (count) => {
       this.#rect = this.#root.getBoundingClientRect();
     };
 
-    layout.bindComponentEvent = (container, itemConfig) => {
-      const { componentType } = itemConfig;
-      return this[`${componentType}Factory`](
-        container,
-        itemConfig.componentState
-      );
-    };
-
-    layout.loadLayout({
+    this.#layout.loadLayout({
       root: {
-        type: "row",
+        type: "stack",
         content: [{ type: "component", componentType: "editor" }],
       },
     });
   }
 
-  editorFactory(container, state) {
-    const parent = this.#root.appendChild(document.createElement("div"));
+  #bind = (container, itemConfig) => {
+    const { componentType } = itemConfig;
+    const component = this[`${componentType}Factory`](container, itemConfig);
+
+    this.#map.set(container, component);
+    this.#root.appendChild(component.rootHtmlElement);
+
+    container.virtualRectingRequiredEvent = this.#recting;
+    container.virtualVisibilityChangeRequiredEvent = this.#visibilityChange;
+    container.virtualZIndexChangeRequiredEvent = this.#zIndexChange;
+
+    return { component, virtual: true };
+  };
+
+  #unbind = (container) => {
+    const component = this.#map.get(container);
+    this.#root.removeChild(component.rootHtmlElement);
+    this.#map.delete(container);
+  };
+
+  #recting = (container, width, height) => {
+    const parent = this.#map.get(container).rootHtmlElement;
+    const rect = container.element.getBoundingClientRect();
+    parent.style.left = `${rect.left - this.#rect.left}px`;
+    parent.style.top = `${rect.top - this.#rect.top}px`;
+    parent.style.width = `${width}px`;
+    parent.style.height = `${height}px`;
+  };
+
+  #visibilityChange = (container, visible) => {
+    const parent = this.#map.get(container).rootHtmlElement;
+    parent.style.display = visible ? "" : "none";
+  };
+
+  #zIndexChange = (container, logicalZIndex, defaultZIndex) => {
+    const parent = this.#map.get(container).rootHtmlElement;
+    parent.style.zIndex = defaultZIndex;
+  };
+
+  editorFactory(container, { componentType, componentState }) {
+    const parent = document.createElement("div");
     parent.style.position = "absolute";
     parent.style.overflow = "hidden";
 
-    container.virtualRectingRequiredEvent = (container, width, height) => {
-      const rect = container.element.getBoundingClientRect();
-      parent.style.left = `${rect.left - this.#rect.left}px`;
-      parent.style.top = `${rect.top - this.#rect.top}px`;
-      parent.style.width = `${width}px`;
-      parent.style.height = `${height}px`;
-    };
+    const { id = getDefaultId() } = componentState;
+    const editor = createEditor({ parent, id });
+    editor.dom.addEventListener("OpenFile", ({ detail }) => {
+      this.#layout.addComponent(componentType, detail);
+    });
 
-    createEditor({ parent });
-
-    return { component: { container, rootHtmlElement: parent }, virtual: true };
+    return { container, rootHtmlElement: parent };
   }
 }
 
@@ -138,10 +169,18 @@ function createLink(href, rel = "stylesheet", type = "text/css") {
 }
 
 /**
+ *
+ * @param {Element} element
+ */
+function dispatchOpenFileEvent(element, detail) {
+  element.dispatchEvent(new CustomEvent("OpenFile", { detail }));
+}
+
+/**
  * @typedef EditorConfig
  * @type {{
- *   id?: string,
- *   parent?: Element | DocumentFragment,
+ *   id: string,
+ *   parent: Element | DocumentFragment,
  * }}
  */
 
@@ -149,19 +188,14 @@ function createLink(href, rel = "stylesheet", type = "text/css") {
  *
  * @param {EditorConfig} config
  */
-function createEditor(config) {
-  const { id = getDefaultId(), parent = getDefaultParent() } = config || {};
+function createEditor({ id, parent }) {
   return new EditorView({
     parent,
     doc: Text.of(getData(id, "source")),
     extensions: [
       EditorState.readOnly.of(true),
       // Warn the user that there is some code unstyled.
-      EditorView.baseTheme({
-        ".cm-line": {
-          color: "yellow",
-        },
-      }),
+      EditorView.baseTheme({ ".cm-line": { color: "yellow" } }),
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightActiveLine(),
@@ -236,6 +270,12 @@ function link(data) {
               const file = dom.appendChild(document.createElement("span"));
               file.className = "file";
               file.textContent = value;
+              const follow = dom.appendChild(document.createElement("span"));
+              follow.className = "follow";
+              follow.textContent = "Follow link";
+              follow.addEventListener("click", () => {
+                dispatchOpenFileEvent(view.dom, { id: value });
+              });
               return { dom };
             },
           };
@@ -263,6 +303,10 @@ function link(data) {
         },
         ".link .file::after": {
           content: "close-quote",
+        },
+        ".link > .follow": {
+          margin: "5px",
+          cursor: "pointer",
         },
       }),
     ],
