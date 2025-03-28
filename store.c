@@ -368,8 +368,10 @@ struct error query_link(unsigned src, query_link_row_t row, void *obj) {
   QUERY("SELECT begin_row, begin_col, end_row, end_col, link"
         " FROM nodes"
         " WHERE begin_src = ?"
+        " AND (node & 0xFFFF) = ?"
         " ORDER BY begin_row, begin_col");
   FILL_INT(1, src);
+  FILL_INT(2, TOK_InclusionDirective);
   END_QUERY({
     unsigned begin_row, begin_col, end_row, end_col, link;
 

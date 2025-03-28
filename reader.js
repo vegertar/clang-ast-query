@@ -14,43 +14,93 @@ import {
   RangeValue as BaseRangeValue,
 } from "https://cdn.jsdelivr.net/npm/@codemirror/state@6.4.1/+esm";
 import isEqual from "https://cdn.jsdelivr.net/npm/lodash.isequal@4.5.0/+esm";
-
-/**
- * @typedef Config
- * @type {{
- *   id?: string,
- *   parent?: Element | DocumentFragment,
- * }}
- */
+import * as goldenLayout from "https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/+esm";
+import styleToCSS from "https://cdn.jsdelivr.net/npm/style-object-to-css-string@1.1.3/+esm";
 
 export class ReaderView {
+  #root;
+  #rect = new DOMRect();
+
   /**
    *
-   * @param {Config} config
+   * @param {Element} [root]
    */
-  constructor(config) {
-    const { id = getDefaultId(), parent = getDefaultParent() } = config || {};
-    this.editor = new EditorView({
-      parent,
-      doc: Text.of(getData(id, "source")),
-      extensions: [
-        EditorState.readOnly.of(true),
-        // Warn the user that there is some code unstyled.
-        EditorView.baseTheme({
-          ".cm-line": {
-            color: "yellow",
-          },
-        }),
-        lineNumbers(),
-        highlightActiveLineGutter(),
-        highlightActiveLine(),
-        link(getData(id, "link")),
-        // decl(data),
-        // macroDecl(data),
-        // testMacroDecl(data),
-        semantics(getData(id, "semantics")),
-      ],
+  constructor(root) {
+    this.#root = root || getDefaultParent();
+    this.loadStyles();
+    this.loadLayout();
+  }
+
+  loadStyles() {
+    Object.assign(this.#root.style, {
+      position: "relative",
+      height: "100%",
+      width: "100%",
+      overflow: "clip",
     });
+
+    document.head.append(
+      createStyle({
+        html: {
+          height: "100%",
+          width: "100%",
+        },
+        body: {
+          height: "100%",
+          width: "100%",
+          margin: 0,
+          overflow: "hidden",
+        },
+      }),
+      createLink(
+        "https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/css/goldenlayout-base.min.css"
+      ),
+      createLink(
+        "https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/css/themes/goldenlayout-dark-theme.css"
+      )
+    );
+  }
+
+  loadLayout() {
+    const layout = new goldenLayout.GoldenLayout(this.#root);
+    layout.resizeWithContainerAutomatically = true;
+
+    layout.beforeVirtualRectingEvent = (count) => {
+      this.#rect = this.#root.getBoundingClientRect();
+    };
+
+    layout.bindComponentEvent = (container, itemConfig) => {
+      const { componentType } = itemConfig;
+      return this[`${componentType}Factory`](
+        container,
+        itemConfig.componentState
+      );
+    };
+
+    layout.loadLayout({
+      root: {
+        type: "row",
+        content: [{ type: "component", componentType: "editor" }],
+      },
+    });
+  }
+
+  editorFactory(container, state) {
+    const parent = this.#root.appendChild(document.createElement("div"));
+    parent.style.position = "absolute";
+    parent.style.overflow = "hidden";
+
+    container.virtualRectingRequiredEvent = (container, width, height) => {
+      const rect = container.element.getBoundingClientRect();
+      parent.style.left = `${rect.left - this.#rect.left}px`;
+      parent.style.top = `${rect.top - this.#rect.top}px`;
+      parent.style.width = `${width}px`;
+      parent.style.height = `${height}px`;
+    };
+
+    createEditor({ parent });
+
+    return { component: { container, rootHtmlElement: parent }, virtual: true };
   }
 }
 
@@ -66,6 +116,59 @@ class RangeValue extends BaseRangeValue {
   eq(other) {
     return this.#eq(this.value, other.value);
   }
+}
+
+function createStyle(obj) {
+  const node = document.createElement("style");
+  const styles = [];
+  for (const selector in obj) {
+    const style = obj[selector];
+    styles.push(`${selector} {${styleToCSS(style)}}`);
+  }
+  node.textContent = styles.join("\n");
+  return node;
+}
+
+function createLink(href, rel = "stylesheet", type = "text/css") {
+  const node = document.createElement("link");
+  node.href = href;
+  node.rel = rel;
+  node.type = type;
+  return node;
+}
+
+/**
+ * @typedef EditorConfig
+ * @type {{
+ *   id?: string,
+ *   parent?: Element | DocumentFragment,
+ * }}
+ */
+
+/**
+ *
+ * @param {EditorConfig} config
+ */
+function createEditor(config) {
+  const { id = getDefaultId(), parent = getDefaultParent() } = config || {};
+  return new EditorView({
+    parent,
+    doc: Text.of(getData(id, "source")),
+    extensions: [
+      EditorState.readOnly.of(true),
+      // Warn the user that there is some code unstyled.
+      EditorView.baseTheme({
+        ".cm-line": {
+          color: "yellow",
+        },
+      }),
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightActiveLine(),
+      link(getData(id, "link")),
+      semantics(getData(id, "semantics")),
+    ],
+  });
 }
 
 /**

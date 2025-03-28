@@ -3,6 +3,7 @@
 #include "array.h"
 #include <stdlib.h>
 
+// On-heap string
 #define HSTR DECL_ARRAY(ANON, char)
 
 enum string_flag {
@@ -18,9 +19,10 @@ struct string {
   union {
     HSTR;
     struct {
-      char s[sizeof(HSTR) + 7];
+      char s[23]; // the buffer of the on-stack string, with ending zero
+      unsigned char size : 5; // the value of strlen(s)
       unsigned char flag : 2; // 0: on-stack, 1: static, 2: on-heap, 3: literal
-      unsigned char size : 6; // the length of the on-stack string
+      unsigned char reserved : 1;
     };
   };
 };
@@ -31,11 +33,9 @@ typedef ARRAY_size_t string_size_t;
 #define STRING_BUFSIZ_ON_STACK sizeof(((struct string *)0)->s)
 
 static_assert(sizeof(struct string) <= 24,
-              "The struct string is not cheap copying");
-static_assert(sizeof(struct string) == sizeof(HSTR) + 8,
-              "Undefined struct string");
-static_assert(STRING_BUFSIZ_ON_STACK <= (2 << 6),
-              "The size field is tool small");
+              "It should be able to copy at low cost");
+static_assert(STRING_BUFSIZ_ON_STACK >= sizeof(HSTR),
+              "It should be large enough to not be polluted");
 
 struct string *string_reserve(struct string *p, string_size_t n);
 struct string *string_set(struct string *p, string_size_t i, const char *s,
