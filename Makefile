@@ -14,7 +14,7 @@ CPPFLAGS+= -DNDEBUG
 CFLAGS+= -O2
 CXXFLAGS+= -O2
 else
-CFLAGS+= -g -O0 -DREADER_JS='"./reader.js"'
+CFLAGS+= -g -O0 -DREADER_JS='"./reader.bundle.js"'
 CXXFLAGS+= -g -O0
 endif
 
@@ -43,7 +43,7 @@ LDFLAGS+= -L${LLVM_PROJECT_BUILD_DIR}/lib -lclang-cpp -lstdc++
 SRCS+= remark.cc
 endif
 
-GENHDRS+= parse.h scan.h
+GENHDRS+= parse.h scan.h reader.bundle.js
 GENSRCS+= parse.c scan.c
 SRCS+= array.c string.c string_set.c store.c render.c util.c murmur3.c build.c main.c ${GENSRCS}
 
@@ -77,6 +77,9 @@ parse.c: parse.y
 scan.h: scan.c
 scan.c: scan.l
 	${LEX} --header-file=$(basename $<).h -o $@ ${LEXFLAGS} $<
+
+reader.bundle.js: reader.js rollup.config.js
+	npm run build
 
 clean:
 	rm -f caq *.output *.out *.o *.d ${GENSRCS} ${GENHDRS}
