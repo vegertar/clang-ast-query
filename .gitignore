@@ -35,6 +35,9 @@
 !/murmur3.h
 !/murmur3.c
 !/reader.js
+!/rollup.config.js
+!/package.json
+!/package-lock.json
 !/samples
 !/spec
 !/.shellspec

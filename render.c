@@ -5,7 +5,7 @@
 
 #ifndef READER_JS
 static const char reader_js[] = {
-#embed "reader.js"
+#embed "reader.bundle.js"
 };
 #define reader_js_len sizeof(reader_js)
 #else
@@ -128,10 +128,11 @@ static struct error render_sources(FILE *fp) {
   struct error err = {};
   for (unsigned i = 0; i < all_sources.i; ++i) {
     DUMP(fp, R"code(
-    <script data-id='%u' data-type='source' %s>
+    <script data-id='%u' data-type='source' data-path='%s' %s>
       document.currentScript.data = [
 )code",
          all_sources.data[i].file.hash,
+         string_get(&all_sources.data[i].file.elem),
          all_sources.data[i].file.property & SP_TU ? "data-main" : "");
 
     const char *code = string_get(&all_sources.data[i].content);

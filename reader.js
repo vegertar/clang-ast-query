@@ -1,3 +1,5 @@
+// @ts-check
+
 import {
   EditorView,
   Decoration,
@@ -5,27 +7,49 @@ import {
   highlightActiveLineGutter,
   highlightActiveLine,
   hoverTooltip,
-} from "https://cdn.jsdelivr.net/npm/@codemirror/view@6.29.0/+esm";
+} from "@codemirror/view";
 import {
   Text,
   EditorState,
   StateField,
   RangeSetBuilder,
   RangeValue as BaseRangeValue,
-} from "https://cdn.jsdelivr.net/npm/@codemirror/state@6.4.1/+esm";
-import isEqual from "https://cdn.jsdelivr.net/npm/lodash.isequal@4.5.0/+esm";
-import * as goldenLayout from "https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/+esm";
-import styleToCSS from "https://cdn.jsdelivr.net/npm/style-object-to-css-string@1.1.3/+esm";
+} from "@codemirror/state";
+import isEqual from "lodash.isequal";
+import { GoldenLayout } from "golden-layout";
+import styleToCSS from "style-object-to-css-string";
+
+// @ts-ignore
+import glBase from "golden-layout/dist/css/goldenlayout-base.css";
+// @ts-ignore
+import glDarkTheme from "golden-layout/dist/css/themes/goldenlayout-dark-theme.css";
+
+/**
+ * @typedef {import("golden-layout").GoldenLayout.VirtuableComponent & {
+ *  id: number;
+ *  path: string;
+ *  container: import("golden-layout").ComponentContainer;
+ * }} EditorComponent
+ */
+
+/**
+ * @typedef {"source"|"link"|"semantics"} ScriptType
+ */
 
 export class ReaderView {
+  /** @type {Map<import("golden-layout").ComponentContainer, EditorComponent>} */
   #map = new Map();
   #rect = new DOMRect();
+
+  /** @type {HTMLElement} */
   #root;
+
+  /** @type {import("golden-layout").GoldenLayout} */
   #layout;
 
   /**
    *
-   * @param {Element} [root]
+   * @param {HTMLElement} [root]
    */
   constructor(root) {
     this.#root = root || getDefaultParent();
@@ -54,19 +78,13 @@ export class ReaderView {
           overflow: "hidden",
         },
       }),
-      createLink(
-        "https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/css/goldenlayout-base.min.css"
-      ),
-      createLink(
-        "https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/css/themes/goldenlayout-dark-theme.css"
-      )
+      createStyle(glBase),
+      createStyle(glDarkTheme)
     );
   }
 
   loadLayout() {
-    this.#layout = new goldenLayout.GoldenLayout(this.#root);
-    this.#layout.bindComponent = this.#bind;
-    this.#layout.unbindComponent = this.#unbind;
+    this.#layout = new GoldenLayout(this.#root, this.#bind, this.#unbind);
     this.#layout.resizeWithContainerAutomatically = true;
 
     this.#layout.beforeVirtualRectingEvent = (count) => {
@@ -81,13 +99,28 @@ export class ReaderView {
     });
   }
 
+  /**
+   *
+   * @param {import("golden-layout").ComponentContainer} container
+   * @returns
+   */
+  #getComponent(container) {
+    const component = this.#map.get(container);
+    if (!component)
+      throw new Error(`Missing component for container(${container})`);
+    return component;
+  }
+
+  /** @type {import("golden-layout").VirtualLayout.BindComponentEventHandler} */
   #bind = (container, itemConfig) => {
     const { componentType } = itemConfig;
+    /** @type {EditorComponent} */
     const component = this[`${componentType}Factory`](container, itemConfig);
 
     this.#map.set(container, component);
     this.#root.appendChild(component.rootHtmlElement);
 
+    container.setTitle(component.path);
     container.virtualRectingRequiredEvent = this.#recting;
     container.virtualVisibilityChangeRequiredEvent = this.#visibilityChange;
     container.virtualZIndexChangeRequiredEvent = this.#zIndexChange;
@@ -95,14 +128,16 @@ export class ReaderView {
     return { component, virtual: true };
   };
 
+  /** @type {import("golden-layout").VirtualLayout.UnbindComponentEventHandler} */
   #unbind = (container) => {
-    const component = this.#map.get(container);
+    const component = this.#getComponent(container);
     this.#root.removeChild(component.rootHtmlElement);
     this.#map.delete(container);
   };
 
+  /** @type {import("golden-layout").ComponentContainer.VirtualRectingRequiredEvent} */
   #recting = (container, width, height) => {
-    const parent = this.#map.get(container).rootHtmlElement;
+    const parent = this.#getComponent(container).rootHtmlElement;
     const rect = container.element.getBoundingClientRect();
     parent.style.left = `${rect.left - this.#rect.left}px`;
     parent.style.top = `${rect.top - this.#rect.top}px`;
@@ -110,67 +145,106 @@ export class ReaderView {
     parent.style.height = `${height}px`;
   };
 
+  /** @type {import("golden-layout").ComponentContainer.VirtualVisibilityChangeRequiredEvent} */
   #visibilityChange = (container, visible) => {
-    const parent = this.#map.get(container).rootHtmlElement;
+    const parent = this.#getComponent(container).rootHtmlElement;
     parent.style.display = visible ? "" : "none";
   };
 
+  /** @type {import("golden-layout").ComponentContainer.VirtualZIndexChangeRequiredEvent} */
   #zIndexChange = (container, logicalZIndex, defaultZIndex) => {
-    const parent = this.#map.get(container).rootHtmlElement;
+    const parent = this.#getComponent(container).rootHtmlElement;
     parent.style.zIndex = defaultZIndex;
   };
 
+  /**
+   *
+   * @param {import("golden-layout").ComponentContainer} container
+   * @param {import("golden-layout").ResolvedComponentItemConfig} param1
+   * @returns {EditorComponent}
+   */
   editorFactory(container, { componentType, componentState }) {
     const parent = document.createElement("div");
     parent.style.position = "absolute";
     parent.style.overflow = "hidden";
 
-    const { id = getDefaultId() } = componentState;
-    const editor = createEditor({ parent, id });
-    editor.dom.addEventListener("OpenFile", ({ detail }) => {
-      this.#layout.addComponent(componentType, detail);
+    if (!componentState || typeof componentState != "object")
+      throw new Error("Invalid component state");
+
+    const id = componentState["id"] || getDefaultId();
+    if (typeof id != "number") throw new Error(`Invalid id(${id})`);
+
+    const node = getScript(id, "source");
+    if (!node) throw new Error(`Unknown script for id(${id})`);
+
+    const path = node.dataset.path;
+    if (!path) throw new Error(`Missing source path for id(${id})`);
+
+    const editor = createEditor({ parent, id, lines: node.data });
+    editor.dom.addEventListener("OpenFile", (ev) => {
+      this.#layout.addComponent(
+        componentType,
+        /** @type {CustomEvent} */ (ev).detail
+      );
     });
 
-    return { container, rootHtmlElement: parent };
+    return { container, id, path, rootHtmlElement: parent };
   }
 }
 
 class RangeValue extends BaseRangeValue {
   #eq;
+  #value;
 
+  get value() {
+    return this.#value;
+  }
+
+  /**
+   *
+   * @param {any} value
+   * @param {(a: any, b: any) => boolean} eq
+   */
   constructor(value, eq = isEqual) {
     super();
-    this.value = value;
+    this.#value = value;
     this.#eq = eq;
   }
 
+  /**
+   *
+   * @param {RangeValue} other
+   * @returns
+   */
   eq(other) {
-    return this.#eq(this.value, other.value);
+    return this.#eq(this.#value, other.value);
   }
 }
 
-function createStyle(obj) {
+/**
+ *
+ * @param {Object | string} x
+ * @returns
+ */
+function createStyle(x) {
   const node = document.createElement("style");
-  const styles = [];
-  for (const selector in obj) {
-    const style = obj[selector];
-    styles.push(`${selector} {${styleToCSS(style)}}`);
+  if (typeof x == "string") {
+    node.textContent = x;
+  } else {
+    const styles = [];
+    for (const selector in x) {
+      const style = x[selector];
+      styles.push(`${selector} {${styleToCSS(style)}}`);
+    }
+    node.textContent = styles.join("\n");
   }
-  node.textContent = styles.join("\n");
-  return node;
-}
-
-function createLink(href, rel = "stylesheet", type = "text/css") {
-  const node = document.createElement("link");
-  node.href = href;
-  node.rel = rel;
-  node.type = type;
   return node;
 }
 
 /**
  *
  * @param {Element} element
+ * @param {any} detail
  */
 function dispatchOpenFileEvent(element, detail) {
   element.dispatchEvent(new CustomEvent("OpenFile", { detail }));
@@ -179,8 +253,9 @@ function dispatchOpenFileEvent(element, detail) {
 /**
  * @typedef EditorConfig
  * @type {{
- *   id: string,
+ *   id: number,
  *   parent: Element | DocumentFragment,
+ *   lines: string[],
  * }}
  */
 
@@ -188,10 +263,10 @@ function dispatchOpenFileEvent(element, detail) {
  *
  * @param {EditorConfig} config
  */
-function createEditor({ id, parent }) {
+function createEditor({ id, parent, lines }) {
   return new EditorView({
     parent,
-    doc: Text.of(getData(id, "source")),
+    doc: Text.of(lines),
     extensions: [
       EditorState.readOnly.of(true),
       // Warn the user that there is some code unstyled.
@@ -207,27 +282,50 @@ function createEditor({ id, parent }) {
 
 /**
  *
- * @returns {string | undefined}
+ * @returns {number}
  */
 function getDefaultId() {
-  return document.querySelector("script[data-main]")?.dataset.id;
+  /** @type {HTMLScriptElement | null} */
+  const node = document.querySelector("script[data-main]");
+  if (!node) throw new Error("Missing main <script>");
+
+  const id = node.dataset.id;
+  if (id === undefined) throw new Error("Missing data-id");
+
+  const value = Number(id);
+  if (!Number.isFinite(value)) throw new Error("Invalid ID");
+
+  return value;
 }
 
 function getDefaultParent() {
-  return document.body.firstElementChild || document.body;
+  const element = document.body.firstElementChild;
+  return element instanceof HTMLElement ? element : document.body;
 }
 
 /**
  *
- * @param {string} id
- * @param {string} type
- * @returns {any[]}
+ * @param {number} id
+ * @param {ScriptType} type
+ * @return
  */
-function getData(id, type) {
+function getScript(id, type) {
+  /** @type {HTMLScriptElement & {data: any[]} | null} */
   const node = document.querySelector(
     `script[data-id="${id}"][data-type="${type}"]`
   );
-  return node?.data || [];
+  if (!node) throw new Error(`Unknown <script> for id(${id}) type(${type})`);
+  return node;
+}
+
+/**
+ *
+ * @param {number} id
+ * @param {ScriptType} type
+ * @returns {any[]}
+ */
+function getData(id, type) {
+  return getScript(id, type).data;
 }
 
 /**
@@ -238,6 +336,7 @@ function getData(id, type) {
 function link(data) {
   return StateField.define({
     create({ doc }) {
+      /** @type {RangeSetBuilder<RangeValue>} */
       const builder = new RangeSetBuilder();
 
       for (let j = 0, n = data.length; j < n; ) {
@@ -259,7 +358,8 @@ function link(data) {
     },
     provide: (f) => [
       hoverTooltip((view, pos, side) => {
-        let tooltip;
+        /** @type {import("@codemirror/view").Tooltip | null} */
+        let tooltip = null;
         view.state.field(f).between(pos, pos, (from, to, { value }) => {
           tooltip = {
             pos: from,
@@ -318,278 +418,278 @@ function link(data) {
  * @param {any[]} data
  * @returns
  */
-function decl(data) {
-  if (!validate(data, "decl")) return nul;
+// function decl(data) {
+//   if (!validate(data, "decl")) return nul;
 
-  const first = ++i;
-  while (validate(data)) i += 8;
-  const last = i;
+//   const first = ++i;
+//   while (validate(data)) i += 8;
+//   const last = i;
 
-  return StateField.define({
-    create({ doc }) {
-      const builder = new RangeSetBuilder();
+//   return StateField.define({
+//     create({ doc }) {
+//       const builder = new RangeSetBuilder();
 
-      for (let j = first; j < last; ) {
-        const tokBeginRow = data[j++];
-        const tokBeginCol = data[j++];
-        const name = data[j++];
-        const kind = data[j++];
-        const specs = data[j++];
-        const elaboratedType = data[j++];
-        const qualifiedType = data[j++];
-        const desugaredType = data[j++];
+//       for (let j = first; j < last; ) {
+//         const tokBeginRow = data[j++];
+//         const tokBeginCol = data[j++];
+//         const name = data[j++];
+//         const kind = data[j++];
+//         const specs = data[j++];
+//         const elaboratedType = data[j++];
+//         const qualifiedType = data[j++];
+//         const desugaredType = data[j++];
 
-        const from = doc.line(tokBeginRow).from + tokBeginCol - 1;
-        const to = from + name.length;
+//         const from = doc.line(tokBeginRow).from + tokBeginCol - 1;
+//         const to = from + name.length;
 
-        builder.add(
-          from,
-          to,
-          new RangeValue({
-            name,
-            kind,
-            specs,
-            elaboratedType,
-            qualifiedType,
-            desugaredType,
-          })
-        );
-      }
-      return builder.finish();
-    },
-    update(value, tr) {
-      return value;
-    },
-    provide: (f) => [
-      hoverTooltip((view, pos, side) => {
-        const specNames = {
-          1: "extern",
-          2: "static",
-          4: "inline",
-          8: "const",
-          16: "volatile",
-        };
-        const elaboratedNames = ["", "struct", "union", "enum"];
+//         builder.add(
+//           from,
+//           to,
+//           new RangeValue({
+//             name,
+//             kind,
+//             specs,
+//             elaboratedType,
+//             qualifiedType,
+//             desugaredType,
+//           })
+//         );
+//       }
+//       return builder.finish();
+//     },
+//     update(value, tr) {
+//       return value;
+//     },
+//     provide: (f) => [
+//       hoverTooltip((view, pos, side) => {
+//         const specNames = {
+//           1: "extern",
+//           2: "static",
+//           4: "inline",
+//           8: "const",
+//           16: "volatile",
+//         };
+//         const elaboratedNames = ["", "struct", "union", "enum"];
 
-        let tooltip;
-        view.state
-          .field(f)
-          .between(
-            pos,
-            pos,
-            (
-              from,
-              to,
-              {
-                value: {
-                  name,
-                  kind,
-                  specs,
-                  elaboratedType,
-                  qualifiedType,
-                  desugaredType,
-                },
-              }
-            ) => {
-              tooltip = {
-                pos: from,
-                end: to,
-                create(view) {
-                  const dom = document.createElement("div");
-                  dom.className = "decl";
+//         let tooltip;
+//         view.state
+//           .field(f)
+//           .between(
+//             pos,
+//             pos,
+//             (
+//               from,
+//               to,
+//               {
+//                 value: {
+//                   name,
+//                   kind,
+//                   specs,
+//                   elaboratedType,
+//                   qualifiedType,
+//                   desugaredType,
+//                 },
+//               }
+//             ) => {
+//               tooltip = {
+//                 pos: from,
+//                 end: to,
+//                 create(view) {
+//                   const dom = document.createElement("div");
+//                   dom.className = "decl";
 
-                  const sp = dom.appendChild(document.createElement("span"));
-                  sp.className = "specifier";
-                  for (const k in specNames)
-                    if (specs & k) sp.append(specNames[k], " ");
+//                   const sp = dom.appendChild(document.createElement("span"));
+//                   sp.className = "specifier";
+//                   for (const k in specNames)
+//                     if (specs & k) sp.append(specNames[k], " ");
 
-                  sp.append(elaboratedNames[elaboratedType]);
+//                   sp.append(elaboratedNames[elaboratedType]);
 
-                  const id = dom.appendChild(document.createElement("span"));
-                  id.className = `identifier ${kind}`;
-                  id.textContent = name;
+//                   const id = dom.appendChild(document.createElement("span"));
+//                   id.className = `identifier ${kind}`;
+//                   id.textContent = name;
 
-                  dom.append(": ");
+//                   dom.append(": ");
 
-                  const t = dom.appendChild(document.createElement("span"));
-                  t.className = "type";
-                  t.textContent = qualifiedType;
+//                   const t = dom.appendChild(document.createElement("span"));
+//                   t.className = "type";
+//                   t.textContent = qualifiedType;
 
-                  if (desugaredType && desugaredType !== qualifiedType) {
-                    const t = dom.appendChild(document.createElement("span"));
-                    t.className = "desugared type";
-                    t.textContent = desugaredType;
-                  }
+//                   if (desugaredType && desugaredType !== qualifiedType) {
+//                     const t = dom.appendChild(document.createElement("span"));
+//                     t.className = "desugared type";
+//                     t.textContent = desugaredType;
+//                   }
 
-                  return { dom };
-                },
-              };
-            }
-          );
-        return tooltip;
-      }),
-      EditorView.baseTheme({
-        ".decl": {
-          fontFamily: "monospace",
-          margin: "5px",
-        },
+//                   return { dom };
+//                 },
+//               };
+//             }
+//           );
+//         return tooltip;
+//       }),
+//       EditorView.baseTheme({
+//         ".decl": {
+//           fontFamily: "monospace",
+//           margin: "5px",
+//         },
 
-        ".decl .specifier": {
-          color: "#0000ff",
-        },
-        ".decl .specifier::after": {
-          content: `" "`,
-        },
+//         ".decl .specifier": {
+//           color: "#0000ff",
+//         },
+//         ".decl .specifier::after": {
+//           content: `" "`,
+//         },
 
-        ".decl .identifier": {
-          fontWeight: "bold",
-        },
-        // Set common styles for func/var/type tag.
-        ".decl .identifier::before": {
-          color: "#808080",
-          fontStyle: "italic",
-          fontWeight: "normal",
-        },
-        ".FunctionDecl::before": {
-          content: `"func "`,
-        },
-        ".FunctionDecl": {
-          color: "#795E26",
-        },
+//         ".decl .identifier": {
+//           fontWeight: "bold",
+//         },
+//         // Set common styles for func/var/type tag.
+//         ".decl .identifier::before": {
+//           color: "#808080",
+//           fontStyle: "italic",
+//           fontWeight: "normal",
+//         },
+//         ".FunctionDecl::before": {
+//           content: `"func "`,
+//         },
+//         ".FunctionDecl": {
+//           color: "#795E26",
+//         },
 
-        ".VarDecl::before": {
-          content: `"var "`,
-        },
-        ".VarDecl": {
-          color: "#001080",
-        },
+//         ".VarDecl::before": {
+//           content: `"var "`,
+//         },
+//         ".VarDecl": {
+//           color: "#001080",
+//         },
 
-        ".ParmVarDecl::before": {
-          content: `"param "`,
-        },
-        ".ParmVarDecl": {
-          color: "#808080",
-        },
+//         ".ParmVarDecl::before": {
+//           content: `"param "`,
+//         },
+//         ".ParmVarDecl": {
+//           color: "#808080",
+//         },
 
-        ".FieldDecl::before": {
-          content: `"field "`,
-        },
-        ".FieldDecl": {
-          color: "#0451a5",
-        },
+//         ".FieldDecl::before": {
+//           content: `"field "`,
+//         },
+//         ".FieldDecl": {
+//           color: "#0451a5",
+//         },
 
-        ".TypedefDecl::before": {
-          content: `"type "`,
-        },
-        ".TypedefDecl": {
-          color: "#267f99",
-        },
+//         ".TypedefDecl::before": {
+//           content: `"type "`,
+//         },
+//         ".TypedefDecl": {
+//           color: "#267f99",
+//         },
 
-        ".decl .type": {
-          color: "#267f99",
-        },
-        ".decl .desugared.type::before": {
-          content: `":"`,
-        },
-        ".decl .desugared.type": {
-          backgroundColor: "#E5EBF1",
-          borderRadius: "4px",
-        },
-      }),
-    ],
-  });
-}
+//         ".decl .type": {
+//           color: "#267f99",
+//         },
+//         ".decl .desugared.type::before": {
+//           content: `":"`,
+//         },
+//         ".decl .desugared.type": {
+//           backgroundColor: "#E5EBF1",
+//           borderRadius: "4px",
+//         },
+//       }),
+//     ],
+//   });
+// }
 
 /**
  *
  * @param {any[]} data
  * @returns
  */
-function macroDecl(data) {
-  if (!validate(data, "macro_decl")) return nul;
+// function macroDecl(data) {
+//   if (!validate(data, "macro_decl")) return nul;
 
-  const first = ++i;
-  while (validate(data)) i += 5;
-  const last = i;
+//   const first = ++i;
+//   while (validate(data)) i += 5;
+//   const last = i;
 
-  return StateField.define({
-    create({ doc }) {
-      const builder = new RangeSetBuilder();
+//   return StateField.define({
+//     create({ doc }) {
+//       const builder = new RangeSetBuilder();
 
-      for (let j = first; j < last; ) {
-        const tokBeginRow = data[j++];
-        const tokBeginCol = data[j++];
-        const name = data[j++];
-        const parameters = data[j++];
-        const body = data[j++];
+//       for (let j = first; j < last; ) {
+//         const tokBeginRow = data[j++];
+//         const tokBeginCol = data[j++];
+//         const name = data[j++];
+//         const parameters = data[j++];
+//         const body = data[j++];
 
-        const from = doc.line(tokBeginRow).from + tokBeginCol - 1;
-        const to = from + name.length;
+//         const from = doc.line(tokBeginRow).from + tokBeginCol - 1;
+//         const to = from + name.length;
 
-        builder.add(from, to, new RangeValue({ name, parameters, body }));
-      }
-      return builder.finish();
-    },
-    update(value, tr) {
-      return value;
-    },
-    provide: (f) => [
-      hoverTooltip((view, pos, side) => {
-        let tooltip;
-        view.state
-          .field(f)
-          .between(
-            pos,
-            pos,
-            (from, to, { value: { name, parameters, body } }) => {
-              tooltip = {
-                pos: from,
-                end: to,
-                create(view) {
-                  const dom = document.createElement("div");
-                  dom.className = "macro_decl";
-                  const id = dom.appendChild(document.createElement("span"));
-                  id.className = "identifier";
-                  id.textContent = name;
-                  if (parameters) dom.append(parameters);
-                  if (body) {
-                    dom.append(" ");
-                    const code = dom.appendChild(
-                      document.createElement("code")
-                    );
-                    code.textContent = body;
-                  }
-                  return { dom };
-                },
-              };
-            }
-          );
-        return tooltip;
-      }),
-      EditorView.baseTheme({
-        ".macro_decl": {
-          fontFamily: "monospace",
-          margin: "5px",
-        },
+//         builder.add(from, to, new RangeValue({ name, parameters, body }));
+//       }
+//       return builder.finish();
+//     },
+//     update(value, tr) {
+//       return value;
+//     },
+//     provide: (f) => [
+//       hoverTooltip((view, pos, side) => {
+//         let tooltip;
+//         view.state
+//           .field(f)
+//           .between(
+//             pos,
+//             pos,
+//             (from, to, { value: { name, parameters, body } }) => {
+//               tooltip = {
+//                 pos: from,
+//                 end: to,
+//                 create(view) {
+//                   const dom = document.createElement("div");
+//                   dom.className = "macro_decl";
+//                   const id = dom.appendChild(document.createElement("span"));
+//                   id.className = "identifier";
+//                   id.textContent = name;
+//                   if (parameters) dom.append(parameters);
+//                   if (body) {
+//                     dom.append(" ");
+//                     const code = dom.appendChild(
+//                       document.createElement("code")
+//                     );
+//                     code.textContent = body;
+//                   }
+//                   return { dom };
+//                 },
+//               };
+//             }
+//           );
+//         return tooltip;
+//       }),
+//       EditorView.baseTheme({
+//         ".macro_decl": {
+//           fontFamily: "monospace",
+//           margin: "5px",
+//         },
 
-        ".macro_decl::before": {
-          color: "#808080",
-          fontStyle: "italic",
-          content: `"macro "`,
-        },
+//         ".macro_decl::before": {
+//           color: "#808080",
+//           fontStyle: "italic",
+//           content: `"macro "`,
+//         },
 
-        ".macro_decl .identifier": {
-          fontWeight: "bold",
-          color: "#0000ff",
-        },
+//         ".macro_decl .identifier": {
+//           fontWeight: "bold",
+//           color: "#0000ff",
+//         },
 
-        ".macro_decl code": {
-          whiteSpace: "pre",
-        },
-      }),
-    ],
-  });
-}
+//         ".macro_decl code": {
+//           whiteSpace: "pre",
+//         },
+//       }),
+//     ],
+//   });
+// }
 
 /**
  *
@@ -747,4 +847,4 @@ function semantics(data) {
   });
 }
 
-const testMacroDecl = macroDecl;
+// const testMacroDecl = macroDecl;
