@@ -78,6 +78,12 @@ export class ReaderView {
           margin: 0,
           overflow: "hidden",
         },
+        ".cm-editor": {
+          height: "100%",
+        },
+        ".cm-scroller": {
+          overflow: "auto",
+        },
       }),
       createStyle(glBase),
       createStyle(glDarkTheme)
@@ -173,11 +179,8 @@ export class ReaderView {
     if (!componentState || typeof componentState != "object")
       throw new Error("Invalid component state");
 
-    const id = componentState["id"] || getDefaultId();
-    if (typeof id != "number") throw new Error(`Invalid id(${id})`);
-
+    const id = getId(componentState);
     const node = getScript(id, "source");
-    if (!node) throw new Error(`Unknown script for id(${id})`);
 
     const path = node.dataset.path;
     if (!path) throw new Error(`Missing source path for id(${id})`);
@@ -285,19 +288,35 @@ function createEditor({ id, parent, lines }) {
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightActiveLine(),
-      scrollBar(),
-      link(getData(id, "link")),
       semantics(getData(id, "semantics")),
+      link(getData(id, "link")),
     ],
   });
 }
 
-function scrollBar() {
-  return EditorView.domEventHandlers({
-    scroll: (e) => {
-      console.log("scroll", e);
-    },
-  });
+/**
+ *
+ * @param {number} x
+ */
+function sign(x) {
+  return x < 0 ? -1 : x > 0 ? 1 : 0;
+}
+
+/**
+ * Retrieve the last value corresponding the given StateEffect.
+ * @template T
+ * @param {import("@codemirror/state").Transaction} tr
+ * @param {import("@codemirror/state").StateEffectType<T>} valueEffect
+ * @returns {T | undefined}
+ */
+export function getLastValueFromTransaction(tr, valueEffect) {
+  let value;
+  for (const effect of tr.effects) {
+    if (effect.is(valueEffect)) {
+      value = effect.value;
+    }
+  }
+  return value;
 }
 
 /**
@@ -320,7 +339,24 @@ function getDefaultId() {
 
 function getDefaultParent() {
   const element = document.body.firstElementChild;
-  return element instanceof HTMLElement ? element : document.body;
+  return element instanceof HTMLDivElement && element.childElementCount === 0
+    ? element
+    : document.body;
+}
+
+/**
+ *
+ * @param {Object} state
+ * @returns {number}
+ */
+function getId(state) {
+  const id = state["id"];
+  if (id != null) {
+    if (typeof id !== "number") throw new Error(`Invalid id(${id})`);
+    return id;
+  }
+
+  return getDefaultId();
 }
 
 /**
@@ -346,6 +382,162 @@ function getScript(id, type) {
  */
 function getData(id, type) {
   return getScript(id, type).data;
+}
+
+/**
+ *
+ * @param {any[]} data
+ * @returns
+ */
+function semantics(data) {
+  return StateField.define({
+    create({ doc }) {
+      const ranges = [];
+      for (let j = 0, n = data.length; j < n; ) {
+        const beginRow = data[j++];
+        const beginCol = data[j++];
+        const endRow = data[j++];
+        const endCol = data[j++];
+        const kind = data[j++];
+        const name = data[j++];
+
+        const from = doc.line(beginRow).from + beginCol - 1;
+        const to = doc.line(endRow).from + endCol - 1;
+
+        ranges.push(
+          Decoration.mark({ class: `semantics ${kind} ${name}` }).range(
+            from,
+            to
+          )
+        );
+      }
+
+      return Decoration.set(ranges);
+    },
+    update(value, tr) {
+      return value;
+    },
+    provide: (f) => [
+      EditorView.decorations.from(f),
+      EditorView.baseTheme({
+        ".KEYWORD": {
+          color: "#0000ff",
+        },
+        ".KEYWORD.int": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD.long": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD.short": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD.char": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD._Bool": {
+          color: "#2B91AF",
+        },
+        ".KEYWORD.if": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.else": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.return": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.for": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.while": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.goto": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.continue": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.break": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.switch": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.case": {
+          color: "#8F08C4",
+        },
+        ".KEYWORD.default": {
+          color: "#8F08C4",
+        },
+
+        ".PPKEYWORD": {
+          color: "#808080",
+        },
+
+        ".LITERAL": {
+          color: "#A31515",
+        },
+        ".numeric_constant": {
+          color: "#098658",
+        },
+        ".char_constant": {
+          color: "#0000ff",
+        },
+
+        ".INACTIVE": {
+          color: "#E5EBF1",
+        },
+
+        ".COMMENT": {
+          color: "#008000",
+        },
+
+        ".IDENTIFIER": {
+          color: "#000000",
+        },
+        ".macro": {
+          color: "#0000ff",
+        },
+        ".function_like_macro": {
+          color: "#8A1BFF",
+        },
+        ".Function": {
+          color: "#795E26",
+        },
+        ".Var": {
+          color: "#001080",
+        },
+        ".ParmVar": {
+          color: "#808080",
+        },
+        ".Field": {
+          color: "#0451a5",
+        },
+        ".Typedef": {
+          color: "#267f99",
+        },
+
+        ".PUNCTUATION": {
+          color: "#A31515",
+        },
+
+        ".TOKEN": {
+          color: "#000000",
+        },
+        ".header_name": {
+          color: "#a31515",
+          textDecoration: "underline 1px",
+        },
+
+        ".EXPANSION": {
+          textDecorationStyle: "dotted !important",
+          textDecoration: "underline 1px",
+        },
+      }),
+    ],
+  });
 }
 
 /**
@@ -710,161 +902,5 @@ function link(data) {
 //     ],
 //   });
 // }
-
-/**
- *
- * @param {any[]} data
- * @returns
- */
-function semantics(data) {
-  return StateField.define({
-    create({ doc }) {
-      const ranges = [];
-      for (let j = 0, n = data.length; j < n; ) {
-        const beginRow = data[j++];
-        const beginCol = data[j++];
-        const endRow = data[j++];
-        const endCol = data[j++];
-        const kind = data[j++];
-        const name = data[j++];
-
-        const from = doc.line(beginRow).from + beginCol - 1;
-        const to = doc.line(endRow).from + endCol - 1;
-
-        ranges.push(
-          Decoration.mark({ class: `semantics ${kind} ${name}` }).range(
-            from,
-            to
-          )
-        );
-      }
-
-      return Decoration.set(ranges);
-    },
-    update(value, tr) {
-      return value;
-    },
-    provide: (f) => [
-      EditorView.decorations.from(f),
-      EditorView.baseTheme({
-        ".KEYWORD": {
-          color: "#0000ff",
-        },
-        ".KEYWORD.int": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD.long": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD.short": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD.char": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD._Bool": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD.if": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.else": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.return": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.for": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.while": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.goto": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.continue": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.break": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.switch": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.case": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.default": {
-          color: "#8F08C4",
-        },
-
-        ".PPKEYWORD": {
-          color: "#808080",
-        },
-
-        ".LITERAL": {
-          color: "#A31515",
-        },
-        ".numeric_constant": {
-          color: "#098658",
-        },
-        ".char_constant": {
-          color: "#0000ff",
-        },
-
-        ".INACTIVE": {
-          color: "#E5EBF1",
-        },
-
-        ".COMMENT": {
-          color: "#008000",
-        },
-
-        ".IDENTIFIER": {
-          color: "#000000",
-        },
-        ".macro": {
-          color: "#0000ff",
-        },
-        ".function_like_macro": {
-          color: "#8A1BFF",
-        },
-        ".Function": {
-          color: "#795E26",
-        },
-        ".Var": {
-          color: "#001080",
-        },
-        ".ParmVar": {
-          color: "#808080",
-        },
-        ".Field": {
-          color: "#0451a5",
-        },
-        ".Typedef": {
-          color: "#267f99",
-        },
-
-        ".PUNCTUATION": {
-          color: "#A31515",
-        },
-
-        ".TOKEN": {
-          color: "#000000",
-        },
-        ".header_name": {
-          color: "#a31515",
-          textDecoration: "underline 1px",
-        },
-
-        ".EXPANSION": {
-          textDecorationStyle: "dotted !important",
-          textDecoration: "underline 1px",
-        },
-      }),
-    ],
-  });
-}
 
 // const testMacroDecl = macroDecl;
