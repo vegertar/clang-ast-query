@@ -15,6 +15,7 @@ import {
   RangeSetBuilder,
   RangeValue as BaseRangeValue,
 } from "@codemirror/state";
+import { linter } from "@codemirror/lint";
 import isEqual from "lodash.isequal";
 import { GoldenLayout } from "golden-layout";
 import styleToCSS from "style-object-to-css-string";
@@ -23,6 +24,8 @@ import styleToCSS from "style-object-to-css-string";
 import glBase from "golden-layout/dist/css/goldenlayout-base.css";
 // @ts-ignore
 import glDarkTheme from "golden-layout/dist/css/themes/goldenlayout-dark-theme.css";
+// @ts-ignore
+import glLightTheme from "golden-layout/dist/css/themes/goldenlayout-light-theme.css";
 
 /**
  * @typedef {import("golden-layout").GoldenLayout.VirtuableComponent & {
@@ -34,7 +37,7 @@ import glDarkTheme from "golden-layout/dist/css/themes/goldenlayout-dark-theme.c
  */
 
 /**
- * @typedef {"source"|"link"|"semantics"} ScriptType
+ * @typedef {"source"|"link"|"semantics"|"lint"} ScriptType
  */
 
 export class ReaderView {
@@ -86,7 +89,7 @@ export class ReaderView {
         },
       }),
       createStyle(glBase),
-      createStyle(glDarkTheme)
+      createStyle(glLightTheme)
     );
   }
 
@@ -283,13 +286,12 @@ function createEditor({ id, parent, lines }) {
     doc: Text.of(lines),
     extensions: [
       EditorState.readOnly.of(true),
-      // Warn the user that there is some code unstyled.
-      EditorView.baseTheme({ ".cm-line": { color: "yellow" } }),
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightActiveLine(),
       semantics(getData(id, "semantics")),
       link(getData(id, "link")),
+      lint(getData(id, "lint")),
     ],
   });
 }
@@ -385,6 +387,30 @@ function getData(id, type) {
 }
 
 /**
+ * Translate 1-based line/column to 0-based offset.
+ * @param {import("@codemirror/state").Text} doc
+ * @param {number} row
+ * @param {number} col
+ */
+function getOffset(doc, row, col) {
+  return doc.line(row).from + col - 1;
+}
+
+/**
+ *
+ * @param {import("@codemirror/state").Text} doc
+ * @param {number} beginRow
+ * @param {number} beginCol
+ * @param {number} endRow
+ * @param {number} endCol
+ */
+function getRange(doc, beginRow, beginCol, endRow, endCol) {
+  const from = getOffset(doc, beginRow, beginCol);
+  const to = getOffset(doc, endRow, endCol);
+  return [from, to];
+}
+
+/**
  *
  * @param {any[]} data
  * @returns
@@ -401,8 +427,7 @@ function semantics(data) {
         const kind = data[j++];
         const name = data[j++];
 
-        const from = doc.line(beginRow).from + beginCol - 1;
-        const to = doc.line(endRow).from + endCol - 1;
+        const [from, to] = getRange(doc, beginRow, beginCol, endRow, endCol);
 
         ranges.push(
           Decoration.mark({ class: `semantics ${kind} ${name}` }).range(
@@ -420,120 +445,9 @@ function semantics(data) {
     provide: (f) => [
       EditorView.decorations.from(f),
       EditorView.baseTheme({
-        ".KEYWORD": {
-          color: "#0000ff",
-        },
-        ".KEYWORD.int": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD.long": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD.short": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD.char": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD._Bool": {
-          color: "#2B91AF",
-        },
-        ".KEYWORD.if": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.else": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.return": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.for": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.while": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.goto": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.continue": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.break": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.switch": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.case": {
-          color: "#8F08C4",
-        },
-        ".KEYWORD.default": {
-          color: "#8F08C4",
-        },
-
-        ".PPKEYWORD": {
-          color: "#808080",
-        },
-
-        ".LITERAL": {
-          color: "#A31515",
-        },
-        ".numeric_constant": {
-          color: "#098658",
-        },
-        ".char_constant": {
-          color: "#0000ff",
-        },
-
-        ".INACTIVE": {
-          color: "#E5EBF1",
-        },
-
-        ".COMMENT": {
-          color: "#008000",
-        },
-
-        ".IDENTIFIER": {
-          color: "#000000",
-        },
-        ".macro": {
-          color: "#0000ff",
-        },
-        ".function_like_macro": {
-          color: "#8A1BFF",
-        },
-        ".Function": {
-          color: "#795E26",
-        },
-        ".Var": {
-          color: "#001080",
-        },
-        ".ParmVar": {
-          color: "#808080",
-        },
-        ".Field": {
-          color: "#0451a5",
-        },
-        ".Typedef": {
-          color: "#267f99",
-        },
-
-        ".PUNCTUATION": {
-          color: "#A31515",
-        },
-
-        ".TOKEN": {
-          color: "#000000",
-        },
-        ".header_name": {
-          color: "#a31515",
-          textDecoration: "underline 1px",
-        },
-
-        ".EXPANSION": {
-          textDecorationStyle: "dotted !important",
-          textDecoration: "underline 1px",
+        ".RAW": {
+          textDecorationLine: "underline",
+          textDecorationStyle: "wavy",
         },
       }),
     ],
@@ -558,8 +472,7 @@ function link(data) {
         const endCol = data[j++];
         const file = data[j++];
 
-        const from = doc.line(beginRow).from + beginCol - 1;
-        const to = doc.line(endRow).from + endCol - 1;
+        const [from, to] = getRange(doc, beginRow, beginCol, endRow, endCol);
 
         builder.add(from, to, new RangeValue(file));
       }
@@ -601,12 +514,10 @@ function link(data) {
         },
 
         ".link::before": {
-          color: "#808080",
           fontStyle: "italic",
           content: `"header "`,
         },
         ".link .file": {
-          color: "#A31515",
           fontWeight: "bold",
           quotes: `'"' '"'`,
         },
@@ -622,6 +533,23 @@ function link(data) {
         },
       }),
     ],
+  });
+}
+
+/**
+ *
+ * @param {any[]} data
+ * @returns
+ */
+function lint(data) {
+  return StateField.define({
+    create({ doc }) {
+      return [];
+    },
+    update(value, tr) {
+      return value;
+    },
+    provide: (f) => [linter((view) => view.state.field(f))],
   });
 }
 

@@ -100,6 +100,7 @@
     TransparentUnionAttr
     PackedAttr
     PureAttr
+    ColdAttr
 
     FullComment
     ParagraphComment
@@ -126,6 +127,7 @@
     EnumType
     FunctionProtoType
     ParenType
+    ComplexType
 
     CompoundStmt
     ReturnStmt
@@ -364,6 +366,7 @@
     TransparentUnionAttrNode
     PackedAttrNode
     PureAttrNode
+    ColdAttrNode
 
     FullCommentNode
     ParagraphCommentNode
@@ -390,6 +393,7 @@
     EnumTypeNode
     FunctionProtoTypeNode
     ParenTypeNode
+    ComplexTypeNode
 
     CompoundStmtNode
     ReturnStmtNode
@@ -576,6 +580,7 @@ Node: NULL { $$.node = 0;  }
  | TransparentUnionAttrNode
  | PackedAttrNode
  | PureAttrNode
+ | ColdAttrNode
 
  | FullCommentNode
  | ParagraphCommentNode
@@ -602,6 +607,7 @@ Node: NULL { $$.node = 0;  }
  | EnumTypeNode
  | FunctionProtoTypeNode
  | ParenTypeNode
+ | ComplexTypeNode
 
  | CompoundStmtNode
  | ReturnStmtNode
@@ -832,6 +838,12 @@ PureAttrNode: PureAttr Attr
     $$.PureAttr.self = $2;
   }
 
+ColdAttrNode: ColdAttr Attr
+  {
+    $$.ColdAttr.node = $1;
+    $$.ColdAttr.self = $2;
+  }
+
 FullCommentNode: FullComment Comment
   {
     $$.FullComment.node = $1;
@@ -1016,6 +1028,12 @@ ParenTypeNode: ParenType Type
   {
     $$.ParenType.node = $1;
     $$.ParenType.self = $2;
+  }
+
+ComplexTypeNode: ComplexType Type
+  {
+    $$.ComplexType.node = $1;
+    $$.ComplexType.self = $2;
   }
 
 CompoundStmtNode: CompoundStmt Stmt
@@ -1291,6 +1309,8 @@ InclusionDirectiveNode: InclusionDirective Directive opt_angled Name SQTEXT SQTE
     $$.InclusionDirective.name = $4;
     $$.InclusionDirective.file = $5;
     $$.InclusionDirective.path = $6;
+
+    add_string_property($6, SP_FILE);
   }
 
 IfDirectiveNode: IfDirective Directive If opt_has_else

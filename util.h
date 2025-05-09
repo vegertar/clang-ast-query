@@ -8,10 +8,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifndef PATH_MAX
-#define PATH_MAX 4096
-#endif // !PATH_MAX
-
 #define ALT(x, y) (x ? x : y)
 
 #define ESCAPE(escape, in, n, out)                                             \
@@ -37,7 +33,7 @@ static inline struct error open_file(const char *filename, const char *mode,
   if ((*out = fopen(filename, mode)))
     return (struct error){};
 
-  fprintf(stderr, "%s: open('%s') error: %s\n", __func__, filename,
+  fprintf(stderr, "%s: fopen('%s') error: %s\n", __func__, filename,
           strerror(errno));
   return (struct error){ES_FILE_OPEN, errno};
 }
@@ -53,8 +49,13 @@ static inline struct error rename_file(const char *from, const char *to) {
 }
 
 static inline struct error unlink_file(const char *file) {
-  return unlink(file) ? (struct error){ES_FILE_UNLINK, errno}
-                      : (struct error){};
+  if (unlink(file)) {
+    fprintf(stderr, "%s: unlink('%s') error: %s\n", __func__, file,
+            strerror(errno));
+    return (struct error){ES_FILE_UNLINK, errno};
+  }
+
+  return (struct error){};
 }
 
 struct error reads(FILE *fp, struct string *s, const char *escape);

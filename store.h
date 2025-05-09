@@ -27,3 +27,9 @@ typedef bool (*query_link_row_t)(unsigned begin_row, unsigned begin_col,
                                  unsigned end_row, unsigned end_col,
                                  unsigned link, void *obj);
 struct error query_link(unsigned src, query_link_row_t row, void *obj);
+
+typedef bool (*query_lint_row_t)(unsigned begin_row, unsigned begin_col,
+                                 unsigned end_row, unsigned end_col,
+                                 unsigned severity, const char *message,
+                                 void *obj);
+struct error query_lint(unsigned src, query_lint_row_t row, void *obj);

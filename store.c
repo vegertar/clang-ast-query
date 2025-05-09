@@ -10,10 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef MAX_STMT_SIZE
-#define MAX_STMT_SIZE 16
-#endif // !MAX_STMT_SIZE
-
 #define PLACEHOLDERS(n) PP_JOIN(",", PP_DUP("?", n))
 #define VALUES(...) PLACEHOLDERS(PP_NARG(__VA_ARGS__))
 
@@ -385,4 +381,10 @@ struct error query_link(unsigned src, query_link_row_t row, void *obj) {
       break;
   });
   return ERROR_OF(ES_QUERY_LINK);
+}
+
+struct error query_lint(unsigned src, query_lint_row_t row, void *obj) {
+  assert(row);
+
+  return ERROR_OF(ES_QUERY_LINT);
 }

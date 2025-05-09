@@ -2,6 +2,7 @@
 !/.clang-format
 !/.gitignore
 !/Makefile
+!/config.h
 !/scan.l
 !/parse.y
 !/parse-top.h

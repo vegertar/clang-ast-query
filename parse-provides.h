@@ -1,13 +1,13 @@
 #include "util.h"
 
 // Note that a string could have multiple properties due to the same hash.
-enum string_property : uint8_t {
-  SP_FILE = 1,
-  SP_IDENTIFIER = 2,
-  SP_BUILTIN = 4,
-  SP_TYPE = 8,
-  SP_VAR = 16,
-  SP_TU = 32,
+enum string_property : STRING_PROPERTY_TYPE {
+  SP_FILE = 1U,
+  SP_IDENTIFIER = 1U << 1,
+  SP_BUILTIN = 1U << 2,
+  SP_TYPE = 1U << 3,
+  SP_VAR = 1U << 4,
+  SP_TU = 1U << 5,
 };
 
 extern long ts;

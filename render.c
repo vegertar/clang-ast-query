@@ -84,9 +84,7 @@ static inline struct error add_source(struct string file, uint8_t property,
   return err;
 }
 
-struct error render_init() {
-  return (struct error){};
-}
+struct error render_init() { return (struct error){}; }
 
 struct error render_halt() {
   SourceList_clear(&all_sources, 1);
@@ -141,13 +139,14 @@ static struct error render_sources(FILE *fp) {
     // Instead of using String.raw, which requires escaping variable
     // substitutions, we pass the code line by line.
     for (unsigned j = 0, k = 0; j < n; ++j) {
-      if (code[j] == '\n' || j == n - 1) {
+      if (code[j] == '\n') {
         DUMP(fp, "'%.*s',\n", j - k, code + k);
         k = j + 1;
       }
     }
 
-    DUMP(fp, R"code(];
+    DUMP(fp, "''" /* the additional line makes some editor works properly */
+             R"code(];
     </script>)code");
   }
   return err;
@@ -224,6 +223,35 @@ struct error render_link(FILE *fp) {
   return err;
 }
 
+bool lint_row(unsigned begin_row, unsigned begin_col, unsigned end_row,
+              unsigned end_col, unsigned severity, const char *message,
+              void *obj) {
+  CommonRowContext *ctx = obj;
+  assert(ctx && ctx->out);
+
+  return ctx->err.es;
+}
+
+struct error render_lint(FILE *fp) {
+  struct error err = {};
+  for (unsigned i = 0; i < all_sources.i; ++i) {
+    unsigned src = all_sources.data[i].file.hash;
+    DUMP(fp, R"code(
+    <script data-id='%u' data-type='lint'>
+      document.currentScript.data = [
+)code",
+         src);
+
+    CommonRowContext ctx = {.out = fp};
+    EVAL(query_lint(src, lint_row, &ctx));
+    EVAL(ctx.err);
+
+    DUMP(fp, R"code(];
+    </script>)code");
+  }
+  return err;
+}
+
 struct error render(FILE *fp) {
   memset(&state, 0, sizeof(state));
 
@@ -258,6 +286,7 @@ struct error render(FILE *fp) {
   EVAL(render_sources(fp));
   EVAL(render_semantics(fp));
   EVAL(render_link(fp));
+  EVAL(render_lint(fp));
 
   DUMP(fp, R"code(
   </head>

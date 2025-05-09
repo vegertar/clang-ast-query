@@ -151,6 +151,7 @@ AllocAlignAttr                  ATTR(AllocAlign);
 TransparentUnionAttr            ATTR(TransparentUnion);
 PackedAttr                      ATTR(Packed);
 PureAttr                        ATTR(Pure);
+ColdAttr                        ATTR(Cold);
 
 FullComment                     COMMENT(Full);
 ParagraphComment                COMMENT(Paragraph);
@@ -177,6 +178,7 @@ QualType                        TYPE(Qual);
 EnumType                        TYPE(Enum);
 FunctionProtoType               TYPE(FunctionProto);
 ParenType                       TYPE(Paren);
+ComplexType                     TYPE(Complex);
 
 CompoundStmt                    STMT(Compound);
 ReturnStmt                      STMT(Return);

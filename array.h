@@ -1,32 +1,11 @@
 #pragma once
 
 #include "murmur3.h"
+#include "config.h"
 
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#ifndef ARRAY_SIZE_TYPE
-#define ARRAY_SIZE_TYPE unsigned
-#endif // ARRAY_SIZE_TYPE
-
-#ifndef HASH_WIDTH
-#define HASH_WIDTH 32
-#endif
-
-#if HASH_WIDTH == 32
-#define HASH_SIZE_TYPE uint32_t
-#elif HASH_WIDTH == 128
-#define HASH_SIZE_TYPE unsigned __int128
-#else
-#error "Unsupported HASH_WIDTH: either 32 or 128"
-#endif
-
-#ifndef HASH_SEED
-#define HASH_SEED 496789
-#endif
-
-#define ANON
 
 #define DECL_ARRAY(name, type)                                                 \
   struct name {                                                                \

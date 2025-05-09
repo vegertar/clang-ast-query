@@ -8,6 +8,7 @@
 #include <clang/Frontend/MultiplexConsumer.h>
 #include <clang/Tooling/Syntax/Tokens.h>
 #include <clang/Tooling/Tooling.h>
+#include <llvm/ADT/IntervalTree.h>
 
 #include <cctype>
 #include <optional>
@@ -225,9 +226,6 @@ public:
   semantic_token(SourceLocation loc, uintptr_t kind)
       : semantic_token({loc, loc.getLocWithOffset(1)}, kind) {}
 
-  semantic_token(const Token &tok)
-      : semantic_token({tok.getLocation(), tok.getEndLoc()}, tok.getKind()) {}
-
   semantic_token(SourceRange range, const Decl *p)
       : semantic_token(range, reinterpret_cast<uintptr_t>(p)) {
     this->is_decl = 1;
@@ -256,40 +254,12 @@ public:
   void set_comment(bool v) { is_comment = v; }
 
   void dump(raw_ostream &out, TextNodeDumper &dumper) {
-    auto v = token_name();
+    auto v = get_full_name();
     out << name_head << v.first << ' ' << name_head << v.second;
-    dumper.dumpSourceRange(range); // TODO: handle expansion locations
+    dumper.dumpSourceRange(get_range());
   }
 
-private:
-  uintptr_t kind;
-
-  union {
-    SourceRange range;
-    struct {
-      SourceLocation loc;
-      SourceLocation::UIntTy offset;
-    } /* expansion */;
-  };
-
-  union {
-    unsigned char option;
-    struct {
-      unsigned char is_pp_kw : 1;
-      unsigned char is_comment : 1;
-      unsigned char is_decl : 1;
-      unsigned char is_expansion : 1;
-    };
-  };
-
-  static constexpr const char *comment_names[] = {
-      "invalid",           "bcpl_comment",
-      "c_comment",         "bcpl_slash_comment",
-      "bcpl_excl_comment", "java_doc_comment",
-      "qt_comment",        "merged_comment",
-  };
-
-  std::pair<const char *, const char *> token_name() {
+  std::pair<const char *, const char *> get_full_name() {
     if (is_pp_kw)
       return {"PPKEYWORD",
               getPPKeywordSpelling(static_cast<tok::PPKeywordKind>(kind))};
@@ -339,6 +309,39 @@ private:
 
     return v;
   }
+
+  SourceRange get_range() const {
+    // TODO: handle expansion locations
+    return range;
+  }
+
+private:
+  uintptr_t kind;
+
+  union {
+    SourceRange range;
+    struct {
+      SourceLocation loc;
+      SourceLocation::UIntTy offset;
+    } /* expansion */;
+  };
+
+  union {
+    unsigned char option;
+    struct {
+      unsigned char is_pp_kw : 1;
+      unsigned char is_comment : 1;
+      unsigned char is_decl : 1;
+      unsigned char is_expansion : 1;
+    };
+  };
+
+  static constexpr const char *comment_names[] = {
+      "invalid",           "bcpl_comment",
+      "c_comment",         "bcpl_slash_comment",
+      "bcpl_excl_comment", "java_doc_comment",
+      "qt_comment",        "merged_comment",
+  };
 };
 
 class raw_line_ostream : public raw_ostream {
@@ -408,9 +411,10 @@ private:
 
 class ast_consumer final : public ASTConsumer {
 public:
-  ast_consumer(std::unique_ptr<raw_line_ostream> os, Preprocessor &pp)
-      : out(*os), pp(pp), os(std::move(os)), visitor(*this),
-        last_expansion(0, 0), dir(0) {
+  ast_consumer(std::unique_ptr<raw_line_ostream> os, Preprocessor &pp,
+               std::vector<semantic_token> &semantic_tokens)
+      : out(*os), pp(pp), semantic_tokens(semantic_tokens), os(std::move(os)),
+        visitor(*this), last_expansion(0, 0), dir(0) {
     directive_nodes.emplace_back(); // Add the dummy root
   }
 
@@ -852,7 +856,11 @@ private:
       ast.add_expansion();
 
       ast.semantic_tokens.emplace_back(hash_loc, tok::hash);
-      ast.semantic_tokens.emplace_back(include_tok).set_pp_kw(true);
+      ast.semantic_tokens
+          .emplace_back(
+              SourceRange{include_tok.getLocation(), include_tok.getEndLoc()},
+              include_tok.getIdentifierInfo()->getPPKeywordID())
+          .set_pp_kw(true);
       ast.semantic_tokens.emplace_back(filename_range, tok::header_name);
     }
 
@@ -963,12 +971,12 @@ private:
       add_sup_directive<if_directive::block>();
     }
 
-    template <typename T, typename... U> void add_sub_directive(U &&... args) {
+    template <typename T, typename... U> void add_sub_directive(U &&...args) {
       ast.add_directive<T>(std::forward<U>(args)...);
       ast.down_directive();
     }
 
-    template <typename T, typename... U> void add_sup_directive(U &&... args) {
+    template <typename T, typename... U> void add_sup_directive(U &&...args) {
       ast.lift_directive();
       add_sub_directive<T>(std::forward<U>(args)...);
     }
@@ -1504,7 +1512,7 @@ private:
     directive_nodes[dir].children.emplace_back(directive_nodes.size() - 1);
   }
 
-  template <typename T, typename... U> void add_directive(U &&... args) {
+  template <typename T, typename... U> void add_directive(U &&...args) {
     directives.push_back(T{std::forward<U>(args)...});
     add_directive();
   }
@@ -1662,13 +1670,10 @@ private:
     auto &sm = pp.getSourceManager();
     std::tie(fid, offset) = sm.getDecomposedLoc(loc);
     if (auto i = indices.find(fid); i != indices.end()) {
-      auto j = opt == find_option::EQUAL
-                   ? i->second.find(offset)
-                   : opt == find_option::LOWER_BOUND
-                         ? i->second.lower_bound(offset)
-                         : opt == find_option::UPPER_BOUND
-                               ? i->second.upper_bound(offset)
-                               : i->second.end();
+      auto j = opt == find_option::EQUAL         ? i->second.find(offset)
+               : opt == find_option::LOWER_BOUND ? i->second.lower_bound(offset)
+               : opt == find_option::UPPER_BOUND ? i->second.upper_bound(offset)
+                                                 : i->second.end();
       if (j != i->second.end()) {
         if (at)
           *at = sm.getComposedLoc(fid, j->first);
@@ -1798,6 +1803,7 @@ private:
 
   raw_line_ostream &out;
   Preprocessor &pp;
+  std::vector<semantic_token> &semantic_tokens;
   std::unique_ptr<raw_line_ostream> os;
   ast_visitor visitor;
   std::optional<TextNodeDumper> dumper;
@@ -1816,7 +1822,6 @@ private:
   std::vector<directive_node> directive_nodes;
   llvm::DenseMap<FileID, std::map<unsigned, index_value_t>> indices;
   std::vector<syntax::Token> syntax_tokens;
-  std::vector<semantic_token> semantic_tokens;
 };
 
 std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
@@ -1830,9 +1835,10 @@ std::unique_ptr<ASTConsumer> make_ast_dumper(std::unique_ptr<raw_ostream> os,
 
 std::unique_ptr<ASTConsumer>
 make_ast_consumer(std::unique_ptr<raw_line_ostream> os,
-                  CompilerInstance &compiler, std::string_view in_file) {
-  return std::make_unique<ast_consumer>(std::move(os),
-                                        compiler.getPreprocessor());
+                  CompilerInstance &compiler, std::string_view in_file,
+                  std::vector<semantic_token> &semantic_tokens) {
+  return std::make_unique<ast_consumer>(
+      std::move(os), compiler.getPreprocessor(), semantic_tokens);
 }
 
 class frontend_action : public ASTFrontendAction {
@@ -1855,13 +1861,82 @@ public:
                         compiler, in_file));
     v.push_back(
         make_ast_consumer(std::make_unique<raw_line_ostream>(parse_line, data),
-                          compiler, in_file));
+                          compiler, in_file, semantic_tokens));
     return std::make_unique<MultiplexConsumer>(std::move(v));
+  }
+
+  void ExecuteAction() override {
+    ASTFrontendAction::ExecuteAction();
+
+    auto &compiler = getCompilerInstance();
+    auto &sm = compiler.getSourceManager();
+
+    raw_line_ostream out(parse_line, data);
+    TextNodeDumper dumper(out, compiler.getASTContext(), false);
+
+    using interval_tree = llvm::IntervalTree<unsigned, unsigned>;
+
+    interval_tree::Allocator allocator;
+    llvm::DenseMap<FileID, interval_tree> trees;
+    std::vector<Token> raw_tokens;
+
+    for (unsigned i = 0; i < semantic_tokens.size(); ++i) {
+      auto range = semantic_tokens[i].get_range();
+      auto loc = range.getBegin();
+      assert(loc.isFileID());
+
+      auto fid = sm.getFileID(loc);
+      auto iter = trees.find(fid);
+
+      if (iter == trees.end()) {
+        auto v = trees.insert({fid, interval_tree(allocator)});
+        assert(v.second && "Failed to insert interval tree");
+        iter = v.first;
+
+        llvm::MemoryBufferRef buffer = sm.getBufferOrFake(fid);
+        Lexer raw_lex(fid, buffer, sm, compiler.getLangOpts());
+        raw_lex.SetKeepWhitespaceMode(true);
+
+        Token raw_tok;
+        raw_lex.LexFromRawLexer(raw_tok);
+        while (raw_tok.isNot(tok::eof)) {
+          raw_tokens.push_back(raw_tok);
+          raw_lex.LexFromRawLexer(raw_tok);
+        }
+      }
+
+      // Insert the range as a closed interval.
+      iter->second.insert(loc.getRawEncoding(),
+                          range.getEnd().getLocWithOffset(-1).getRawEncoding(),
+                          i);
+    }
+
+    // Build the interval tree for each file.
+    for (auto &item : trees)
+      item.second.create();
+
+    for (auto &raw_tok : raw_tokens) {
+      auto loc = raw_tok.getLocation();
+      auto end_loc = raw_tok.getEndLoc();
+      assert(loc.isFileID());
+
+      auto fid = sm.getFileID(loc);
+      auto iter = trees.find(fid);
+      assert(iter != trees.end() && "Failed to find interval tree");
+
+      if (iter->second.getContaining(loc.getRawEncoding()).empty()) {
+        out << '#' << name_head << "RAW " << name_head
+            << tok::getTokenName(raw_tok.getKind());
+        dumper.dumpSourceRange({loc, end_loc});
+        out << '\n';
+      }
+    }
   }
 
 private:
   int (*parse_line)(char *line, size_t n, size_t cap, void *data) = nullptr;
   void *data = nullptr;
+  std::vector<semantic_token> semantic_tokens;
 };
 
 int print_line(char *line, size_t n, size_t cap, void *data) {

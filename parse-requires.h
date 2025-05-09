@@ -480,6 +480,7 @@ typedef struct {
     Attr(TransparentUnion, {});
     Attr(Packed, {});
     Attr(Pure, {});
+    Attr(Cold, {});
 
     Comment(Full, {});
     Comment(Paragraph, {});
@@ -534,6 +535,7 @@ typedef struct {
     Type(Enum, {});
     Type(FunctionProto, { String *name; });
     Type(Paren, {});
+    Type(Complex, {});
 
     Stmt(Compound, {});
     Stmt(Return, {});

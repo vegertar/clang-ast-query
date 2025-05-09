@@ -11,6 +11,7 @@
   },
   "author": "",
   "dependencies": {
+    "@codemirror/lint": "^6.8.5",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.4",
     "golden-layout": "^2.6.0",

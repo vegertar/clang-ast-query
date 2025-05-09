@@ -3,9 +3,11 @@
 #include "string.h"
 #include <stdio.h>
 
+typedef STRING_PROPERTY_TYPE STRING_property_t;
+
 typedef struct {
   HASH_size_t hash;
-  uint8_t property;
+  STRING_property_t property;
   struct string elem;
 } String;
 

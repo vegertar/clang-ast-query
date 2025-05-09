@@ -25,7 +25,7 @@ static inline bool needs_to_save_tmp(const char *filename) {
 
 static inline const char *get_tmp(struct output_file *of,
                                   const char *filename) {
-  assert(of);
+  assert(of && !of->tmp[0]);
   if (needs_to_save_tmp(filename)) {
     char str[8];
     snprintf(of->tmp, sizeof(of->tmp), "%s.tmp-%s", output.file,
@@ -33,13 +33,13 @@ static inline const char *get_tmp(struct output_file *of,
     return of->tmp;
   }
 
-  of->tmp[0] = 0;
   return NULL;
 }
 
 static struct error open_output(struct output_file *of) {
   assert(of);
   of->file = NULL;
+  of->tmp[0] = 0;
 
   struct error err = {};
   if (output.file) {
